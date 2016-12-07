@@ -1,9 +1,10 @@
-from collections import namedtuple
-from itertools import zip_longest
+import aiohttp
 import re
 import socket
 import struct
-import urllib.request
+
+from collections import namedtuple
+from itertools import zip_longest
 
 # I would like to tank rjt.rockx (aka Obliterator) for providing me information
 # on how the diep.io party links work. Without him, this wouldn't be possible
@@ -18,10 +19,8 @@ def _swap_pairs(s):
 
 SERVERS_URL = "http://lb.diep.io/v2/find_servers"
 def _servers_list():
-    req = urllib.request.Request(SERVERS_URL, headers={'User-Agent': 'Mozilla/5.0'})
-    response = urllib.request.urlopen(req)
-    text = response.read()[2:].decode('utf-8')
-    return _pairwise(text.split('\x00'))
+    async with aiohttp.get(SERVERS_URL) as response:
+        return _pairwise(response.text().split('\x00'))
 
 class DiepioServer(namedtuple('DiepioServer', 'ip_port name')):
     _translations = {
@@ -88,7 +87,7 @@ def _is_valid_hex(s):
     
 def _is_valid_party_link(link):
     code = _extract_code(link)
-    if len(code) != 20: return False
+    if len(code) not in (20, 22): return False
     return code and _is_valid_hex(code)
 
 def read_link(link):
