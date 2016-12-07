@@ -91,7 +91,6 @@ class WR:
             index = (await _load_gamemodes(self.session))[_version][_mode] % 4 - 1
         except KeyError:
             return await self.bot.say("Mode {} not recognized for {}".format(mode, version)), False
-        print(tank_id)
         return records[str(tank_id)][index], True
 
     # This command will be slow because it loads the site everytime
