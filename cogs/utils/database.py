@@ -1,10 +1,11 @@
-import json
 import discord
+import json
 import logging
 import os
 import random
 import re
 import traceback
+
 from .transformdict import IDAbleDict
 
 DB_FILE_PATH = 'data/databases/'
