@@ -5,6 +5,7 @@ from .utils.transformdict import IDAbleDict
 from .utils.database import Database, DB_FILE_PATH
 
 AFK_FILE_NAME = "afk.json"
+
 class AFK:
     def __init__(self, bot):
         self.bot = bot
