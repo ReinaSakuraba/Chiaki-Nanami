@@ -15,12 +15,9 @@ async def _load_json(session, url):
 async def _load_records(session):
     return await _load_json(session, WR_RECORD_URL)
 
-# WR_RECORDS = _load_records()
-
 async def _load_tanks(session):
     tank_list = await _load_json(session, TANK_ID_URL)
     return {d["tankname"] : d["id"] for d in tank_list if d["enabled"]}
-# TANK_ID_LIST = _load_tanks()
 
 async def _load_gamemodes(session):
     gm_id_list = await _load_json(session, GAMEMODE_ID_URL)
@@ -28,7 +25,6 @@ async def _load_gamemodes(session):
                         for d in gm_id_list if d["mobile"] == "0"},
             "mobile"  : {d["name"].lower() : d["id"]
                         for d in gm_id_list if d["mobile"] == "1"} }
-
 
 # hard-coding the colours because there is no color info of each mode from the webpage
 def _to_colour(r, g, b):
@@ -77,29 +73,6 @@ class WR:
     def __init__(self, bot):
         self.bot = bot
         self.session = aiohttp.ClientSession()
-
-##    async def _wr_mode(self, version, mode, tank):
-##        _version = version.lower()
-##        _mode = mode.lower()
-##        _tank = tank.title()
-##        # Will probably use EAFP later.
-##        if _version not in WR_RECORDS:
-##            await self.bot.say("Version {} is not valid".format(version))
-##            return None
-##        if _mode not in GAMEMODE_ID_MAP[_version]:
-##            await self.bot.say("Mode {} not recognized for {}".format(mode, version))
-##            return None
-##        if _tank not in TANK_ID_LIST:
-##            await self.bot.say("Tank {} doesn't exist".format(tank))
-##            return None
-##        tank_id = TANK_ID_LIST[_tank]
-##        print(repr(tank_id))
-##        records = WR_RECORDS[_version].get(str(tank_id), None)
-##        if records is None:
-##            await self.bot.say("Error: invalid arguments ({} {} {})".format(version, mode, tank))
-##            return None
-##        index = GAMEMODE_ID_MAP[_version][_mode] % 4 - 1
-##        return records[index]
         
     async def _wr_mode(self, version, mode, tank):
         _version = version.lower()
@@ -164,8 +137,6 @@ class WR:
                      mode: str, score: int, url: str):
         pass
     
-    # http://paste.moepl.eu/view/f80b67e9#L8
-    # http://paste.moepl.eu/view/b4e0490d#L6
     @commands.command()
     async def submitwr(self, name: str, tank: str, version : str, mode: str, score: int, url: str):
         """Submits a potential WR to the WR site
