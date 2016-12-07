@@ -13,18 +13,14 @@ BALL_ANSWERS = ("Yes", "No", "Maybe so", "Definitely", "I think so",
                 "I don't know", "I have no idea",
                 )
 
-def _randbool(weight=0.5):
-    return random.random() < weight
-
 class RNG:
     def __init__(self, bot):
         self.bot = bot
     
     @commands.command(pass_context=True, name="8ball", aliases=['8'])
-    async def ball(self, ctx, *question: str):
+    async def ball(self, ctx, *, question: str):
         """...it's a 8-ball"""
         print(question)
-        question = ' '.join(question)
         user = ctx.message.author.mention
         if question.endswith('?'):
             qfmt = "{}\n:question:: **{}**\n"
@@ -85,7 +81,7 @@ class RNG:
     def _class(self):
         return random.choice(TANKS)
 
-    @random.command(name="class")         
+    @random.command(name="class")
     async def class_(self):
         """Gives you a random class to play"""
         await self.bot.say(self._class())
