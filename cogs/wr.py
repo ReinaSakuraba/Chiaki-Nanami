@@ -29,13 +29,13 @@ async def _load_gamemodes(session):
 # hard-coding the colours because there is no color info of each mode from the webpage
 def _to_colour(r, g, b):
     return r << 16 | g << 8 | b
+
 MODE_COLOURS = {
     'FFA'   : _to_colour(113, 204, 200),
     '2-TDM' : _to_colour(180, 255, 142),
     '4-TDM' : _to_colour(255, 142, 142),
     'Maze ' : _to_colour(181, 142, 255),
     }
-
 
 _alt_tank_names = {
     'anni': 'annihilator',
@@ -56,6 +56,7 @@ def _wr_embed(records):
     for field_name, key in (("Acheieved by", "name"), ("Score", "score"),
                             ("Full Score", "scorefull"),):
         data.add_field(name=field_name, value=records[key])
+        
     approved_date = datetime.strptime(records["approvedDate"],
                                       '%Y-%m-%d %H:%M:%S').date()
     data.add_field(name="Date", value=str(approved_date))
@@ -129,13 +130,6 @@ class WR:
         r = aiohttp.post('https://dieprecords.moepl.eu/api/submit/recordtest', data=payload)
         print(r)
         return r
-
-    async def get(self, version, mode, *tank : str):
-        pass
-
-    async def submit(self, name: str, tank: str, version : str,
-                     mode: str, score: int, url: str):
-        pass
     
     @commands.command()
     async def submitwr(self, name: str, tank: str, version : str, mode: str, score: int, url: str):
