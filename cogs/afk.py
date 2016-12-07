@@ -18,8 +18,6 @@ class AFK:
         self.db[server][member] = msg
 
     def _del_afk(self, server : discord.Server, member : discord.Member):
-        if self.db.get_storage(server) is None:
-            self.db[server] = IDAbleDict()
         try:
             self.db[server].pop(member)
         except KeyError:
