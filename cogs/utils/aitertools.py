@@ -30,10 +30,10 @@ class ACount:
     
 class ACountdown(ACount):
     def __init__(self, limit):
-        ACount.__init__(self, limit, -1)
+        super().__init__(limit, -1)
 
     async def __anext__(self):
         if self.x <= 0:
             raise StopAsyncIteration
         await asyncio.sleep(1)
-        return await ACount.__anext__(self)
+        return await super().__anext__()
