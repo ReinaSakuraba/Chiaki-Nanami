@@ -1,4 +1,3 @@
-import abc
 from itertools import chain as _chain
 
 class TransformedDict(dict):  
@@ -22,7 +21,6 @@ class TransformedDict(dict):
     def _process_args(self, mapping=(), **kwargs):
         if hasattr(mapping, "items"):
             mapping = getattr(mapping, "items")()
-        print(mapping)
         return ((self.__keytransform__(k), v)
                 for k, v in _chain(mapping, getattr(kwargs, "items")()))
     
@@ -50,6 +48,7 @@ class TransformedDict(dict):
 
 # Best used for JSONs
 # Only work around as far as I know
+# Because JSONs only take string keys
 class StrDict(TransformedDict):
     def __keytransform__(self, k):
         return str(k)
