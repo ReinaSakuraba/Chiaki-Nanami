@@ -126,7 +126,7 @@ class WR:
                    'proof': url}
 
         print(payload)
-        r = requests.post('https://dieprecords.moepl.eu/api/submit/recordtest', data=payload)
+        r = aiohttp.post('https://dieprecords.moepl.eu/api/submit/recordtest', data=payload)
         print(r)
         return r
 
