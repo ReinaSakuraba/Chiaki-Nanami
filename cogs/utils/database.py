@@ -38,7 +38,6 @@ class Database(IDAbleDict):
     def dump(self, name=None):
         if name is None:
             name = self.name
-        # print(name, self)
         rnd = str(random.randrange(10 ** TEMP_FILE_NUM_PADDING))
         tmp_fname = "{}-{}.tmp".format(name, rnd.zfill(TEMP_FILE_NUM_PADDING))
         _dump_json(tmp_fname, self)
@@ -61,5 +60,4 @@ class Database(IDAbleDict):
         data = _load_json(filename)
         name = re.search(r".*/(.*)\.json", filename)
         name = name.group(1) if name else 'None'
-        # print(name, data)
         return cls(filename, data)
