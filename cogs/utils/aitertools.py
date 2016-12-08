@@ -9,7 +9,7 @@ class AIterable:
 
     async def __anext__(self):
         try:
-            result = next(self.iterable)
+            result = next(self.aiterable)
         except StopIteration:
             raise StopAsyncIteration
         else:
