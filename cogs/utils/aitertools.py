@@ -26,6 +26,7 @@ class ACount:
 
     async def __anext__(self):
         self.x += self.dx
+        await asyncio.sleep(0)
         return self.x
     
 class ACountdown(ACount):
