@@ -26,15 +26,31 @@ async def _load_gamemodes(session):
             "mobile"  : {d["name"].lower() : d["id"]
                         for d in gm_id_list if d["mobile"] == "1"} }
 
+WR_RELOAD_TIME_SECS = 150
+
+# Best compromise between performance and up-to-date-ness I could think of
+async def load_wr_loop():
+    global wr_records, tank_id_list, gamemode_id_map
+    session = aiohttp.ClientSession()
+    while True:
+        wr_records = await _load_records(session)
+        tank_id_list = await _load_tanks(session)
+        gamemode_id_map = await _load_gamemodes(session)
+        await asyncio.sleep(WR_RELOAD_TIME_SECS)
+
+async def _wr_loop(bot):
+    await bot.wait_until_ready()
+    return await load_wr_loop()
+
 # hard-coding the colours because there is no color info of each mode from the webpage
-def _to_colour(r, g, b):
+def _to_colour_long(r, g, b):
     return r << 16 | g << 8 | b
 
 MODE_COLOURS = {
-    'FFA'   : _to_colour(113, 204, 200),
-    '2-TDM' : _to_colour(180, 255, 142),
-    '4-TDM' : _to_colour(255, 142, 142),
-    'Maze ' : _to_colour(181, 142, 255),
+    'FFA'   : _to_colour_long(113, 204, 200),
+    '2-TDM' : _to_colour_long(180, 255, 142),
+    '4-TDM' : _to_colour_long(255, 142, 142),
+    'Maze'  : _to_colour_long(181, 142, 255),
     }
 
 _alt_tank_names = {
@@ -53,7 +69,7 @@ def _replace_tank(tankname):
 def _wr_embed(records):
     game_mode = records["gamemode"]
     data = discord.Embed(colour=discord.Colour(MODE_COLOURS.get(game_mode, 0)))
-    for field_name, key in (("Acheieved by", "name"), ("Score", "score"),
+    for field_name, key in (("Achieved by", "name"), ("Score", "score"),
                             ("Full Score", "scorefull"),):
         data.add_field(name=field_name, value=records[key])
         
@@ -73,25 +89,27 @@ def _wr_embed(records):
 class WR:
     def __init__(self, bot):
         self.bot = bot
-        self.session = aiohttp.ClientSession()
         
     async def _wr_mode(self, version, mode, tank):
         _version = version.lower()
         _mode = mode.lower()
         _tank = tank.title()
         try:
-           tank_id = (await _load_tanks(self.session))[_tank]
+            tank_id = tank_id_list[_tank]
         except KeyError:
-            return await self.bot.say("Tank {} doesn't exist".format(tank)), False
+            await self.bot.say("Tank {} doesn't exist".format(tank))
+            return None
         try:
-            records = (await _load_records(self.session))[_version]
+            records = wr_records[_version]
         except KeyError:
-            return await self.bot.say("Version {} is not valid".format(version)), False
+            await self.bot.say("Version {} is not valid".format(version))
+            return None
         try:
-            index = (await _load_gamemodes(self.session))[_version][_mode] % 4 - 1
+            index = gamemode_id_map[_version][_mode] % 4 - 1
         except KeyError:
-            return await self.bot.say("Mode {} not recognized for {}".format(mode, version)), False
-        return records[str(tank_id)][index], True
+            await self.bot.say("Mode {} not recognized for {}".format(mode, version))
+            return None
+        return records[str(tank_id)][index]
 
     # This command will be slow because it loads the site everytime
     # Rather than caching it
@@ -108,15 +126,17 @@ class WR:
         """
         if mode.lower() in ('2tdm', '4tdm'):
             mode = mode[0] + '-' + mode[1:]
+        elif mode.lower() == 'tdm':
+            mode = '2-tdm'
         tank = _replace_tank(tank.lower())
-        record, success = await self._wr_mode(version, mode, tank)
-        if success:
-            await self.bot.say("**__{0} {gamemode} {tankname}__**".format(version.title(), **record))
-            embed, extra = _wr_embed(record)
-            await self.bot.say(embed=embed)
-            if extra:
-                await self.bot.say(extra)
-            # await self.bot.say(fmt.format(**record))    
+        record = await self._wr_mode(version, mode, tank)
+        if record is None:
+            return
+        title = "**__{0} {gamemode} {tankname}__**".format(version.title(), **record)
+        embed, extra = _wr_embed(record)
+        await self.bot.say(title, embed=embed)
+        if extra:
+            await self.bot.say(extra)    
 
     def _submit(self, name: str, tankid: int, gamemodeid: int, score: int, url: str):
         payload = {'inputname': name,
@@ -142,8 +162,8 @@ class WR:
         _mode = mode.lower()
 
         response = self._submit(name,
-                                TANK_ID_LIST[_tank.title()],
-                                GAMEMODE_ID_MAP[_vers][_mode],
+                                tank_id_list[_tank.title()],
+                                gamemode_id_map[_vers][_mode],
                                 score,
                                 url)
         msg = ""
@@ -162,12 +182,13 @@ class WR:
 
     @commands.command()
     async def gamemodes(self):
-        desktop_gamemodes = sorted(GAMEMODE_ID_MAP["desktop"].keys())
+        desktop_gamemodes = sorted(gamemode_id_map["desktop"].keys())
         dt_gm_names = map(str.title, desktop_gamemodes)
-        mobile_gamemodes = sorted(GAMEMODE_ID_MAP["mobile"].keys())
+        mobile_gamemodes = sorted(gamemode_id_map["mobile"].keys())
         m_gm_names = map(str.title, mobile_gamemodes)
         fmt = "List of desktop gamemodes:\n{}\n\nList of mobile gamemodes:\n{}"
         await self.bot.say(fmt.format(', '.join(dt_gm_names), ', '.join(m_gm_names)))
         
 def setup(bot):
+    bot.loop.create_task(_wr_loop(bot))
     bot.add_cog(WR(bot))
