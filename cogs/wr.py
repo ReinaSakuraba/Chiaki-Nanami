@@ -111,10 +111,6 @@ class WR:
             return None
         return records[str(tank_id)][index]
 
-    # This command will be slow because it loads the site everytime
-    # Rather than caching it
-    # Saving the records in a dict is obviously faster
-    # But it suffers from not being up-to-date
     @commands.command(aliases=['wr'])
     async def worldrecord(self, version, mode, *, tank : str):
         """Retrieves the world record from the WRA site
