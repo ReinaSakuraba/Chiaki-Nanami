@@ -10,7 +10,7 @@ CC_FILE_NAME = "customcommands.json"
 class CustomReactions:
     def __init__(self, bot):
         self.bot = bot
-        self.db = Database.from_json(DB_FILE_PATH + CC_FILE_NAME, dict)
+        self.db = Database.from_json(DB_FILE_PATH + CC_FILE_NAME, factory_not_top_tier=dict)
 
     @commands.group(aliases=["customcomm", "cc", "cr", "custreact"])
     async def customcommand(self):
