@@ -8,7 +8,8 @@ import traceback
 
 from .transformdict import IDAbleDict
 
-DB_FILE_PATH = 'data/databases/'
+DATA_FOLDER = 'data/'
+DB_FILE_PATH = DATA_FOLDER + 'databases/'
 TEMP_FILE_NUM_PADDING = 8
 
 def _load_json(name):
@@ -31,9 +32,9 @@ class Database(IDAbleDict):
     # perfect Python dict capabilities
     # And pickle's out of the question due to security issues.
     # json sucks.
-    def __init__(self, name, mapping=()):
+    def __init__(self, name, factory_not_top_tier=None, mapping=()):
         self.name = name
-        self._get_dict().__init__(mapping)
+        super().__init__(factory_not_top_tier, mapping)
         self.logger = logging.getLogger("nanami_data")
     
     def dump(self, name=None):
@@ -57,8 +58,8 @@ class Database(IDAbleDict):
         return self.get(server)
         
     @classmethod
-    def from_json(cls, filename):
+    def from_json(cls, filename, path=DB_FILE_PATH, factory_not_top_tier=None):
         data = _load_json(filename)
         name = re.search(r".*/(.*)\.json", filename)
         name = name.group(1) if name else 'None'
-        return cls(filename, data)
+        return cls(filename, factory_not_top_tier, data)
