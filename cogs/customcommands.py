@@ -57,8 +57,8 @@ class CustomReactions:
         await self.bot.say("{} command edited".format(ccid))
         
     async def on_message(self, msg):
-        server = msg.server
-        if not self.db[server]:
+        storage = self.db[msg.server]
+        if not storage:
             return
         reaction = storage.get(msg.content.lower())
         if reaction is not None:
@@ -72,7 +72,7 @@ class CustomReactions:
             return
         self.db["global"][trigger] = msg
 
-    @customcommand.command(pass_context=True)   
+    @customcommand.command(pass_context=True)
     @checks.is_owner()
     async def remg(self, ctx, trigger):
         if not ctx.message.channel.is_private:
