@@ -10,7 +10,7 @@ CC_FILE_NAME = "customcommands.json"
 class CustomReactions:
     def __init__(self, bot):
         self.bot = bot
-        self.db = Database.from_json(DB_FILE_PATH + CC_FILE_NAME)
+        self.db = Database.from_json(DB_FILE_PATH + CC_FILE_NAME, dict)
 
     @commands.group(aliases=["customcomm", "cc", "cr", "custreact"])
     async def customcommand(self):
@@ -22,8 +22,6 @@ class CustomReactions:
         """Adds a new custom reaction/trigger (depending on what bot you use)
         """
         server = ctx.message.server
-        if self.db.get_storage(server) is None:
-            self.db[server] = {}
         print(server)
         if trigger in self.db[server]:
             # TODO: Add multiple custom commands for the same trigger
@@ -39,8 +37,7 @@ class CustomReactions:
     
     @customcommand.command(pass_context=True, aliases=['delete', 'del', 'rem',])
     async def remove(self, ctx, *, ccid : str):
-        storage = self.db.get_storage(ctx.message.server)
-        if storage is None:
+        if self.db[ctx.message.server]:
             return await self.bot.say("There are no commands for this server")
         try:
             storage.pop(ccid.lower())
@@ -61,8 +58,7 @@ class CustomReactions:
         
     async def on_message(self, msg):
         server = msg.server
-        storage = self.db.get_storage(server)
-        if storage is None:
+        if not self.db[server]:
             return
         reaction = storage.get(msg.content.lower())
         if reaction is not None:
