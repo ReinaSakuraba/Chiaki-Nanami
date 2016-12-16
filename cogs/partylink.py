@@ -18,9 +18,17 @@ def _swap_pairs(s):
     return "".join([b+a for a, b in zip_longest(it, it, fillvalue='')])
 
 SERVERS_URL = "http://lb.diep.io/v2/find_servers"
-def _servers_list():
+async def _load_servers_from_site():
     async with aiohttp.get(SERVERS_URL) as response:
-        return _pairwise(response.text().split('\x00'))
+        data = await response.text()
+    servers = _pairwise(data[2:].split('\x00'))
+    return [DiepioServer(*s) for s in servers]
+
+# Rather clunky, but because await must be used in async coroutines
+# I didn't have much of a choice
+async def _produce_server_list():
+    global SERVER_LIST
+    SERVER_LIST = await _load_servers_from_site()
 
 class DiepioServer(namedtuple('DiepioServer', 'ip_port name')):
     _translations = {
@@ -51,8 +59,10 @@ class DiepioServer(namedtuple('DiepioServer', 'ip_port name')):
         m = re.search(r':(.*):', self.name)
         return self._translations.get(m.group(1), 'FFA')
 
-SERVER_LIST = [DiepioServer(*s) for s in _servers_list()]
-del _servers_list
+class LinkServerData(namedtuple('LinkServerData', 'code server')):
+    def is_sandbox(self):
+        print(self.code, self.server.mode)
+        return self.server.mode == 'Sandbox' or len(self.code) == 22
 
 def _find_server_by_ip(ip):
     for server in SERVER_LIST:
@@ -97,9 +107,31 @@ def read_link(link):
     is_sandbox = False
     ip = _ip_from_hex(code[:8])
     server = _find_server_by_ip(ip)
-    print(server)
-    return ("Code: {0}\n"
-            "IP: {1.ip}\n"
-            "Location: {1.location}\n"
-            "Mode: {1.mode}\n"
-            ).format(code, server)
+    if server is None:
+        return None
+    return LinkServerData(code, server)
+
+def on_message_bot(bot):
+    async def on_message(message):
+        links = _extract_links(message.content)
+        if not links:
+            return
+        link_data = list(filter(None, map(read_link, links)))
+        # Prevent posting sandbox links in public chats
+        # Posting links in public chats never seems to end well so I've created a guard for it
+        # TODO: Create a way to re-enable this
+        if any(data.is_sandbox() for data in link_data):
+            await bot.delete_message(message)
+            return await bot.send_message(message.channel,
+                                          "Please DM your sandbox links (unless you want AC)")
+        
+        data_formats = [format_data(data) for data in link_data]
+        if data_formats:
+            pld = "**__PARTY LINK{} DETECTED!__**\n".format('s' * (len(links) != 1))
+            await bot.send_message(message.channel, pld + '\n'.join(data_formats))
+        
+    return on_message
+
+def setup(bot):
+    bot.loop.run_until_complete(_produce_server_list())
+    bot.add_listener(on_message_bot(bot), "on_message")
