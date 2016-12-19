@@ -14,14 +14,9 @@ class Cleverbot:
         bot_member = message.server.get_member(bot_user.id)
         csw = content.startswith
         if not csw(bot_member.mention) or csw(bot_user.mention):
-            print("cancelled")
             return
-        #if author == bot_member:
-        #    return
-        print("getting response")
         response = self.cb_session.ask(message.content)
         fmt = "{0.mention} {1}".format(author, response)
-        print(response)
         await self.bot.send_message(message.channel, fmt)
 
 def setup(bot):
