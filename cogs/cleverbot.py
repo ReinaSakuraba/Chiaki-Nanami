@@ -7,10 +7,10 @@ class Cleverbot:
 
     async def on_message(self, message):
         bot_user = self.bot.user
-        if message.author == bot_user:
-            return
-        content = message.content
         author = message.author
+        content = message.content
+        if author == bot_user:
+            return
         bot_member = message.server.get_member(bot_user.id)
         csw = content.startswith
         if not csw(bot_member.mention) or csw(bot_user.mention):
