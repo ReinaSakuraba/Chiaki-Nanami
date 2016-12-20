@@ -4,7 +4,12 @@ import socket
 import struct
 
 from collections import namedtuple
+from discord.ext import commands
 from itertools import zip_longest
+
+from .utils import checks
+from .utils.database import Database
+
 
 # I would like to tank rjt.rockx (aka Obliterator) for providing me information
 # on how the diep.io party links work. Without him, this wouldn't be possible
@@ -45,6 +50,12 @@ class DiepioServer(namedtuple('DiepioServer', 'ip_port name')):
         'sandbox' : 'Sandbox',
         }
 
+    def _comp_loc_pair(self):
+        location = re.search(r':(.*):', self.name)
+        name = re.sub(r':(.*):', '', self.name)
+        company, delim, region = name.partition('-')
+        return company, region
+    
     @property
     def ip(self):
         return _search(r'(.*):', self.ip_port)
@@ -52,14 +63,19 @@ class DiepioServer(namedtuple('DiepioServer', 'ip_port name')):
     @property
     def port(self):
         return _search(r':(.*)', self.ip_port)
-
+    
+    @property
+    def company(self):
+        return self._comp_loc_pair()[0]
+    
     @property
     def location(self):
-        return re.sub(r':(.*):', '', self.name)
+        return self._comp_loc_pair()[1].title()
     
     @property
     def mode(self):
-        return re.sub(r':(.*):', lambda s: self._translations.get(s, 'FFA'),  self.name)
+        m = re.search(r':(.*):', self.name)
+        return self._translations.get(m.group(1), 'FFA')
 
 class LinkServerData(namedtuple('LinkServerData', 'code server')):
     def is_sandbox(self):
@@ -68,6 +84,7 @@ class LinkServerData(namedtuple('LinkServerData', 'code server')):
 
 def _find_server_by_ip(ip):
     for server in SERVER_LIST:
+        # print(server.ip, ip)
         if ip == server.ip:
             return server
     return None
@@ -82,9 +99,12 @@ def _ip_from_hex(hexs):
 
 def _ip_to_hex(hexs):
     return socket.inet_ntoa(struct.pack("<L", addr_long)[::-1])
-
+    
+def _extract_links(message):
+    return re.findall(r'\s?(diep.io/#[1234567890ABCDEF]*)\s?', message)
+    
 def _extract_code(link):
-    m = re.search(r'diep.io/#(.*)', link)
+    m = re.search(r'\s?diep.io/#([1234567890ABCDEF]*)\s?', link)
     if m:
         return m.group(1)
     return None
@@ -96,44 +116,102 @@ def _is_valid_hex(s):
         return False
     else:
         return True
-    
+
 def _is_valid_party_link(link):
     code = _extract_code(link)
+    # print(code, len(code))
     if len(code) not in (20, 22): return False
     return code and _is_valid_hex(code)
+
+def format_data(data):
+    return ("Code: {0}\n"
+            "IP: {1.ip}\n"
+            "Mode: {1.mode}\n"
+            "Company: {1.company}\n"
+            "Location: {1.location}\n"
+            ).format(data.code, data.server)
 
 def read_link(link):
     if not _is_valid_party_link(link):
         return None
     code = _extract_code(link)
-    is_sandbox = False
+    is_sandbox = len(code) == 22
     ip = _ip_from_hex(code[:8])
     server = _find_server_by_ip(ip)
     if server is None:
         return None
     return LinkServerData(code, server)
 
-def on_message_bot(bot):
-    async def on_message(message):
+def _set_mode_bool(d, key, mode):
+    mode = mode.lower()
+    if mode in ("enable", "true", "1"):
+        d[key] = True
+        return True
+    elif mode in ("disable", "false", "0"):
+        d[key] = False
+        return False
+    return None
+
+class PartyLinks:
+    def __init__(self, bot):
+        self.bot = bot
+        config_default = lambda: {"detect" : True, "delete" : True}
+        self.pl_config_db = Database.from_json("plconfig.json",
+                                               factory_not_top_tier = config_default)
+
+    async def on_message(self, message):
+    #    print(("{0.timestamp} {0.author}: {0.content} ({0.server} in {0.channel.id})"
+    #          ).format(message))
+        server = message.server
+        config = self.pl_config_db[server]
         links = _extract_links(message.content)
+    #    print(links)
         if not links:
             return
         link_data = list(filter(None, map(read_link, links)))
-        # Prevent posting sandbox links in public chats
+    #    print(link_data)
+        # Prevent posting sandbox links in public
         # Posting links in public chats never seems to end well so I've created a guard for it
         # TODO: Create a way to re-enable this
-        if any(data.is_sandbox() for data in link_data):
-            await bot.delete_message(message)
-            return await bot.send_message(message.channel,
-                                          "Please DM your sandbox links (unless you want AC)")
-        
+        if (config["delete"] and
+            any(data.is_sandbox() for data in link_data)):
+            await self.bot.delete_message(message)
+            notif_fmt = ("{.author.mention} Please DM (direct message) "
+                         "your sandbox links, unless you want Arena Closers")
+                         
+            return await self.bot.send_message(message.channel,
+                                               notif_fmt.format(message))
         data_formats = [format_data(data) for data in link_data]
-        if data_formats:
+        if config["detect"] and data_formats:
             pld = "**__PARTY LINK{} DETECTED!__**\n".format('s' * (len(links) != 1))
-            await bot.send_message(message.channel, pld + '\n'.join(data_formats))
-        
-    return on_message
+            await self.bot.send_message(message.channel, pld + '\n'.join(data_formats))
 
+    @commands.group(hidden=True, aliases=['plset'])
+    @checks.admin_or_permissions()
+    async def partylinkset(self):
+        pass
+            
+    @partylinkset.command(pass_context=True)
+    # Just in case.
+    @checks.admin_or_permissions()
+    async def detect(self, ctx, mode : str):
+        result = _set_mode_bool(self.pl_config_db[ctx.message.server], "detect", mode)
+        if result is None:
+            return
+        await self.bot.say("Party link detection {}abled, I think".format("deins"[result::2]))
+
+    @partylinkset.command(pass_context=True)
+    # Just in case.
+    @checks.admin_or_permissions()
+    async def delete(self, ctx, mode : str):
+        """Configures if sandbox party links should be deleted"""
+        result = _set_mode_bool(self.pl_config_db[ctx.message.server], "delete", mode)
+        if result is None:
+            return
+        await self.bot.say("Sandbox link deletion {}abled, I think".format("deins"[result::2]))
+    
+        
 def setup(bot):
     bot.loop.run_until_complete(_produce_server_list())
-    bot.add_listener(on_message_bot(bot), "on_message")
+    pl = PartyLinks(bot)
+    bot.add_cog(pl)
