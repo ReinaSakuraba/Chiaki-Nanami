@@ -30,6 +30,12 @@ async def _produce_server_list():
     global SERVER_LIST
     SERVER_LIST = await _load_servers_from_site()
 
+def _search(pattern, string):
+    try:
+        return re.search(pattern, string).group(1)
+    except AttributeError:
+        return None
+    
 class DiepioServer(namedtuple('DiepioServer', 'ip_port name')):
     _translations = {
         'teams'   : '2-TDM',
@@ -41,23 +47,19 @@ class DiepioServer(namedtuple('DiepioServer', 'ip_port name')):
 
     @property
     def ip(self):
-        m = re.search(r'(.*):', self.ip_port)
-        return m.group(1)
+        return _search(r'(.*):', self.ip_port)
 
     @property
     def port(self):
-        m = re.search(r':(.*)', self.ip_port)
-        return m.group(1)
+        return _search(r':(.*)', self.ip_port)
 
     @property
     def location(self):
-        m = re.search(r':(.*):', self.name)
-        return self.name.replace(m.group(1), '')
+        return re.sub(r':(.*):', '', self.name)
     
     @property
     def mode(self):
-        m = re.search(r':(.*):', self.name)
-        return self._translations.get(m.group(1), 'FFA')
+        return re.sub(r':(.*):', lambda s: self._translations.get(s, 'FFA'),  self.name)
 
 class LinkServerData(namedtuple('LinkServerData', 'code server')):
     def is_sandbox(self):
