@@ -3,7 +3,7 @@ from discord.ext import commands
 import random
 
 def _load_tanks():
-    with open("cats/tanks.txt") as f:
+    with open("data/tanks.txt") as f:
         return f.read().splitlines()
 
 TANKS = _load_tanks()
