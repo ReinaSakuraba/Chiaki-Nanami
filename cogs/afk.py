@@ -2,19 +2,18 @@ import discord
 
 from discord.ext import commands
 from .utils.transformdict import IDAbleDict
-from .utils.database import Database, DB_FILE_PATH
+from .utils.database import Database
 
 AFK_FILE_NAME = "afk.json"
 
 class AFK:
     def __init__(self, bot):
         self.bot = bot
-        self.db = Database.from_json(DB_FILE_PATH + AFK_FILE_NAME)
+        self.db = Database.from_json(AFK_FILE_NAME,
+                                     factory_not_top_tier=IDAbleDict)
 
     def _set_afk(self, server : discord.Server,
                  member : discord.Member, msg : str):
-        if self.db.get_storage(server) is None:
-            self.db[server] = IDAbleDict()
         self.db[server][member] = msg
 
     def _del_afk(self, server : discord.Server, member : discord.Member):
@@ -56,5 +55,4 @@ class AFK:
                 
 def setup(bot):
     afk = AFK(bot)
-    bot.add_listener(afk.on_message, "on_message")
     bot.add_cog(afk)
