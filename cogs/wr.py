@@ -3,7 +3,10 @@ import asyncio
 import discord
 
 from datetime import datetime
+from discord import Colour
 from discord.ext import commands
+
+from .utils import patching
 
 WR_RECORD_URL = 'https://dieprecords.moepl.eu/api/records/json'
 TANK_ID_URL = 'https://dieprecords.moepl.eu/api/tanks'
@@ -44,14 +47,12 @@ async def _wr_loop(bot):
     return await load_wr_loop()
 
 # hard-coding the colours because there is no color info of each mode from the webpage
-def _to_colour_long(r, g, b):
-    return r << 16 | g << 8 | b
 
 MODE_COLOURS = {
-    'FFA'   : _to_colour_long(113, 204, 200),
-    '2-TDM' : _to_colour_long(180, 255, 142),
-    '4-TDM' : _to_colour_long(255, 142, 142),
-    'Maze'  : _to_colour_long(181, 142, 255),
+    'FFA'   : Colour.from_rgb(113, 204, 200),
+    '2-TDM' : Colour.from_rgb(180, 255, 142),
+    '4-TDM' : Colour.from_rgb(255, 142, 142),
+    'Maze'  : Colour.from_rgb(181, 142, 255),
     }
 
 _alt_tank_names = {
@@ -69,7 +70,7 @@ def _replace_tank(tankname):
 
 def _wr_embed(records):
     game_mode = records["gamemode"]
-    data = discord.Embed(colour=discord.Colour(MODE_COLOURS.get(game_mode, 0)))
+    data = discord.Embed(colour=MODE_COLOURS.get(game_mode, Colour.default()))
     for field_name, key in (("Achieved by", "name"), ("Score", "score"),
                             ("Full Score", "scorefull"),):
         data.add_field(name=field_name, value=records[key])
