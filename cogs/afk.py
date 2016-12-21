@@ -54,5 +54,4 @@ class AFK:
                 await self.bot.send_message(message.channel, afk_message)
                 
 def setup(bot):
-    afk = AFK(bot)
-    bot.add_cog(afk)
+    bot.add_cog(AFK(bot))
