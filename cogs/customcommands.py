@@ -37,8 +37,10 @@ class CustomReactions:
     
     @customcommand.command(pass_context=True, aliases=['delete', 'del', 'rem',])
     async def remove(self, ctx, *, ccid : str):
-        if self.db[ctx.message.server]:
-            return await self.bot.say("There are no commands for this server")
+        storage = self.db[ctx.message.server]
+        if not storage:
+            await self.bot.say("There are no commands for this server")
+            return
         try:
             storage.pop(ccid.lower())
         except KeyError:
@@ -48,11 +50,14 @@ class CustomReactions:
 
     @customcommand.command(pass_context=True)
     async def edit(self, ctx, ccid, *, new_react : str):
-        storage = self.db.get_storage(ctx.message.server)
-        if storage is None:
-            return await self.bot.say("There are no commands for this server")
+        server = ctx.message.server
+        storage = self.db[server]
+        if not storage:
+            await self.bot.say("There are no commands for this server")
+            return
         if ccid not in storage:
             return await self.bot.say("Command {} doesn't ~~edit~~ exits".format(ccid))
+
         self.db[server][ccid.lower()] = new_react
         await self.bot.say("{} command edited".format(ccid))
 
