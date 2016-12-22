@@ -55,7 +55,7 @@ class Database(IDAbleDict):
         os.replace(tmp_fname, name + ".json")
         return True
 
-    @discord.utils.deprecated("db.get(id)"):
+    @discord.utils.deprecated("db.get(id)")
     def get_storage(self, id_ : str):
         return self.get(id_)
         
