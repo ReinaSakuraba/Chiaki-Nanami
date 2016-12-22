@@ -37,9 +37,10 @@ class Database(IDAbleDict):
         super().__init__(factory_not_top_tier, mapping)
         self.logger = logging.getLogger("nanami_data")
     
-    def dump(self, name=None):
+    def dump(self, name=None, path=DB_PATH):
         if name is None:
             name = self.name
+        name = path + name
         rnd = str(random.randrange(10 ** TEMP_FILE_NUM_PADDING))
         tmp_fname = "{}-{}.tmp".format(name, rnd.zfill(TEMP_FILE_NUM_PADDING))
         _dump_json(tmp_fname, self)
@@ -51,25 +52,22 @@ class Database(IDAbleDict):
                                   "The original file is unaltered."
                                   "".format(filename))
             return False
-        os.replace(tmp_fname, name)
+        os.replace(tmp_fname, name + ".json")
         return True
-    
-    def get_storage(self, server : discord.Server):
-        return self.get(server)
+
+    @discord.utils.deprecated("db.get(id)"):
+    def get_storage(self, id_ : str):
+        return self.get(id_)
         
     @classmethod
     def from_json(cls, filename, path=DB_PATH, factory_not_top_tier=None):
         data = _load_json(path + filename)
-        print(os.path)
         name = os.path.splitext(filename)[0]
-#        name = re.search(r".*/(.*)\.json", filename)
-#        name = name.group(1) if name else 'None'
         return cls(name, factory_not_top_tier, data)
 
 def check_data_dir(dir_):
     os.makedirs(DATA_PATH + dir_, exist_ok=True)
-
-    
+  
 def check_database_dir(dir_):
     os.makedirs(DB_PATH + dir_, exist_ok=True)
     
