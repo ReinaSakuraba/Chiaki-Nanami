@@ -4,13 +4,13 @@
 #from collections import namedtuple
 from discord.ext import commands
 from .utils import checks
-from .utils.database import Database, DB_FILE_PATH
+from .utils.database import Database
 
 CC_FILE_NAME = "customcommands.json"
 class CustomReactions:
     def __init__(self, bot):
         self.bot = bot
-        self.db = Database.from_json(DB_FILE_PATH + CC_FILE_NAME, factory_not_top_tier=dict)
+        self.db = Database.from_json(CC_FILE_NAME, factory_not_top_tier=dict)
 
     @commands.group(aliases=["customcomm", "cc", "cr", "custreact"])
     async def customcommand(self):
