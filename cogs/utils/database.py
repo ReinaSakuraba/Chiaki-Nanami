@@ -1,15 +1,15 @@
 import discord
 import json
 import logging
-import os
+import os, os.path
 import random
 import re
 import traceback
 
 from .transformdict import IDAbleDict
 
-DATA_FOLDER = 'data/'
-DB_FILE_PATH = DATA_FOLDER + 'databases/'
+DATA_PATH = 'data/'
+DB_PATH = DATA_PATH + 'databases/'
 TEMP_FILE_NUM_PADDING = 8
 
 def _load_json(name):
@@ -58,8 +58,18 @@ class Database(IDAbleDict):
         return self.get(server)
         
     @classmethod
-    def from_json(cls, filename, path=DB_FILE_PATH, factory_not_top_tier=None):
-        data = _load_json(filename)
-        name = re.search(r".*/(.*)\.json", filename)
-        name = name.group(1) if name else 'None'
-        return cls(filename, factory_not_top_tier, data)
+    def from_json(cls, filename, path=DB_PATH, factory_not_top_tier=None):
+        data = _load_json(path + filename)
+        print(os.path)
+        name = os.path.splitext(filename)[0]
+#        name = re.search(r".*/(.*)\.json", filename)
+#        name = name.group(1) if name else 'None'
+        return cls(name, factory_not_top_tier, data)
+
+def check_data_dir(dir_):
+    os.makedirs(DATA_PATH + dir_, exist_ok=True)
+
+    
+def check_database_dir(dir_):
+    os.makedirs(DB_PATH + dir_, exist_ok=True)
+    
