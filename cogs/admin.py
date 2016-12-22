@@ -24,11 +24,10 @@ class Admin:
             'message': ctx.message,
             'server': ctx.message.server,
             'channel': ctx.message.channel,
-            'author': ctx.message.author
+            'author': ctx.message.author,
+            **globals()
         }
 
-        env.update(globals())
-        code = compile(code, 'debug', 'exec')
         try:
             result = eval(code, env)
             if inspect.isawaitable(result):
