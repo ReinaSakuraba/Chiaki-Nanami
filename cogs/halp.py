@@ -81,5 +81,4 @@ class Help:
         await default_help(ctx, lambda s: _str_swap(s[::-1].upper(), '(', ')'), *commands)
 
 def setup(bot):
-    print("Setup")
     bot.add_cog(Help(bot))
