@@ -2,6 +2,7 @@ from discord import Colour
 
 from ..utils import patching
 
+# hard-coding the colours because there is no color info of each mode from the webpage
 MODE_COLOURS = {
     'FFA'     : Colour.from_rgb(113, 204, 200),
     '2-TDM'   : Colour.from_rgb(180, 255, 142),

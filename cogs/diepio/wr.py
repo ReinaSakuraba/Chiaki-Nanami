@@ -45,16 +45,16 @@ async def _wr_loop(bot):
     await bot.wait_until_ready()
     return await load_wr_loop()
 
-# hard-coding the colours because there is no color info of each mode from the webpage
-
 _alt_tank_names = {
     'anni': 'annihilator',
     'autosmasher': 'auto smasher', 'auto-smasher': 'auto smasher',
     'mg': 'booster',
+    'necro': 'necromancer',
     'octo': 'octo tank', 'octo-tank' : 'octo tank',
     'pentashot': 'penta shot', 'penta': 'penta shot', 'penta-shot': 'penta shot',
     'spread': 'spread shot', 'spreadshot': 'spread shot',
     'triangle': 'tri-angle',
+    'tritrapper': 'tri-trapper',
        }
 
 def _replace_tank(tankname):
@@ -74,6 +74,8 @@ def _wr_embed(records):
     if "youtube" in submitted_url:
         # No clean way to set the video yet
         rest = submitted_url
+    elif not (submitted_url.endswith('.png') or submitted_url.endswith('.jpg')):
+        rest = submitted_url   
     else:
         data.set_image(url=submitted_url)
         rest = ""
