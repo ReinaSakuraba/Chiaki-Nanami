@@ -11,6 +11,7 @@ from itertools import zip_longest
 from . import utils
 from ..utils import checks
 from ..utils.database import Database
+from ..utils.misc import lazy_property
 
 
 # I would like to tank rjt.rockx (aka Obliterator) for providing me information
@@ -36,6 +37,7 @@ async def _load_servers_from_site():
 async def _produce_server_list():
     global SERVER_LIST
     SERVER_LIST = await _load_servers_from_site()
+    return True
 
 def _search(pattern, string):
     try:
@@ -51,37 +53,40 @@ class DiepioServer(namedtuple('DiepioServer', 'ip_port name')):
         'maze'    : 'Maze',
         'sandbox' : 'Sandbox',
         }
-
-    def _comp_loc_pair(self):
-        location = re.search(r':(.*):', self.name)
-        name = re.sub(r':(.*):', '', self.name)
-        company, delim, region = name.partition('-')
-        return company, region
+    
+    @lazy_property
+    def _server(self):
+        return re.match(r'([a-z]*)-([a-z]*):?(.*):', self.name).groups()
+    
+    @lazy_property
+    def _ip_port(self):
+        return re.match(r'(.*):(.*)', self.ip_port).groups()
     
     @property
     def ip(self):
-        return _search(r'(.*):', self.ip_port)
+        return self._ip_port[0]
 
     @property
     def port(self):
-        return _search(r':(.*)', self.ip_port)
+        return self._ip_port[1]
     
     @property
     def company(self):
-        return self._comp_loc_pair()[0]
+        return self._server[0].title()
     
     @property
     def location(self):
-        return self._comp_loc_pair()[1].title()
+        return self._server[1]
     
     @property
     def mode(self):
-        s = _search(r':(.*):', self.name)
-        return self._translations.get(s, 'FFA')
+        print(self._server[2])
+        return self._translations.get(self._server[2], 'FFA')
 
 class LinkServerData(namedtuple('LinkServerData', 'code server')):
     def is_sandbox(self):
-        return self.server.mode == 'Sandbox' or len(self) == 22
+        print(self.code_length)
+        return self.server.mode == 'Sandbox' or self.code_length > 20
 
     def format(self):
         return ("Code: {0.code}\n"
@@ -90,7 +95,6 @@ class LinkServerData(namedtuple('LinkServerData', 'code server')):
                 "Mode: {1.mode}\n"
                 "Company: {1.company}\n"
                 "Location: {1.location}\n"
-                "Room: {0.room}\n"
                 ).format(self, self.server)
 
     @property
@@ -100,14 +104,17 @@ class LinkServerData(namedtuple('LinkServerData', 'code server')):
     @property
     def link(self):
         return "http://diep.io/#" + self.code
-    
-    @property
-    def room(self):
-        return int(self.code[-2:], 16) if self.is_sandbox() else None
+
+    # This is wrong.
+    # For some reason, sandbox links can be 24 chars
+    # Which makes the last few chars even more confusing
+##    @property
+##    def room(self):
+##        return int(self.code[-2:], 16) if self.is_sandbox() else None
 
     @property
     def embed(self):
-        attrs = ["code", "code_length",  "room",]
+        attrs = ["code", "code_length",]
         server_attrs = ["ip", "mode", "company", "location",]
         embed = discord.Embed(title=self.link,
                               colour=utils.mode_colour(self.server.mode))
@@ -118,10 +125,7 @@ class LinkServerData(namedtuple('LinkServerData', 'code server')):
         return embed
 
 def _find_server_by_ip(ip):
-    for server in SERVER_LIST:
-        if ip == server.ip:
-            return server
-    return None
+    return discord.utils.get(SERVER_LIST, ip=ip)
 
 def _hex_to_int(hexs):
     return int(hexs, 16)
@@ -131,17 +135,14 @@ def _ip_from_hex(hexs):
     addr_long = _hex_to_int(new_hex)
     return socket.inet_ntoa(struct.pack("<L", addr_long)[::-1])
 
-def _ip_to_hex(hexs):
-    return socket.inet_ntoa(struct.pack("<L", addr_long)[::-1])
+def _ip_to_hex(ip):
+    hexes = []
     
 def _extract_links(message):
     return re.findall(r'\s?(diep.io/#[1234567890ABCDEF]*)\s?', message)
     
 def _extract_code(link):
-    m = re.search(r'\s?diep.io/#([1234567890ABCDEF]*)\s?', link)
-    if m:
-        return m.group(1)
-    return None
+    return _search(r'\s?diep.io/#([1234567890ABCDEF]*)\s?', link)
   
 def _is_valid_hex(s):
     try:
@@ -151,16 +152,20 @@ def _is_valid_hex(s):
     else:
         return True
 
-def _is_valid_party_link(link):
-    code = _extract_code(link)
-    # print(code, len(code))
-    if len(code) not in (20, 22): return False
-    return code and _is_valid_hex(code)
+def _is_valid_party_code(code):
+    if not code:
+        return False
+    code_len = len(code)
+    if code_len % 2:
+        return False
+    if not 20 <= code_len <= 24:
+        return False
+    return _is_valid_hex(code)
 
 def read_link(link):
-    if not _is_valid_party_link(link):
-        return None
     code = _extract_code(link)
+    if not _is_valid_party_code(code):
+        return None
     is_sandbox = len(code) == 22
     ip = _ip_from_hex(code[:8])
     server = _find_server_by_ip(ip)
@@ -186,34 +191,29 @@ class PartyLinks:
                                                factory_not_top_tier = config_default)
 
     async def on_message(self, message):
-    #    print(("{0.timestamp} {0.author}: {0.content} ({0.server} in {0.channel.id})"
-    #          ).format(message))
         server = message.server
         config = self.pl_config_db[server]
         links = _extract_links(message.content)
-    #    print(links)
         if not links:
             return
         link_data = list(filter(None, map(read_link, links)))
-    #    print(link_data)
         # Prevent posting sandbox links in public
         # Posting links in public chats never seems to end well so I've created a guard for it
-        # TODO: Create a way to re-enable this
         if (config["delete"] and
             any(data.is_sandbox() for data in link_data)):
-            pass
+            print("Sandbox Link!")
             await self.bot.delete_message(message)
             notif_fmt = ("{.author.mention} Please DM (direct message) "
                          "your sandbox links, unless you want Arena Closers")
                          
             return await self.bot.send_message(message.channel,
                                                notif_fmt.format(message))
+       
         data_formats = [data.format() for data in link_data]
-        
         if config["detect"] and data_formats:
             pld = "**__PARTY LINK{} DETECTED!__**\n".format('s' * (len(links) != 1))
             await self.bot.send_message(message.channel, pld)
-            # Let's hope there's a way to send multiple embeds soon
+            # Let's hope there's a way to send multiple embeds in one message soon
             for em in (data.embed for data in link_data):
                 await self.bot.send_message(message.channel, embed=em)
 
@@ -243,6 +243,10 @@ class PartyLinks:
     
         
 def setup(bot):
-    bot.loop.run_until_complete(_produce_server_list())
+    import asyncio
+    if bot.loop.is_running():
+        asyncio.run_coroutine_threadsafe(_produce_server_list(), client.loop)
+    else:
+        bot.loop.run_until_complete(_produce_server_list())
     pl = PartyLinks(bot)
     bot.add_cog(pl)
