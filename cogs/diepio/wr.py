@@ -4,6 +4,7 @@ import discord
 
 from datetime import datetime
 from discord.ext import commands
+from hashlib import md5
 
 from . import utils
 
@@ -32,27 +33,27 @@ async def _load_gamemodes(session):
 WR_RELOAD_TIME_SECS = 150
 
 # Best compromise between performance and up-to-date-ness I could think of
-async def load_wr_loop():
+async def load_wr_loop(bot):
+    await bot.wait_until_ready()
     global wr_records, tank_id_list, gamemode_id_map
-    session = aiohttp.ClientSession()
-    while True:
+    session = bot.http.session
+    while not bot.is_closed:
         wr_records = await _load_records(session)
         tank_id_list = await _load_tanks(session)
         gamemode_id_map = await _load_gamemodes(session)
         await asyncio.sleep(WR_RELOAD_TIME_SECS)
 
-async def _wr_loop(bot):
-    await bot.wait_until_ready()
-    return await load_wr_loop()
-
 _alt_tank_names = {
     'anni': 'annihilator',
     'autosmasher': 'auto smasher', 'auto-smasher': 'auto smasher',
+    'autotrapper': 'auto trapper', 'auto-trapper': 'auto trapper',
     'mg': 'booster',
+    'master': 'factory',
     'necro': 'necromancer',
     'octo': 'octo tank', 'octo-tank' : 'octo tank',
     'pentashot': 'penta shot', 'penta': 'penta shot', 'penta-shot': 'penta shot',
-    'spread': 'spread shot', 'spreadshot': 'spread shot',
+    'pandatank': 'predator', 'th3pandatank': 'predator', 'noahth3pandatank': 'predator',
+    'spread': 'spread shot', 'spreadshot': 'spread shot', 'spread-shot': 'spread shot',
     'triangle': 'tri-angle',
     'tritrapper': 'tri-trapper',
        }
@@ -60,9 +61,21 @@ _alt_tank_names = {
 def _replace_tank(tankname):
     return _alt_tank_names.get(tankname, tankname)
 
+def _get_wiki_image(tank):
+    tank = tank.replace(" ", "_")
+    tank_pic = tank + ".png"
+    tank_md5 = md5(tank_pic.encode('utf-8')).hexdigest()
+    return ("https://hydra-media.cursecdn.com/diepio.gamepedia.com/{}/{}/{}"
+            ).format(tank_md5[0], tank_md5[:2], tank_pic)
+
 def _wr_embed(records):
     game_mode = records["gamemode"]
     data = discord.Embed(colour=utils.mode_colour(game_mode))
+    
+    url = _get_wiki_image(records["tankname"])
+    print(url)
+    data.set_thumbnail(url=url)
+    
     for field_name, key in (("Achieved by", "name"), ("Score", "score"),
                             ("Full Score", "scorefull"),):
         data.add_field(name=field_name, value=records[key])
@@ -71,6 +84,7 @@ def _wr_embed(records):
                                       '%Y-%m-%d %H:%M:%S').date()
     data.add_field(name="Date", value=str(approved_date))
     submitted_url = records["submittedlink"]
+    
     if "youtube" in submitted_url:
         # No clean way to set the video yet
         rest = submitted_url
@@ -172,6 +186,7 @@ class WR:
         """Site of the WRA"""
         await self.bot.say('https://dieprecords.moepl.eu/')
 
+    # TODO: Make this look pretty
     @commands.command()
     async def gamemodes(self):
         desktop_gamemodes = sorted(gamemode_id_map["desktop"].keys())
@@ -180,7 +195,12 @@ class WR:
         m_gm_names = map(str.title, mobile_gamemodes)
         fmt = "List of desktop gamemodes:\n{}\n\nList of mobile gamemodes:\n{}"
         await self.bot.say(fmt.format(', '.join(dt_gm_names), ', '.join(m_gm_names)))
+
+    @commands.command()
+    async def tanks(self):
+        tanks = sorted(tank_id_list.keys())
+        await self.bot.say(', '.join(tanks))
         
 def setup(bot):
-    bot.loop.create_task(_wr_loop(bot))
+    bot.loop.create_task(load_wr_loop(bot))
     bot.add_cog(WR(bot))
