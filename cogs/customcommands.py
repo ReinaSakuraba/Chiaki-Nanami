@@ -61,14 +61,14 @@ class CustomReactions:
         self.db[server][ccid.lower()] = new_react
         await self.bot.say("{} command edited".format(ccid))
 
-    @customcommand.command(pass_context=True)
+    @customcommand.command(pass_context=True, hidden=True)
     @checks.is_owner()
     async def addg(self, ctx, trigger, *, msg : str):
         if not ctx.message.channel.is_private:
             return
         self.db["global"][trigger] = msg
 
-    @customcommand.command(pass_context=True)
+    @customcommand.command(pass_context=True, hidden=True)
     @checks.is_owner()
     async def remg(self, ctx, trigger):
         if not ctx.message.channel.is_private:
