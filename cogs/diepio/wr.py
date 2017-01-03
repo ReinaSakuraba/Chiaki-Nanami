@@ -220,8 +220,8 @@ class WR:
                 return l_or_d.values()
             except AttributeError:
                 return l_or_d
-        current_list = sorted(get_records(records["current"]), key=itemgetter("tank"))
-        former_list  = sorted(get_records(records["former"]),  key=itemgetter("tank"))
+        current = sorted(get_records(records["current"]), key=itemgetter("tank"))
+        former  = sorted(get_records(records["former"]),  key=itemgetter("tank"))
         
         if not (current or former):
             await self.bot.say("I can't find records for {} :(".format(name))
@@ -230,11 +230,11 @@ class WR:
         def sort_records(records, mobile):
             return [rec for rec in records if mobile == int(rec["mobile"])]
          
-        desktop_current = sort_records(current_list, False)
-        mobile_current  = sort_records(current_list, True)
+        desktop_current = sort_records(current, False)
+        mobile_current  = sort_records(current, True)
          
-        desktop_former = sort_records(former_list, False)
-        mobile_former  = sort_records(former_list, True)
+        desktop_former = sort_records(former, False)
+        mobile_former  = sort_records(former, True)
            
         def mapper(record):
             return "__{tank} {gamemode}__ | {score} |  {submittedlink}".format(**record)
