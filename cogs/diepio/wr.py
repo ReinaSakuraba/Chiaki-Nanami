@@ -1,10 +1,13 @@
 import aiohttp
 import asyncio
 import discord
+import sys
 
 from datetime import datetime
 from discord.ext import commands
 from hashlib import md5
+from itertools import chain
+from operator import itemgetter
 
 from . import utils
 
@@ -189,6 +192,7 @@ class WR:
     # TODO: Make this look pretty
     @commands.command()
     async def gamemodes(self):
+        """All the gamemodes for diep.io"""
         desktop_gamemodes = sorted(gamemode_id_map["desktop"].keys())
         dt_gm_names = map(str.title, desktop_gamemodes)
         mobile_gamemodes = sorted(gamemode_id_map["mobile"].keys())
@@ -198,8 +202,63 @@ class WR:
 
     @commands.command()
     async def tanks(self):
+        """All the tanks for diep.io"""
         tanks = sorted(tank_id_list.keys())
         await self.bot.say(', '.join(tanks))
+        
+    @commands.command()
+    async def records(self, *, name: str):
+        """Finds all the diep.io WRs for a particular name"""
+        records = await _load_json(self.bot.http.session,
+                                  'https://dieprecords.moepl.eu/api/recordsByName/' + name)
+        
+        current = records["current"]
+        former  = records["former"]
+        try:
+            current_list = sorted(current.values(), key=itemgetter("tank"))
+            former_list  = sorted(former.values(),  key=itemgetter("tank"))
+        except AttributeError:      # It's probably a list
+            current_list = sorted(current, key=itemgetter("tank"))
+            former_list  = sorted(former,  key=itemgetter("tank"))
+            
+        if not (current or former):
+            await self.bot.say("I can't find records for {} :(".format(name))
+            return
+         
+        def sort_records(records, mobile):
+            return [rec for rec in records if mobile == int(rec["mobile"])]
+         
+        desktop_current = sort_records(current_list, False)
+        mobile_current  = sort_records(current_list, True)
+         
+        desktop_former = sort_records(former_list, False)
+        mobile_former  = sort_records(former_list, True)
+           
+        def mapper(record):
+            return "__{tank} {gamemode}__ | {score} |  {submittedlink}".format(**record)
+         
+        def lines(header, records):
+            return [header.format(len(records))] + list(map(mapper, records))
+         
+        headers = [f"**__{name}__**", f"**Current World Records**: {len(current)}"]
+        desktop_current_str = lines("**Desktop**: {}", desktop_current)
+        mobile_current_str  = lines("**Mobile**: {}",  mobile_current)
+        former_header = ["-" * 20, f"**Former World Records**: {len(former)}"]
+        desktop_former_str  = lines("**Desktop**: {}", desktop_former)
+        mobile_former_str   = lines("**Mobile**: {}",  mobile_former)
+        
+        # TODO: Make this mnuch cleaner
+        page = []
+        message_len = 0
+        for line in chain(headers, desktop_current_str, mobile_current_str,
+                          former_header, desktop_former_str, mobile_former_str):
+            page.append(line)
+            message_len += len(line)
+            if message_len > 1500:
+                await self.bot.say("\n".join(page))
+                message_len = 0
+                page.clear()
+        await self.bot.say("\n".join(page))
         
 def setup(bot):
     bot.loop.create_task(load_wr_loop(bot))
