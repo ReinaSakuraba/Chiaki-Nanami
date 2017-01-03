@@ -62,7 +62,7 @@ def _case_embed(cases, action, target, actioner, reason,
     return embed
 
 class SlowmodeUpdater:
-    __slots__ = ('duration', 'users_last_message')
+    __slots__ = ('seconds', 'users_last_message')
     def __init__(self):
         self.seconds = 0
         self.users_last_message = {}
@@ -282,7 +282,7 @@ class Moderator:
     @checks.admin_or_permissions(kick_members=True)
     async def kick(self, ctx, member: discord.Member, *, reason: str="idk no one put a reason"):
         """Kicks a user (obviously)
-
+     
         Because of the reason parameter, if you don't want to mention the user 
         you must put the user in quotes if you're gonna put a reason
         e.g. kick "Junko Enoshima#6666" Too much despair
