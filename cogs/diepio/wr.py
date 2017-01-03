@@ -212,15 +212,17 @@ class WR:
         records = await _load_json(self.bot.http.session,
                                   'https://dieprecords.moepl.eu/api/recordsByName/' + name)
         
-        current = records["current"]
-        former  = records["former"]
-        try:
-            current_list = sorted(current.values(), key=itemgetter("tank"))
-            former_list  = sorted(former.values(),  key=itemgetter("tank"))
-        except AttributeError:      # It's probably a list
-            current_list = sorted(current, key=itemgetter("tank"))
-            former_list  = sorted(former,  key=itemgetter("tank"))
-            
+        # For some reason the recordsByName api uses either
+        # a list or a dict for current/former records
+        # We must account for both
+        def get_records(l_or_d):
+            try:
+                return l_or_d.values()
+            except AttributeError:
+                return l_or_d
+        current_list = sorted(get_records(records["current"]), key=itemgetter("tank"))
+        former_list  = sorted(get_records(records["former"]),  key=itemgetter("tank"))
+        
         if not (current or former):
             await self.bot.say("I can't find records for {} :(".format(name))
             return
