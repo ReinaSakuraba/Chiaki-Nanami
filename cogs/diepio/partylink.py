@@ -54,11 +54,11 @@ class DiepioServer(namedtuple('DiepioServer', 'ip_port name')):
         'sandbox' : 'Sandbox',
         }
     
-    @lazy_property
+    @discord.utils.cached_property
     def _server(self):
         return re.match(r'([a-z]*)-([a-z]*):?(.*):', self.name).groups()
     
-    @lazy_property
+    @discord.utils.cached_property
     def _ip_port(self):
         return re.match(r'(.*):(.*)', self.ip_port).groups()
     
@@ -212,9 +212,9 @@ class PartyLinks:
         data_formats = [data.format() for data in link_data]
         if config["detect"] and data_formats:
             pld = "**__PARTY LINK{} DETECTED!__**\n".format('s' * (len(links) != 1))
-            await self.bot.send_message(message.channel, pld)
+            await self.bot.send_message(message.channel, pld, embed=link_data[0].embed)
             # Let's hope there's a way to send multiple embeds in one message soon
-            for em in (data.embed for data in link_data):
+            for em in (data.embed for data in link_data[1:]):
                 await self.bot.send_message(message.channel, embed=em)
 
     @commands.group(hidden=True, aliases=['plset'])
