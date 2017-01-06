@@ -1,10 +1,11 @@
 import aiohttp
+import enum
 import imghdr
 import os
 import random
 import xml.etree.cElementTree as et
 
-from discord import utils
+from discord import utils, Colour, Status
 
 def code_say(bot, msg):
     return bot.say(code_msg(msg))
@@ -19,6 +20,19 @@ def cycle_shuffle(iterable):
         for element in saved:
               yield element
               
+      
+status_colors = {
+    Status.online         : Colour(0x43b581),
+    Status.offline        : Colour(0x747f8d),
+    Status.idle           : Colour(0xfaa61a),
+    Status.dnd            : Colour(0xf04747),
+    Status.do_not_disturb : Colour(0xf04747),
+    Status.invisible      : Colour(0x747f8d), 
+    }       
+
+def status_color(status):
+    return status_colors.get(status, Colour.default())
+
 def filter_attr(iterable, **attrs):
     def predicate(elem):
         for attr, val in attrs.items():
@@ -33,6 +47,7 @@ def filter_attr(iterable, **attrs):
 
     return filter(predicate, iterable)
 
+@utils.deprecated("discord.utils.cached_property")
 class lazy_property(object):
     '''
     Meant to be used for lazy evaluation of an object attribute.
