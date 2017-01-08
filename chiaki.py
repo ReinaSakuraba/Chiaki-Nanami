@@ -301,7 +301,7 @@ def main():
 
     config = load_config()
 #    bot.loop.create_task(change_role_color())
-    bot.run(config["token"])
+    bot.run(sys.argv[1])
         
 
 if __name__ == '__main__':
