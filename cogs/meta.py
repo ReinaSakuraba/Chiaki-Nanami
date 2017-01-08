@@ -1,11 +1,13 @@
 import discord
 import itertools
 import json
+import os
 
 from discord.ext import commands
 from operator import attrgetter, itemgetter
 
-from .utils.misc import str_join, filter_attr, status_color
+from .utils import converter
+from .utils.misc import str_join, filter_attr, status_color, image_from_url
 
 def _user_embed(member):
     avatar_url = member.avatar_url or member.default_avatar_url
@@ -31,7 +33,10 @@ async def _mee6_stats(session, member: discord.member):
     async with session.get(f"https://mee6.xyz/levels/{server.id}?json=1&limit=-1") as r:
         levels = await r.json()
     players = levels["players"]
-    user_stats = discord.utils.find(lambda e: e["id"] == member.id, players)
+    user_stats = discord.utils.find(lambda e: e.get("id") == member.id, players)
+    # Because lists start at 0
+    if not user_stats:
+        return None
     user_stats["rank"] = players.index(user_stats) + 1
     return user_stats
     
@@ -74,7 +79,11 @@ class Meta:
         await ctx.invoke(self.userinfo, member=member)
         
     @info.command(pass_context=True, no_pm=True)
-    async def mee6(self, ctx, *, member: discord.Member=None):
+    async def mee6(self, ctx, *, member: converter.ApproximateUser=None):
+        await ctx.invoke(self.rank, member=member)
+    
+    @commands.command(pass_context=True, no_pm=True)
+    async def rank(self, ctx, *, member: converter.ApproximateUser=None):
         """Gets mee6 info... if it exists"""
         if member is None:
             member = ctx.message.author
@@ -85,9 +94,12 @@ class Meta:
         except json.JSONDecodeError:
             await self.bot.say("No stats found. You don't have mee6 in this server... I think.")
             return
+        if not stats:
+            await self.bot.say(f"This user ({member}) does not have a mee6 level. :frowning:")
+            return
             
         description = f"Currently sitting at {stats['rank']}!"
-        xp_progress = "{xp}/{lvl_xp} ({xp_percent}%!)".format(**stats)
+        xp_progress = "{xp}/{lvl_xp} ({xp_percent}%)".format(**stats)
         xp_remaining = stats['lvl_xp'] - stats['xp'] 
         
         mee6_embed = discord.Embed(colour=member.colour, description=description)
@@ -97,7 +109,7 @@ class Meta:
         mee6_embed.add_field(name="Level", value=stats['lvl'])
         mee6_embed.add_field(name="Total XP", value=stats['total_xp'])
         mee6_embed.add_field(name="Level XP",  value=xp_progress)
-        mee6_embed.add_field(name="XP Remaining",  value=xp_remaining)
+        mee6_embed.add_field(name="XP Remaining to next level",  value=xp_remaining)
         mee6_embed.set_footer(text=f"ID: {member.id}")
         
         await self.bot.say(embed=mee6_embed)
@@ -154,7 +166,24 @@ class Meta:
                                  if getattr(role.permissions, perm_attr)]                                
         role_fmt = "```css\n{}```"
         await self.bot.say(fmt + role_fmt.format(str_join(', ', roles_that_have_perms)))
-
+        
+    @commands.command(pass_context=True, aliases=['av'])
+    async def avatar(self, ctx, *, user : converter.ApproximateUser=None):
+        if user is None:
+            user = ctx.message.author
+            
+        nick = ' ({})'.format(user.nick) * (user.nick is not None)
+        av_fmt = f"**{user.name}#{user.discriminator}{nick}'s avatar**" 
+        avatar_url = user.avatar_url or user.default_avatar_url
+        avatar = user.avatar or user.default_avatar
+        
+        # Pay no attention to this ugliness
+        image, name = await image_from_url(avatar_url, avatar, self.bot.http.session)
+        print(image, type(image))
+        await self.bot.send_file(ctx.message.channel, name, content=av_fmt)
+        os.remove(name)
+        image.close()
+        
 def setup(bot):
     print("meta setup")
     bot.add_cog(Meta(bot))
