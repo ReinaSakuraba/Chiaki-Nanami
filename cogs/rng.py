@@ -1,6 +1,9 @@
 import asyncio
-from discord.ext import commands
+import colorsys
+import discord
 import random
+
+from discord.ext import commands
 
 def _load_tanks():
     with open("data/tanks.txt") as f:
@@ -94,6 +97,20 @@ class RNG:
         cwass = self._class()
         build = self._build_str(points, cwass in SMASHERS)
         await self.bot.say('{} {}'.format(build, cwass))
+
+    @random.command(aliases=['color'])
+    async def colour(self):
+        colour_long = random.randrange(255 ** 3)
+        colour = discord.Colour(colour_long)
+        r, g, b = colour.to_tuple()
+        colour_embed = discord.Embed(title=str(colour),
+                                     colour=colour)
+        colour_embed.add_field(name="RGB", value=', '.join(map(str, (r, g, b))))
+        h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
+        hsv = [round(h * 360, 3), round(s * 100, 3), round(v * 100, 3)]
+        colour_embed.add_field(name="HSV", value=', '.join(map(str, hsv)))
+        await self.bot.say(embed=colour_embed)
+
 
 def setup(bot):
     bot.add_cog(RNG(bot))
