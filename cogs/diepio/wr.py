@@ -49,7 +49,7 @@ async def load_wr_loop(bot):
 _alt_tank_names = {
     'anni': 'annihilator',
     'anokuu': 'necromancer',
-    'autogunner': 'auto gunner'
+    'autogunner': 'auto gunner',
     'autosmasher': 'auto smasher', 
     'auto-smasher': 'auto smasher',
     'autotrapper': 'auto trapper',
