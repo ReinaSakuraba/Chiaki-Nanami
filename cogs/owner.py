@@ -8,6 +8,7 @@ from .utils.misc import code_msg
 
 class Owner:
     """Owner-only commands"""
+    __prefix__ = ">>>"
     def __init__(self, bot):
         self.bot = bot
 
@@ -49,9 +50,9 @@ class Owner:
 
         await self.bot.say(python.format(result))
 
-    @commands.command(hidden=True)
+    @commands.command(hidden=True, aliases=['sbg'])
     @checks.is_owner()
-    async def playing(self, *, game: str):
+    async def setbotgame(self, *, game: str):
         """Changes the playing status (the "playing <game> thing under the user's name)"""
         await self.bot.change_presence(game=discord.Game(name=game))
         await self.bot.say("Game changed to {}".format(game))
@@ -77,6 +78,11 @@ class Owner:
     async def botav(self, *, new_avatar: str):
         with open(new_avatar, 'rb') as f:
             await self.bot.edit_profile(avatar=f.read())
+            
+    @commands.command(hidden=True)
+    @checks.is_owner()
+    async def close(self):
+        pass
         
 def setup(bot):
     bot.add_cog(Owner(bot))
