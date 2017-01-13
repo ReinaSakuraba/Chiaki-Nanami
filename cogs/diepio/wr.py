@@ -51,11 +51,7 @@ _alt_tank_names = {
     'anni': 'annihilator',
     'anokuu': 'necromancer',
     'autogunner': 'auto gunner',
-<<<<<<< HEAD
     'autosmasher': 'auto smasher',
-=======
-    'autosmasher': 'auto smasher', 
->>>>>>> de1fd7396ff92c8c83b52649194be6a22413c2f8
     'auto-smasher': 'auto smasher',
     'autotrapper': 'auto trapper',
     'auto-trapper': 'auto trapper',
