@@ -3,6 +3,7 @@ import asyncio
 import discord
 import sys
 
+from collections import OrderedDict
 from datetime import datetime
 from discord.ext import commands
 from hashlib import md5
@@ -18,7 +19,7 @@ GAMEMODE_ID_URL = 'https://dieprecords.moepl.eu/api/gamemodes'
 async def _load_json(session, url):
     async with session.get(url) as r:
         return await r.json()
-    
+
 async def _load_records(session):
     return await _load_json(session, WR_RECORD_URL)
 
@@ -49,37 +50,44 @@ async def load_wr_loop(bot):
 _alt_tank_names = {
     'anni': 'annihilator',
     'anokuu': 'necromancer',
-    'autogunner': 'auto gunner'
-    'autosmasher': 'auto smasher', 
+    'autogunner': 'auto gunner',
+    'autosmasher': 'auto smasher',
     'auto-smasher': 'auto smasher',
     'autotrapper': 'auto trapper',
     'auto-trapper': 'auto trapper',
     'basic': 'basic tank',
+    'buf': 'penta shot',
+    'buff': 'penta shot',
+    'cancer': 'booster',
+    'cancer 2': 'necromancer',
     'junko': 'destroyer',
     'junko enoshima': 'destroyer',
     'master': 'factory',
     'mg': 'booster',
     'necro': 'necromancer',
     'noahth3pandatank': 'predator',
-    'octo': 'octo tank', 
+    'octo': 'octo tank',
     'octo-tank' : 'octo tank',
     'penta': 'penta shot',
-    'pentashot': 'penta shot',  
+    'pentashot': 'penta shot',
     'penta-shot': 'penta shot',
-    'pandatank': 'predator', 
-    'spread': 'spread shot', 
-    'spreadshot': 'spread shot', 
+    'pandatank': 'predator',
+    'spread': 'spread shot',
+    'spreadshot': 'spread shot',
     'spread-shot': 'spread shot',
     'tank': 'basic tank',
-    'th3pandatank': 'predator', 
+    'th3pandatank': 'predator',
     'triangle': 'tri-angle',
     'tritrapper': 'tri-trapper',
+    'tri trapper': 'tri-trapper',
        }
 
 def _replace_tank(tankname):
     return _alt_tank_names.get(tankname, tankname)
 
 def _get_wiki_image(tank):
+    if tank == "Basic Tank":
+        tank = "Tank"
     tank = tank.replace(" ", "_")
     tank_pic = tank + ".png"
     tank_md5 = md5(tank_pic.encode('utf-8')).hexdigest()
@@ -89,25 +97,25 @@ def _get_wiki_image(tank):
 def _wr_embed(records):
     game_mode = records["gamemode"]
     data = discord.Embed(colour=utils.mode_colour(game_mode))
-    
+
     url = _get_wiki_image(records["tankname"])
     print(url)
     data.set_thumbnail(url=url)
-    
+
     for field_name, key in (("Achieved by", "name"), ("Score", "score"),
                             ("Full Score", "scorefull"),):
         data.add_field(name=field_name, value=records[key])
-        
+
     approved_date = datetime.strptime(records["approvedDate"],
                                       '%Y-%m-%d %H:%M:%S').date()
     data.add_field(name="Date", value=str(approved_date))
     submitted_url = records["submittedlink"]
-    
+
     if "youtube" in submitted_url:
         # No clean way to set the video yet
         rest = submitted_url
     elif not (submitted_url.endswith('.png') or submitted_url.endswith('.jpg')):
-        rest = submitted_url   
+        rest = submitted_url
     else:
         data.set_image(url=submitted_url)
         rest = ""
@@ -117,7 +125,7 @@ def _wr_embed(records):
 class WR:
     def __init__(self, bot):
         self.bot = bot
-        
+
     async def _wr_mode(self, version, mode, tank):
         _version = version.lower()
         _mode = mode.lower()
@@ -125,19 +133,32 @@ class WR:
         try:
             tank_id = tank_id_list[_tank]
         except KeyError:
-            await self.bot.say("Tank {} doesn't exist".format(tank))
+            await self.bot.say(f"Tank **{tank}** doesn't exist")
             return None
         try:
             records = wr_records[_version]
         except KeyError:
-            await self.bot.say("Version {} is not valid".format(version))
+            await self.bot.say(f"Version **{version}** is not valid")
             return None
         try:
             index = gamemode_id_map[_version][_mode] % 4 - 1
         except KeyError:
-            await self.bot.say("Mode {} not recognized for {}".format(mode, version))
+            await self.bot.say(f"Mode **{mode}** not recognized for {version}")
             return None
         return records[str(tank_id)][index]
+
+    async def _wr_tank(self, tank):
+        _tank = tank.title()
+        try:
+            tank_id = tank_id_list[_tank]
+        except KeyError:
+            await self.bot.say("Tank {} doesn't exist".format(tank))
+            return None
+
+        desktop_records = sorted(wr_records["desktop"][str(tank_id)], key=itemgetter("gamemode_id"))
+        mobile_records = sorted(wr_records["mobile"][str(tank_id)], key=itemgetter("gamemode_id"))
+
+        return desktop_records, mobile_records
 
     @commands.command(aliases=['wr'])
     async def worldrecord(self, version, mode, *, tank : str):
@@ -152,28 +173,62 @@ class WR:
             mode = mode[0] + '-' + mode[1:]
         elif mode.lower() == 'tdm':
             mode = '2-tdm'
-        tank = _replace_tank(tank.lower())
-        record = await self._wr_mode(version, mode, tank)
+        tank_alias = _replace_tank(tank.lower())
+        record = await self._wr_mode(version, mode, tank_alias)
         if record is None:
             return
-        title = "**__{0} {gamemode} {tankname}__**".format(version.title(), **record)
+
+        tank_true = f" ({tank.title()})" * (tank_alias.lower() != tank.lower())
+        title = "**__{0} {gamemode} {tankname}{1}__**".format(version.title(), tank_true, **record)
         embed, extra = _wr_embed(record)
         await self.bot.say(title, embed=embed)
         if extra:
-            await self.bot.say(extra)    
+            await self.bot.say(extra)
 
-    def _submit(self, name: str, tankid: int, gamemodeid: int, score: int, url: str):
+    @commands.command()
+    async def wrtank(self, *, tank : str):
+        """Gives a summary of the WRs for a particular tank
+
+        Use ->wr for the full info of a particular WR (proof, date, and full score)
+        """
+
+        tank_alias = _replace_tank(tank.lower())
+        record = await self._wr_tank(tank_alias)
+        if record is None:
+            return
+        desktop, mobile = record
+        tank_true = f" ({tank.title()})" * (tank_alias.lower() != tank.lower())
+        title = f"**__{tank_alias.title()}{tank_true}__**"
+
+        def embed_from_iterable(title, records):
+            embed = discord.Embed(title=title.title())
+            url = _get_wiki_image(tank_alias.title())
+            embed.set_thumbnail(url=url)
+            for record in records:
+                line = "{name}\n**{score}**".format(**record)
+                embed.add_field(name=record["gamemode"], value=line)
+            embed.set_footer(text=f'Type "->wr {title} <gamemode> {tank}" for the full WR info')
+            return embed
+
+        desktop_embed = embed_from_iterable("desktop", desktop)
+        mobile_embed = embed_from_iterable("mobile", mobile)
+
+        await self.bot.say(title, embed=desktop_embed)
+        await self.bot.say(embed=mobile_embed)
+
+    async def _submit(self, name: str, tankid: int, gamemodeid: int, score: int, url: str):
         payload = {'inputname': name,
                    'gamemode_id': gamemodeid,
                    'selectclass': tankid,
                    'score': score,
                    'proof': url}
 
+        session = self.bot.http.session
         print(payload)
-        r = aiohttp.post('https://dieprecords.moepl.eu/api/submit/recordtest', data=payload)
+        r = await session.post('https://dieprecords.moepl.eu/api/submit/recordtest', data=payload)
         print(r)
         return r
-    
+
     @commands.command()
     async def submitwr(self, name: str, tank: str, version : str, mode: str, score: int, url: str):
         """Submits a potential WR to the WR site
@@ -181,22 +236,31 @@ class WR:
         The name and tank should be in quotes if you intend on putting spaces in either parameter
         (eg if you're gonna submit a WR under Junko Enoshima you should enter it as "Junko Enoshima")
         """
-        _tank = _replace_tank(tank)
-        _vers = version.lower()
-        _mode = mode.lower()
+        tank_ = _replace_tank(tank)
+        vers_ = version.lower()
+        mode_ = mode.lower()
+        record = await self._wr_mode(vers_, mode_, tank_)
 
-        response = self._submit(name,
-                                tank_id_list[_tank.title()],
-                                gamemode_id_map[_vers][_mode],
-                                score,
-                                url)
+        if record is None:
+            return
+
+        full_score = record["scorefull"]
+        if score < full_score:
+            await self.bot.say(f"Your score ({score}) is too low. The WR is {full_score}.")
+            return
+
+        response = await self._submit(name,
+                                      tank_id_list[_tank.title()],
+                                      gamemode_id_map[_vers][_mode],
+                                      score,
+                                      url)
         msg = ""
         print(response.text)
         '''
         if (response.text != 'Too Many Attempts.'):
             pass
         else:
-            msg = 'Sorry, there have been too many attempts to submit records from this bot. Please try the website directly.'  
+            msg = 'Sorry, there have been too many attempts to submit records from this bot. Please try the website directly.'
         await self.bot.say(msg, delete_after=60)
         '''
 
@@ -220,13 +284,13 @@ class WR:
         """All the tanks for diep.io"""
         tanks = sorted(tank_id_list.keys())
         await self.bot.say(', '.join(tanks))
-        
-    @commands.command()
-    async def records(self, *, name: str):
+
+    @commands.command(pass_context=True)
+    async def records(self, ctx, *, name: str):
         """Finds all the diep.io WRs for a particular name"""
         records = await _load_json(self.bot.http.session,
                                   'https://dieprecords.moepl.eu/api/recordsByName/' + name)
-        
+
         # For some reason the recordsByName api uses either
         # a list or a dict for current/former records
         # We must account for both
@@ -237,46 +301,48 @@ class WR:
                 return l_or_d
         current = sorted(get_records(records["current"]), key=itemgetter("tank"))
         former  = sorted(get_records(records["former"]),  key=itemgetter("tank"))
-        
+
         if not (current or former):
             await self.bot.say("I can't find records for {} :(".format(name))
             return
-         
+
         def sort_records(records, mobile):
             return [rec for rec in records if mobile == int(rec["mobile"])]
-         
+
         desktop_current = sort_records(current, False)
         mobile_current  = sort_records(current, True)
-         
+
         desktop_former = sort_records(former, False)
         mobile_former  = sort_records(former, True)
-           
+
         def mapper(record):
-            return "__{tank} {gamemode}__ | {score} |  {submittedlink}".format(**record)
-         
+            return "__{tank} {gamemode}__ | {score} |  <{submittedlink}>".format(**record)
+
         def lines(header, records):
             return [header.format(len(records))] + list(map(mapper, records))
-         
+
         headers = [f"**__{name}__**", f"**Current World Records**: {len(current)}"]
         desktop_current_str = lines("**Desktop**: {}", desktop_current)
         mobile_current_str  = lines("**Mobile**: {}",  mobile_current)
         former_header = ["-" * 20, f"**Former World Records**: {len(former)}"]
         desktop_former_str  = lines("**Desktop**: {}", desktop_former)
         mobile_former_str   = lines("**Mobile**: {}",  mobile_former)
-        
-        # TODO: Make this mnuch cleaner
-        page = []
-        message_len = 0
+
+        paginator = commands.Paginator(prefix='', suffix='')
         for line in chain(headers, desktop_current_str, mobile_current_str,
                           former_header, desktop_former_str, mobile_former_str):
-            page.append(line)
-            message_len += len(line)
-            if message_len > 1500:
-                await self.bot.say("\n".join(page))
-                message_len = 0
-                page.clear()
-        await self.bot.say("\n".join(page))
-        
+            paginator.add_line(line)
+
+        author = ctx.message.author
+        channel = ctx.message.channel
+        pages = paginator.pages
+        destination = author if len(pages) >= 2 else channel
+
+        if destination == channel:
+            await self.bot.say("The records has been sent to your private messages due to the length")
+        for page in pages:
+            await self.bot.send_message(destination, page)
+
 def setup(bot):
     bot.loop.create_task(load_wr_loop(bot))
     bot.add_cog(WR(bot))
