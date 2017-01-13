@@ -1,5 +1,7 @@
+import argparse
 import discord
 import inspect
+import shlex
 import traceback
 
 from discord.ext import commands
@@ -50,12 +52,23 @@ class Owner:
 
         await self.bot.say(python.format(result))
 
+    @commands.command(hidden=True)
+    @checks.is_owner()
+    async def editbot(self, *, args: str):
+        parser = argparse.ArgumentParser(description="Edit me in cool ways")
+
     @commands.command(hidden=True, aliases=['sbg'])
     @checks.is_owner()
     async def setbotgame(self, *, game: str):
         """Changes the playing status (the "playing <game> thing under the user's name)"""
         await self.bot.change_presence(game=discord.Game(name=game))
         await self.bot.say("Game changed to {}".format(game))
+
+    @commands.command(hidden=True)
+    @checks.is_owner()
+    async def botav(self, *, new_avatar: str):
+        with open(new_avatar, 'rb') as f:
+            await self.bot.edit_profile(avatar=f.read())
 
     @commands.command(hidden=True)
     @checks.is_owner()
@@ -70,19 +83,14 @@ class Owner:
 
     @commands.command(hidden=True)
     @checks.is_owner()
-    async def load(self, cog: str):
-        self.bot.load_extension(cog)
+    async def unload(self, cog: str):
+        self.bot.unload_extension(cog)
 
-    @commands.command(hidden=True)
+    @commands.command(hidden=True, aliases=['kys'])
     @checks.is_owner()
-    async def botav(self, *, new_avatar: str):
-        with open(new_avatar, 'rb') as f:
-            await self.bot.edit_profile(avatar=f.read())
-            
-    @commands.command(hidden=True)
-    @checks.is_owner()
-    async def close(self):
-        pass
-        
+    async def die(self):
+        """Shuts me down. **Bot Owner** only."""
+        raise KeyboardInterrupt("Chiaki shut down from command")
+
 def setup(bot):
     bot.add_cog(Owner(bot))
