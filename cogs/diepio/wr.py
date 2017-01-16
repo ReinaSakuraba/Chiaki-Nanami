@@ -46,6 +46,9 @@ async def load_wr_loop(bot):
         tank_id_list = await _load_tanks(session)
         gamemode_id_map = await _load_gamemodes(session)
         await asyncio.sleep(WR_RELOAD_TIME_SECS)
+        
+def tanks():
+    return sorted(tank_id_list.keys())
 
 _alt_tank_names = {
     'anni': 'annihilator',
@@ -224,7 +227,6 @@ class WR:
                    'proof': url}
 
         session = self.bot.http.session
-        print(payload)
         r = await session.post('https://dieprecords.moepl.eu/api/submit/recordtest', data=payload)
         print(r)
         return r
@@ -282,8 +284,8 @@ class WR:
     @commands.command()
     async def tanks(self):
         """All the tanks for diep.io"""
-        tanks = sorted(tank_id_list.keys())
-        await self.bot.say(', '.join(tanks))
+        
+        await self.bot.say(', '.join(tanks()))
 
     @commands.command(pass_context=True)
     async def records(self, ctx, *, name: str):
@@ -338,7 +340,7 @@ class WR:
         pages = paginator.pages
         destination = author if len(pages) >= 2 else channel
 
-        if destination == channel:
+        if destination == author:
             await self.bot.say("The records has been sent to your private messages due to the length")
         for page in pages:
             await self.bot.send_message(destination, page)
