@@ -12,7 +12,7 @@ QUOTE_FILE_NAME = "quotes.json"
 class Quotes:
     def __init__(self, bot):
         self.bot = bot
-        self.quotes_db = Database.from_json(QUOTE_FILE_NAME, factory_not_top_tier=list)
+        self.quotes_db = Database.from_json(QUOTE_FILE_NAME, default_factory=list)
 
     def _quote_num(self, ctx, num):
         try:

@@ -10,7 +10,7 @@ class AFK:
     def __init__(self, bot):
         self.bot = bot
         self.db = Database.from_json(AFK_FILE_NAME,
-                                     factory_not_top_tier=IDAbleDict)
+                                     default_factory=IDAbleDict)
 
     def _set_afk(self, server : discord.Server,
                  member : discord.Member, msg : str):

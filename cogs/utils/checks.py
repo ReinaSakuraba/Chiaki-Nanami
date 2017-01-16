@@ -6,7 +6,7 @@ from .database import Database
 
 server_role_default = lambda: {"admin": [], "moderator": []}
 server_roles = Database.from_json("admin/adminsandmods.json",
-                                  factory_not_top_tier=server_role_default)
+                                  default_factory=server_role_default)
 
 def add_admin_role(server, role):
     server_roles[server]["admin"].append(role.id)
@@ -61,7 +61,6 @@ def role_predicate(ctx, role):
     role_ids = server_roles[ctx.message.server][role]
     role = discord.utils.find((lambda r: r.id in role_ids), author.roles)
     
-
 def roles_or_perms_predicate(ctx, *roles, **perms):
     return roles_predicate(ctx, *roles) or permissions_predicate(ctx, **perms)
 

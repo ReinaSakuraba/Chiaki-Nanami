@@ -2,9 +2,9 @@ import discord
 import json
 import logging
 import os, os.path
-import random
 import re
 import traceback
+
 
 from .transformdict import IDAbleDict
 
@@ -20,10 +20,6 @@ def _load_json(name):
         return {}
 
 def _dump_json(name, data):
-    with open(name, encoding='utf-8', mode="w") as f:
-        json.dump(data, f, indent=4, sort_keys=True,
-            separators=(',', ' : '))
-    
 class Database(IDAbleDict):
     # json sucks.
     # My idea was to put the actual discord objects (such as the actual server)
@@ -32,18 +28,26 @@ class Database(IDAbleDict):
     # perfect Python dict capabilities
     # And pickle's out of the question due to security issues.
     # json sucks.
-    def __init__(self, name, factory_not_top_tier=None, mapping=()):
+    def __init__(self, name, default_factory=None, mapping=(), **kwargs):
         self.name = name
-        super().__init__(factory_not_top_tier, mapping)
+        super().__init__(default_factory, mapping)
         self.logger = logging.getLogger("nanami_data")
+        # Pay no attention to this copyness
+        self.object_hook = kwargs.pop('object_hook', None)
+        self.encoder = kwargs.pop('encoder', None)
+        self.lock = asyncio.Lock()
+        
+    def __repr__(self):
+        return ("Database(name={0.name}, default_factory={0.default_factory},\n"
+                "object_hook={0.object_hook}, encoder={0.encoder})").format(self)
     
-    def dump(self, name=None, path=DB_PATH):
-        if name is None:
-            name = self.name
-        name = path + name
-        rnd = str(random.randrange(10 ** TEMP_FILE_NUM_PADDING))
-        tmp_fname = "{}-{}.tmp".format(name, rnd.zfill(TEMP_FILE_NUM_PADDING))
-        _dump_json(tmp_fname, self)
+    def _dump(self, path=DB_PATH):
+        name = path + self.name
+        tmp_fname = f'{name}-{uuid.uuid4()}.tmp'
+        with open(name, encoding='utf-8', mode="w") as f:
+            json.dump(data, f, indent=4, sort_keys=True,
+                separators=(',', ' : '), object_hook=self.object_hook)
+    
         try:
             _load_json(tmp_fname)
         except json.decoder.JSONDecodeError:
@@ -54,16 +58,19 @@ class Database(IDAbleDict):
             return False
         os.replace(tmp_fname, name + ".json")
         return True
+    
+    async def dump(self, path=DB_PATH):
+        with await self.lock:
+            await self.loop.run_in_executor(None, self._dump, path)
 
     @discord.utils.deprecated("db.get(id)")
     def get_storage(self, id_ : str):
         return self.get(id_)
         
     @classmethod
-    def from_json(cls, filename, path=DB_PATH, factory_not_top_tier=None):
+    def from_json(cls, filename, path=DB_PATH, default_factory=None):
         data = _load_json(path + filename)
-        name = os.path.splitext(filename)[0]
-        return cls(name, factory_not_top_tier, data)
+        return cls(filename, default_factory, data)
 
 def check_data_dir(dir_):
     os.makedirs(DATA_PATH + dir_, exist_ok=True)

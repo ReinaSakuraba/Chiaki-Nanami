@@ -4,8 +4,8 @@ from itertools import chain as _chain
 class TransformedDict(_defaultdict):  
     __slots__ = ()
     
-    def __init__(self, factory_not_top_tier=None, mapping=(), **kwargs):
-        super().__init__(factory_not_top_tier, self._process_args(mapping, **kwargs))
+    def __init__(self, default_factory=None, mapping=(), **kwargs):
+        super().__init__(default_factory, self._process_args(mapping, **kwargs))
 
     def __getitem__(self, k):
         return super().__getitem__(self.__keytransform__(k))

@@ -12,7 +12,7 @@ CC_FILE_NAME = "customcommands.json"
 class CustomReactions:
     def __init__(self, bot):
         self.bot = bot
-        self.db = Database.from_json(CC_FILE_NAME, factory_not_top_tier=dict)
+        self.db = Database.from_json(CC_FILE_NAME, default_factory=dict)
 
     def _pages(self, server):
         pages = []
@@ -78,6 +78,7 @@ class CustomReactions:
     @customcommand.command(pass_context=True)
     @checks.admin_or_permissions()
     async def edit(self, ctx, ccid, *, new_react : str):
+        ccid = ccid.lower()
         server = ctx.message.server
         storage = self.db[server]
         if not storage:

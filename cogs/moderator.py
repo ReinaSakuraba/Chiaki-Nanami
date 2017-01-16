@@ -46,6 +46,14 @@ def _full_duration(durations):
     print(durations, list(_pairwise(durations)))
     return sum(_parse_duration(d, u) for d, u in _pairwise(durations))
 
+def _full_succinct_duration(secs):
+	m, s = divmod(secs, 60)
+	h, m = divmod(m, 60)
+	d, h = divmod(h, 24)
+	w, d = divmod(d, 7)
+	unit_list = [(w, 'weeks'), (d, 'days'), (h, 'hours'), (m, 'mins'), (s, 'seconds')]
+	return ', '.join(f"{n} {u}" for n, u in unit_list if n)
+
 def _case_embed(num, action, target, actioner, reason,
                 color: discord.Colour, time=None):
     if time is None:
@@ -67,6 +75,10 @@ class SlowmodeUpdater:
         self.seconds = 0
         self.users_last_message = {}
 
+    def reset(self):
+        self.seconds = 0
+        self.users_last_message.clear()
+
 class ServerWarn:
     __slots__ = ('warn_limit', 'users_last_message')
     def __init__(self):
@@ -76,18 +88,22 @@ class ServerWarn:
 
 MOD_FOLDER = "mod/"
 class Moderator:
+    """Moderator-related commands
+
+    Most of these require the Moderator role (defined by =>addmodrole) or the right permissions
+    """
     def __init__(self, bot):
         self.bot = bot
         self.muted_roles_db = Database.from_json(MOD_FOLDER + "mutedroles.json")
         self.muted_users_db = Database.from_json(MOD_FOLDER + "mutedusers.json",
-                                                 factory_not_top_tier=dict)
+                                                 default_factory=dict)
         self.cases_db = Database.from_json(MOD_FOLDER + "case-action.json",
-                                           factory_not_top_tier=dict)
+                                           default_factory=dict)
         self.slowmodes = defaultdict(SlowmodeUpdater)
         self.slowonlys = defaultdict(dict)
         server_warn_default = lambda: {"warn_limit": 2, "users_warns" : Counter()}
         self.warns_db = Database.from_json(MOD_FOLDER + "warns.json",
-                                           factory_not_top_tier=server_warn_default)
+                                           default_factory=server_warn_default)
         self.bot.loop.create_task(self.update_muted_users())
 
     async def _create_muted_role(self, server):
@@ -112,7 +128,7 @@ class Moderator:
             role = discord.utils.get(server.roles, id=role_id)
             return role or self._get_muted_role(server)
 
-    async def _make_case(self, action, msg, target, reason, color):
+    async def _make_case(self, action, msg, target, reason, color, **kwargs):
         server_cases = self.cases_db[msg.server]
         if not server_cases:
             print("no server_cases")
@@ -125,8 +141,11 @@ class Moderator:
                                  action, target, msg.author,
                                  reason, color
                                  )
+        if kwargs.get('mod'):
+            (case_embed.set_field_at(1, name="Duration", value=kwargs.get("duration"))
+                       .add_field(name="Reason", value=reason, inline=False))
         server_cases["case_num"] += 1
-        await self.bot.send_message(msg.channel, embed=case_embed)
+        await self.bot.send_message(case_channel, embed=case_embed)
 
 
     async def _mute(self, member):
@@ -154,7 +173,7 @@ class Moderator:
                     last_time = time(status["time"], "%Y-%m-%d %H:%M:%S.%f")
 
                     # yay for hax
-                    if (now - last_time).seconds >= status["duration"]:
+                    if (now - last_time).total_seconds() >= status["duration"]:
                         member = server.get_member(member_id)
                         await self._unmute(member)
 
@@ -189,13 +208,12 @@ class Moderator:
                f"They must wait {secs} seconds before they can send another message")
         await self.bot.say(fmt)
 
-
     @commands.command(pass_context=True, aliases=['slowoff'])
     @checks.mod_or_permissions(manage_messages=True)
     async def slowmodeoff(self, ctx):
         """Puts the channel out of slowmode"""
         channel = ctx.message.channel
-        self.slowmodes[channel].seconds = 0
+        self.slowmodes[channel].reset()
         fmt = "{.mention} is no longer in slow mode, I think. :sweat_smile:"
         await self.bot.say(fmt.format(channel))
 
@@ -217,7 +235,7 @@ class Moderator:
         slowmode = self.slowmodes[channel]
         message_time = message.timestamp
         last_time = slowmode.users_last_message.get(author, None)
-        if last_time is None or (message_time - last_time).seconds >= slowmode.seconds:
+        if last_time is None or (message_time - last_time).total_seconds() >= slowmode.seconds:
             slowmode.users_last_message[author] = message_time
             await asyncio.sleep(0)
         else:
@@ -232,42 +250,52 @@ class Moderator:
 
         message_time = message.timestamp
         last_time = slowonly_user["last_time"]
-        if (message_time - last_time).seconds >= slowonly_user["duration"]:
+        if (message_time - last_time).total_seconds() >= slowonly_user["duration"]:
             slowonly_user["last_time"] = message_time
             await asyncio.sleep(0)
         else:
             await self.bot.delete_message(message)
 
+    async def _clear(self, channel, *, limit=100, check=None):
+        try:
+            deleted = await self.bot.purge_from(channel, limit=limit, check=check)
+        except discord.Forbidden:
+            await self.bot.say("I don't have the right perms to clear messages.")
+            return None
+        except discord.HTTPException:
+            await self.bot.say("Deleting the messages failed, somehow.")
+            return None
+        else:
+            return deleted
+
     #TODO: Make separate commands from number vs member
     @commands.command(pass_context=True, no_pm=True)
     @checks.mod_or_permissions(manage_messages=True)
-    async def clear(self, ctx, *rest):
-        number = min(parse_int(rest[0]), 1000)
+    async def clear(self, ctx, *, rest: str):
         msg = ctx.message
+        number = parse_int(rest)
         #Is it a number?
-        if number < 1 or number is None:
+        if number is None:
             #Maybe it's a user?
-            if not msg.mentions:
+            try:
+                user = commands.UserConverter(ctx, rest).convert()
+            except commands.BadArgument:
                 return
-            user = msg.mentions[0]
-            if not user:
-                return
-            del_msg = await self.bot.purge_from(
-                msg.channel,
-                check=lambda m: m.author.id == user.id
-                )
+            deleted = await self._clear(msg.channel, check=lambda m: m.author.id == user.id)
         else:
-            del_msg = await self.bot.purge_from(msg.channel, limit=number+1)
-        message_number = len(del_msg) - 1
-        confirm_message = await self.bot.send_message(
-            msg.channel,
-            "`Deleted {} message{}!`".format(
-                message_number,
-                "s"*(message_number != 1)
-            )
+            if number < 1:
+                await self.bot.say("How can I delete {number} messages...?")
+                return
+            deleted = await self._clear(msg.channel, limit=min(number, 1000) + 1)
+        deleted_count = len(deleted) - 1
+        is_plural = 's'*(deleted_count != 1)
+        await self.bot.say(
+            f"Deleted {deleted_count} message{is_plural} successfully!",
+            delete_after=1.5
         )
-        await asyncio.sleep(1.5)
-        await self.bot.delete_message(confirm_message)
+
+    async def clear_num(self, ctx, num):
+        pass
 
     # Because of the reason parameter
     # If you don't want to mention the member
@@ -307,9 +335,6 @@ class Moderator:
         server = message.server
 
         print(durations)
-##        if not message.mentions:
-##            return
-##        member = message.mentions[0]
         await self._mute(member)
         server_mutes = self.muted_users_db[server]
         duration = _full_duration(durations)
@@ -320,15 +345,16 @@ class Moderator:
             }
 
         server_mutes[member.id] = data
-
+        full_succinct_duration = _full_succinct_duration(duration)
         await self.bot.send_message(
             message.channel,
             ("{} has now been muted by {} "
-             "for {} seconds, Reason: {}").format(member.mention,
-                                                  message.author.mention,
-                                                  duration, reason)
+             "for {}. Reason: {}").format(member.mention,
+                                          message.author.mention,
+                                          full_succinct_duration, reason)
             )
-        await self._make_case("was muted", message, member, reason, 0)
+        await self._make_case("was muted :no_mouth:", message, member, 
+                             reason, 0, mod=True, duration=full_succinct_duration)
         #self._set_perms_for_mute(member, False, True)
 
     async def on_member_join(self, member):
@@ -406,12 +432,12 @@ class Moderator:
         try:
             await self.bot.unban(ctx.message.server, member)
         except discord.Forbidden:
-            await self.bot.say("I don't have the permission to ban members, I think.")
+            await self.bot.say("I don't have the permission to unban members, I think.")
         except discord.HTTPException:
-            await self.bot.say("Banning failed. I don't know what happened.")
+            await self.bot.say("Unbanning failed. I don't know what happened.")
         else:
-            await self.bot.say("Done, please don't make me do that again.")
-            await self._make_case("was unbanned :hammer:", ctx.message,
+            await self.bot.say(f"Done. What did {member.mention} do to get banned in the first place?")
+            await self._make_case("was unbanned :slight_smile:", ctx.message,
                                   member, reason, 0xAA1111)
 
     @commands.group(pass_context=True, no_pm=True)
