@@ -22,11 +22,11 @@ class Admin:
     def __init__(self, bot):
         self.bot = bot
         self.self_roles = Database.from_json("admin/selfroles.json",
-                                             factory_not_top_tier=list)
+                                             default_factory=list)
 
     def __unload(self):
-        checks.server_roles.dump()
-        self.self_roles.dump()
+        self.bot.loop.run_until_complete(checks.server_roles.dump())
+        self.bot.loop.run_until_complete(self.self_roles.dump())
 
     @commands.command(name='addadminrole', pass_context=True, aliases=['aar'])
     @checks.admin_or_permissions(manage_server=True)
@@ -147,20 +147,21 @@ class Admin:
         self_roles = self.self_roles[ctx.message.server]
         if role.id not in self_roles:
             await self.bot.say("That role is not self-assignable... :neutral_face:")
-            return
+            return False
         await role_action(member, role)
+        return True
 
     @commands.command(pass_context=True, no_pm=True)
     async def iam(self, ctx, *, role: discord.Role):
         """Gives a self-assignable role (and only a self-assignable role) to yourself."""
-        await self._self_role(ctx.message.author, self.bot.add_roles)
-        await self.bot.say(f"You are now **{role}**... I think.")
+        if await self._self_role(ctx.message.author, self.bot.add_roles):
+            await self.bot.say(f"You are now **{role}**... I think.")
 
     @commands.command(pass_context=True, no_pm=True)
     async def iamnot(self, ctx, *, role: discord.Role):
         """Removes a self-assignable role (and only a self-assignable role) to yourself."""
-        await self._self_role(ctx.message.author, self.bot.remove_roles)
-        await self.bot.say(f"You are no longer **{role}**... probably.")
+        if await self._self_role(ctx.message.author, self.bot.remove_roles):
+            await self.bot.say(f"You are no longer **{role}**... probably.")
 
     @commands.command(pass_context=True, no_pm=True)
     async def selfrole(self, ctx, *, role: discord.Role):
@@ -176,8 +177,8 @@ class Admin:
         else:
             msg = f"You are now **{role}**... I think."
             role_action = self.bot.remove_roles
-        await self._self_role(author, role_action)
-        await self.bot.say(msg)
+        if await self._self_role(author, role_action):
+            await self.bot.say(msg)
 
     @commands.command(name='addrole', pass_context=True, no_pm=True, aliases=['ar'])
     @checks.admin_or_permissions(manage_roles=True)
@@ -207,6 +208,7 @@ class Admin:
         """Removes a role from a user
 
         This role must be lower than both the bot's highest role and your highest role.
+        Do not confuse this with =>deleterole, which deletes a role from the server.
         """
         author = ctx.message.author
         # This won't raise an exception, so we have to check for that
@@ -229,10 +231,10 @@ class Admin:
         """Creates a role with some custom arguments
 
         name                     The name of the new role. This is the only required role.
-        --color or --colour      Colour of the new role. Default is black.
-        --permissions            Permissions of the new role. Default is no permissions (0).
-        --hoist                  Whether or not the role can be displayed separately. Default is false.
-        --mentionable            Whether or not the role can be mentionable. Default is false.
+        -c/--color/--colour      Colour of the new role. Default is black.
+        --perms/--permissions    Permissions of the new role. Default is no permissions (0).
+        -h/--hoist               Whether or not the role can be displayed separately. Default is false.
+        -m/--mentionable         Whether or not the role can be mentionable. Default is false.
         """
         author = ctx.message.author
         server = ctx.message.server
@@ -242,16 +244,11 @@ class Admin:
 
         parser = argparse.ArgumentParser(description='Just a random role thing')
         parser.add_argument('name')
-        parser.add_argument('--colour', nargs='?', const='#000000')
-        parser.add_argument('--color', nargs='+', default='#000000')
-        parser.add_argument('--permissions', nargs='+', type=int, default=0)
-        parser.add_argument('--hoist', nargs='+', type=bool, default=False)
-        parser.add_argument('--mentionable', nargs='+', type=bool, default=False)
-        parser.add_argument('--position', nargs='+', type=int, default=1)
-
-        if "--color" in args and "--colour" in args:
-            await self.bot.say("Duplicate colours defined.")
-            return
+        parser.add_argument('-c', '--color', '--colour', nargs='?', default='#000000')
+        parser.add_argument('--permissions', '--perms', nargs='+', type=int, default=0)
+        parser.add_argument('--hoist', action='store_true')
+        parser.add_argument('-m', '--mentionable', action='store_true')
+        parser.add_argument('--pos', '--position', nargs='+', type=int, default=1)
 
         try:
             args = parser.parse_args(shlex.split(args))
@@ -285,6 +282,10 @@ class Admin:
     @commands.command(name='deleterole', pass_context=True, aliases=['delr'])
     @checks.admin_or_permissions()
     async def delete_role(self, ctx, *, role: discord.Role):
+        """Deletes a role from the server
+
+        Do not confuse this with =>removerole, which deletes a role from the server.
+        """
         if role >= author.top_role:
             await self.bot.say("You can't delete a role that's higher than your highest role, I think")
             return

@@ -32,13 +32,6 @@ async def _load_servers_from_site():
     servers = _pairwise(data[2:].split('\x00'))
     return [DiepioServer(*s) for s in servers]
 
-# Rather clunky, but because await must be used in async coroutines
-# I didn't have much of a choice
-async def _produce_server_list():
-    global SERVER_LIST
-    SERVER_LIST = await _load_servers_from_site()
-    return True
-
 def _search(pattern, string):
     try:
         return re.search(pattern, string).group(1)
@@ -188,7 +181,7 @@ class PartyLinks:
         self.bot = bot
         config_default = lambda: {"detect" : True, "delete" : True}
         self.pl_config_db = Database.from_json("plconfig.json",
-                                               factory_not_top_tier = config_default)
+                                               default_factory=config_default)
 
     async def on_message(self, message):
         server = message.server
@@ -243,10 +236,7 @@ class PartyLinks:
     
         
 def setup(bot):
-    import asyncio
-    if bot.loop.is_running():
-        asyncio.run_coroutine_threadsafe(_produce_server_list(), client.loop)
-    else:
-        bot.loop.run_until_complete(_produce_server_list())
+    global SERVER_LIST
+    SERVER_LIST = bot.loop.run_until_complete(_load_servers_from_site())
     pl = PartyLinks(bot)
     bot.add_cog(pl)

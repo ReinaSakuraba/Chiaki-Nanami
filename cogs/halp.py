@@ -54,7 +54,7 @@ async def default_help(ctx, func=lambda s:s, *commands : str):
 
         pages = bot.formatter.format_help_for(ctx, command)
 
-    if not bot.pm_help:
+    if bot.pm_help is None:
         characters = sum(map(lambda l: len(l), pages))
         # modify destination based on length of pages.
         if characters > 1000:

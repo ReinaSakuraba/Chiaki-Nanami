@@ -5,11 +5,8 @@ import random
 
 from discord.ext import commands
 
-def _load_tanks():
-    with open("data/tanks.txt") as f:
-        return f.read().splitlines()
+from .diepio.wr import tanks
 
-TANKS = _load_tanks()
 SMASHERS = ("Auto Smasher", "Landmine", "Smasher", "Spike",)
 BALL_ANSWERS = ("Yes", "No", "Maybe so", "Definitely", "I think so",
                 "Probably", "I don't think so", "Probably not",
@@ -82,7 +79,7 @@ class RNG:
         await self.bot.say(self._build_str(points, True))
 
     def _class(self):
-        return random.choice(TANKS)
+        return random.choice(tanks())
 
     @random.command(name="class")
     async def class_(self):
