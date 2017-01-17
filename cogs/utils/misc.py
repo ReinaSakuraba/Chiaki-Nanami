@@ -5,6 +5,7 @@ import os
 import random
 import xml.etree.cElementTree as et
 
+from datetime import timezone
 from discord import utils, Colour, Status
 
 def code_say(bot, msg):
@@ -19,16 +20,16 @@ def cycle_shuffle(iterable):
         random.shuffle(saved)
         for element in saved:
               yield element
-              
-      
+
+
 status_colors = {
     Status.online         : Colour(0x43b581),
     Status.offline        : Colour(0x747f8d),
     Status.idle           : Colour(0xfaa61a),
     Status.dnd            : Colour(0xf04747),
     Status.do_not_disturb : Colour(0xf04747),
-    Status.invisible      : Colour(0x747f8d), 
-    }       
+    Status.invisible      : Colour(0x747f8d),
+    }
 
 def status_color(status):
     return status_colors.get(status, Colour.default())
@@ -81,7 +82,7 @@ def test_svg(h, f):
         pass
     if tag == b'{http://www.w3.org/2000/svg}svg':
         return 'svg'
-    
+
 imghdr.tests.append(test_svg)
 
 async def image_from_url(url, fname=None, session=aiohttp.ClientSession()):
@@ -95,18 +96,21 @@ async def image_from_url(url, fname=None, session=aiohttp.ClientSession()):
                 if not chunk:
                     break
                 f.write(chunk)
-                
+
         ext = "." + imghdr.what(fname)
         os.rename(fname, fname + ext)
         fname += ext
         with open(fname , 'rb') as f:
             return f, fname
 
-def find_names(members, name_approx):
-    name = name_approx.lower()
-    def predicate(elem):
-        return name in elem.name.lower() or name in user.nick.lower()
-    return filter(predicate, members)
+def nice_time(time):
+    # Hopefully I can get a timezone-specific version.
+    # I don't think that's possible though.
+    new_time = time.replace(tzinfo=timezone.utc)
+    return new_time.strftime("%Y/%m/%d %r (%Z)")
 
-def find_first_name(members, name_approx):
-    return next(find_names(members, name_approx), None)
+def parse_int(maybe_int, base=10):
+    try:
+        return int(maybe_int, base)
+    except ValueError:
+        return None
