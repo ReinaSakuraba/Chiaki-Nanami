@@ -28,7 +28,7 @@ class ChiakiFormatter(commands.HelpFormatter):
 
     @property
     def clean_prefix(self):
-        return super().clean_prefix if self.is_bot() else str_prefix(self.command)
+        return super().clean_prefix if self.is_bot() or self.is_cog() else str_prefix(self.command)
 
     def format(self):
         """Handles the actual behaviour involved with formatting.
@@ -61,7 +61,7 @@ class ChiakiFormatter(commands.HelpFormatter):
                 self._paginator.close_page()
                 return self._paginator.pages
 
-        max_width = self.max_name_size
+        max_width = self.max_name_size + 2
 
         def category(tup):
             cmd = tup[1]
@@ -100,13 +100,13 @@ class ChiakiBot(commands.Bot):
         self.loop.create_task(self.dump_db_cycle())
 
     # literally the only reason why I created a subclass
-    def dump_databases(self):
+    async def dump_databases(self):
         for cog in self.cogs.values():
             for db in _get_databases(cog):
-                db.dump()
+                await db.dump()
 
     async def logout(self):
-        self.dump_databases()
+        await self.dump_databases()
         await super().logout()
 
     def get_member(self, id):
@@ -115,7 +115,7 @@ class ChiakiBot(commands.Bot):
     # Just some looping functions
     async def change_game(self):
         await self.wait_until_ready()
-        GAME_CHOICES = cycle_shuffle((
+        GAME_CHOICES = cycle_shuffle([
         'Gala Omega',
         'Dangan Ronpa: Trigger Happy Havoc',
         'Super Dangan Ronpa 2',
@@ -126,7 +126,7 @@ class ChiakiBot(commands.Bot):
         'without despair',
         'with Nadeko',
         'with Usami',
-        ))
+        ])
         while not self.is_closed:
             name = next(GAME_CHOICES)
             await self.change_presence(game=discord.Game(name=name))
@@ -135,7 +135,7 @@ class ChiakiBot(commands.Bot):
     async def dump_db_cycle(self):
         await self.wait_until_ready()
         while not self.is_closed:
-            self.dump_databases()
+            await self.dump_databases()
             print("all databases successfully dumped")
             await asyncio.sleep(600)
 
