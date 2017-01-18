@@ -165,16 +165,16 @@ async def invite():
     """...it's an invite"""
     official_server = bot.get_server(config["official_server"])
     invite_url = await bot.create_invite(official_server)
-    await bot.say("""
+    await bot.say(f"""
 I am not a not a public bot yet... but here's the invite link just in case:
-https://discordapp.com/oauth2/authorize?client_id=247863665598922762&scope=bot&permissions=2146823295
+https://discordapp.com/oauth2/authorize?client_id={bot.user.id}&scope=bot&permissions=2146823295
 
 But in the meantime, here's a link to the offical Chiaki Nanami server:
-{}
+{invite_url}
 
 And here's the source code if you want it:
 https://github.com/Ikusaba-san/Chiaki-Nanami
-    """.format(invite_url))
+    """)
 
 @bot.command(aliases=['longurl'])
 async def urlex(*, url: str):
@@ -229,7 +229,7 @@ def main():
             traceback.print_exc()
 
     config = load_config()
-    token = config.get("token") or sys.argv[1]
+    token = config.get("token", sys.argv[1])
     bot.run(token)
         
 
