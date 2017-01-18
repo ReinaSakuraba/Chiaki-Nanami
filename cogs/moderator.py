@@ -3,8 +3,9 @@ import discord
 import re
 
 from .utils import checks
-from .utils.database import Database
+from .utils.database import Database, DatabasePluginMixin
 from .utils.aitertools import AIterable
+from .utils.misc import nice_time
 
 from collections import Counter, defaultdict
 from discord.ext import commands
@@ -54,11 +55,14 @@ def _full_succinct_duration(secs):
 	unit_list = [(w, 'weeks'), (d, 'days'), (h, 'hours'), (m, 'mins'), (s, 'seconds')]
 	return ', '.join(f"{n} {u}" for n, u in unit_list if n)
 
-def _case_embed(num, action, target, actioner, reason,
+def _case_embed(num, action, target, msg, reason,
                 color: discord.Colour, time=None):
     if time is None:
         time = datetime.now()
+    actioner = msg.author
+    time = nice_time(msg.timestamp)
     title = f"Case/Action Log/Something #{num}"
+    footer = f"Command executed on {time} and in channel {msg.channel}"
     description = "{} {}".format(target.mention, action)
     avatar_url = target.avatar_url or target.default_avatar_url
     embed = discord.Embed(title=title, description=description,
@@ -66,6 +70,7 @@ def _case_embed(num, action, target, actioner, reason,
     embed.set_thumbnail(url=avatar_url)
     embed.add_field(name="Moderator", value=actioner.mention)
     embed.add_field(name="Reason", value=reason, inline=False)
+    embed.set_footer(text=footer)
     return embed
 
 # Ignore this random classes
@@ -87,7 +92,8 @@ class ServerWarn:
 
 
 MOD_FOLDER = "mod/"
-class Moderator:
+
+class Moderator(DatabasePluginMixin):
     """Moderator-related commands
 
     Most of these require the Moderator role (defined by =>addmodrole) or the right permissions
@@ -106,14 +112,18 @@ class Moderator:
                                            default_factory=server_warn_default)
         self.bot.loop.create_task(self.update_muted_users())
 
-    async def _create_muted_role(self, server):
+    async def _regen_muted_permissions(self, role):
         overwrite = discord.PermissionOverwrite(send_messages=False,
+                                                add_reactions=False,
                                                 manage_messages=False)
+        for channel in server.channels:
+            await self.bot.edit_channel_permissions(channel, role, overwrite)
+
+    async def _create_muted_role(self, server):
         role = await self.bot.create_role(server=server,
                                           name='Chiaki-Muted',
                                           color=discord.Colour(0xFF0000))
-        for channel in server.channels:
-            await self.bot.edit_channel_permissions(channel, role, overwrite)
+        self._regen_muted_permissions(role)
         return role
 
     async def _get_muted_role(self, server):
@@ -138,7 +148,7 @@ class Moderator:
             print("no case_channel")
             return
         case_embed = _case_embed(server_cases["case_num"],
-                                 action, target, msg.author,
+                                 action, target, msg,
                                  reason, color
                                  )
         if kwargs.get('mod'):
@@ -353,7 +363,7 @@ class Moderator:
                                           message.author.mention,
                                           full_succinct_duration, reason)
             )
-        await self._make_case("was muted :no_mouth:", message, member, 
+        await self._make_case("was muted :no_mouth:", message, member,
                              reason, 0, mod=True, duration=full_succinct_duration)
         #self._set_perms_for_mute(member, False, True)
 
@@ -401,7 +411,7 @@ class Moderator:
                                   member, reason, 0xFF0000)
 
     @commands.command(pass_context=True, no_pm=True)
-    @checks.mod_or_permissions(kick_members=True)
+    @checks.mod_or_permissions(ban_members=True)
     async def ban(self, ctx, member: discord.Member, *, reason: str):
         """Bans a user (obviously)
 
@@ -421,7 +431,7 @@ class Moderator:
                                   member, reason, 0xAA1111)
 
     @commands.command(pass_context=True, no_pm=True)
-    @checks.mod_or_permissions(kick_members=True)
+    @checks.mod_or_permissions(ban_members=True)
     async def unban(self, ctx, member: discord.Member, *, reason: str):
         """Unbans a user (obviously)
 

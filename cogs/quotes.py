@@ -4,12 +4,12 @@ import random
 from discord.ext import commands
 
 from .utils import checks, converter
-from .utils.database import Database
+from .utils.database import Database, DatabasePluginMixin
 from .utils.misc import nice_time, parse_int
 
 QUOTE_FILE_NAME = "quotes.json"
 
-class Quotes:
+class Quotes(DatabasePluginMixin):
     def __init__(self, bot):
         self.bot = bot
         self.quotes_db = Database.from_json(QUOTE_FILE_NAME, default_factory=list)

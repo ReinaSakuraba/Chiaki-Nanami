@@ -10,7 +10,7 @@ from itertools import zip_longest
 
 from . import utils
 from ..utils import checks
-from ..utils.database import Database
+from ..utils.database import Database, DatabasePluginMixin
 from ..utils.misc import lazy_property
 
 
@@ -37,7 +37,7 @@ def _search(pattern, string):
         return re.search(pattern, string).group(1)
     except AttributeError:
         return None
-    
+
 class DiepioServer(namedtuple('DiepioServer', 'ip_port name')):
     _translations = {
         'teams'   : '2-TDM',
@@ -46,15 +46,15 @@ class DiepioServer(namedtuple('DiepioServer', 'ip_port name')):
         'maze'    : 'Maze',
         'sandbox' : 'Sandbox',
         }
-    
+
     @discord.utils.cached_property
     def _server(self):
         return re.match(r'([a-z]*)-([a-z]*):?(.*):', self.name).groups()
-    
+
     @discord.utils.cached_property
     def _ip_port(self):
         return re.match(r'(.*):(.*)', self.ip_port).groups()
-    
+
     @property
     def ip(self):
         return self._ip_port[0]
@@ -62,15 +62,15 @@ class DiepioServer(namedtuple('DiepioServer', 'ip_port name')):
     @property
     def port(self):
         return self._ip_port[1]
-    
+
     @property
     def company(self):
         return self._server[0].title()
-    
+
     @property
     def location(self):
         return self._server[1]
-    
+
     @property
     def mode(self):
         print(self._server[2])
@@ -130,13 +130,13 @@ def _ip_from_hex(hexs):
 
 def _ip_to_hex(ip):
     hexes = []
-    
+
 def _extract_links(message):
     return re.findall(r'\s?(diep.io/#[1234567890ABCDEF]*)\s?', message)
-    
+
 def _extract_code(link):
     return _search(r'\s?diep.io/#([1234567890ABCDEF]*)\s?', link)
-  
+
 def _is_valid_hex(s):
     try:
         _hex_to_int(s)
@@ -176,7 +176,7 @@ def _set_mode_bool(d, key, mode):
         return False
     return None
 
-class PartyLinks:
+class PartyLinks(DatabasePluginMixin):
     def __init__(self, bot):
         self.bot = bot
         config_default = lambda: {"detect" : True, "delete" : True}
@@ -198,10 +198,10 @@ class PartyLinks:
             await self.bot.delete_message(message)
             notif_fmt = ("{.author.mention} Please DM (direct message) "
                          "your sandbox links, unless you want Arena Closers")
-                         
+
             return await self.bot.send_message(message.channel,
                                                notif_fmt.format(message))
-       
+
         data_formats = [data.format() for data in link_data]
         if config["detect"] and data_formats:
             pld = "**__PARTY LINK{} DETECTED!__**\n".format('s' * (len(links) != 1))
@@ -214,7 +214,7 @@ class PartyLinks:
     @checks.admin_or_permissions()
     async def partylinkset(self):
         pass
-            
+
     @partylinkset.command(pass_context=True)
     # Just in case.
     @checks.admin_or_permissions()
@@ -233,8 +233,8 @@ class PartyLinks:
         if result is None:
             return
         await self.bot.say("Sandbox link deletion {}abled, I think".format("deins"[result::2]))
-    
-        
+
+
 def setup(bot):
     global SERVER_LIST
     SERVER_LIST = bot.loop.run_until_complete(_load_servers_from_site())

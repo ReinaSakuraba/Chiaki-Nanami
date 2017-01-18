@@ -36,8 +36,9 @@ class Database(IDAbleDict):
         self.lock = asyncio.Lock()
 
     def __repr__(self):
-        return ("Database(name='{0.name}', default_factory={0.default_factory.__name__}, "
-                "object_hook={0.object_hook}, encoder={0.encoder})").format(self)
+        return ("Database(name='{0.name}', default_factory={1}, "
+                "object_hook={0.object_hook}, encoder={0.encoder})"
+                ).format(self, getattr(self.default_factory, "__name__", None))
 
     def _dump(self, path=DB_PATH):
         name = path + self.name
@@ -61,15 +62,25 @@ class Database(IDAbleDict):
     async def dump(self, path=DB_PATH):
         with await self.lock:
             await self.loop.run_in_executor(None, self._dump, path)
-            
+
     @classmethod
     def from_json(cls, filename, path=DB_PATH, default_factory=None, **kwargs):
         data = _load_json(path + filename, kwargs.get('object_hook'))
         return cls(filename, default_factory, data, **kwargs)
 
+class DatabasePluginMixin:
+    def __setattr__(self, name, val):
+        if isinstance(val, Database):
+            unload = getattr(self, '_unload', None)
+            try:
+                self.bot.add_database(val, unload)
+            except AttributeError:
+                pass
+        super().__setattr__(name, val)
+
 def check_dir(dir_):
     os.makedirs(dir_, exist_ok=True)
-    
+
 def check_data_dir(dir_):
     os.makedirs(DATA_PATH + dir_, exist_ok=True)
 

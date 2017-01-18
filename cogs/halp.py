@@ -1,6 +1,16 @@
-from .utils.misc import str_swap as _str_swap
-from discord.ext import commands
+import discord
+import functools
+import hashlib
+import json
 import re
+
+from collections import namedtuple
+from datetime import datetime
+from discord.ext import commands
+
+from .utils import checks
+from .utils.database import Database, DatabasePluginMixin
+from .utils.misc import nice_time, str_swap, str_join
 
 _mentions_transforms = {
     '@everyone': '@\u200beveryone',
@@ -59,26 +69,143 @@ async def default_help(ctx, func=lambda s:s, *commands : str):
         # modify destination based on length of pages.
         if characters > 1000:
             destination = ctx.message.author
-        
-        print("Hope I made it here")
+
         for page in pages:
             await bot.send_message(destination, func(page))
 
-class Help:
+_message_attrs = 'author content channel server timestamp'.split()
+DummyMessage = namedtuple('DummyMessage', _message_attrs)
+
+def problem_hook(bot, dct):
+    if '__problem__' in dct:
+        kwargs = {
+            'author': discord.utils.get(bot.get_all_members(), id=dct['author']),
+            'content': dct['content'],
+            'channel': bot.get_channel(dct['channel']),
+            'server': bot.get_server(dct['server']),
+            'timestamp': datetime.strptime(dct['timestamp'], '%Y-%m-%d %H:%M:%S.%f'),
+            }
+        problem = ProblemMessage(DummyMessage(**kwargs))
+        return problem
+    return dct
+
+class ProblemMessage:
+    def __init__(self, msg):
+        for attr in _message_attrs:
+            setattr(self, attr, getattr(msg, attr))
+
+    def __iter__(self):
+        return iter([getattr(self, attr) for attr in _message_attrs])
+
+    def __hash__(self):
+        return hash(self.hash)
+
+    @property
+    def nice_timestamp(self):
+        return nice_time(self.timestamp)
+
+    @property
+    def embed(self):
+        description = "Sent from {0.channel} in {0.server}".format(self)
+        author = self.author
+        author_avatar = author.avatar_url or author.default_avatar_url
+        content = self.content.replace('->contact', '', 1)
+        return (discord.Embed(description=description)
+                .set_author(name=str(author), icon_url=author_avatar)
+                .set_thumbnail(url=author_avatar)
+                .add_field(name="Message:", value=content)
+                .add_field(name="Sent:", value=self.nice_timestamp, inline=False)
+                .set_footer(text=self.hash)
+                )
+
+    @property
+    def hash(self):
+        print(list(self))
+        return hashlib.sha256(str_join('', self).encode('utf-8')).hexdigest()
+
+# fuck JSON and it's way of fucking up namedtuples
+class ProblemEncoder(json.JSONEncoder):
+    def default(self, o):
+        if type(o) is ProblemMessage:
+            return {
+                '__problem__': True,
+                'author': o.author.id,
+                'content': o.content,
+                'channel': o.channel.id,
+                'server': getattr(o.server, "id", None),
+                'timestamp': str(o.timestamp),
+                }
+        return super().default(o)
+
+class Help(DatabasePluginMixin):
     def __init__(self, bot):
         self.bot = bot
-        
+        self.bot.loop.create_task(self.load_database())
+
+    # Unlike most databases, this requires the bot be ready first before loading the database
+    async def load_database(self):
+        await self.bot.wait_until_ready()
+        hook = functools.partial(problem_hook, self.bot)
+        self.problems = Database.from_json("issues.json", encoder=ProblemEncoder,
+                        object_hook=hook)
+
     @commands.command(pass_context=True, aliases=['HALP'])
     async def halp(self, ctx, *commands : str):
         await default_help(ctx, str.upper, *commands)
 
-    @commands.command(pass_context=True) 
+    @commands.command(pass_context=True)
     async def pleh(self, ctx, *commands : str):
-        await default_help(ctx, lambda s: _str_swap(s[::-1], '(', ')'), *commands)
+        await default_help(ctx, lambda s: str_swap(s[::-1], '(', ')'), *commands)
 
     @commands.command(pass_context=True, aliases=['PLAH'])
     async def plah(self, ctx, *commands : str):
-        await default_help(ctx, lambda s: _str_swap(s[::-1].upper(), '(', ')'), *commands)
+        await default_help(ctx, lambda s: str_swap(s[::-1].upper(), '(', ')'), *commands)
+
+    @commands.command(pass_context=True)
+    async def Halp(self, ctx, *commands : str):
+        await default_help(ctx, str.title, *commands)
+
+    @commands.command(pass_context=True)
+    async def contact(self, ctx, *, problem: str):
+        appinfo = await self.bot.application_info()
+        problem_message = ProblemMessage(ctx.message)
+        self.problems[problem_message.hash] = problem_message
+        print(problem_message, repr(problem_message))
+        await self.bot.send_message(appinfo.owner, embed=problem_message.embed)
+
+    @commands.command(pass_context=True, hidden=True)
+    @checks.is_owner()
+    async def answer(self, ctx, hash: str, *, response: str):
+        if not ctx.message.channel.is_private:
+            return
+        problem_message = self.problems.get(hash)
+        if problem_message is None:
+            await self.bot.say(f"Hash {hash} doesn't exist, I think")
+            return
+
+        appinfo = await self.bot.application_info()
+        footer = f"Message sent on {nice_time(ctx.message.timestamp)}"
+        response_embed = (discord.Embed(colour=discord.Colour(0x00FF00))
+                         .set_thumbnail(url=appinfo.icon_url)
+                         .add_field(name="Response:", value=response)
+                         .set_footer(text=footer)
+                         )
+        msg = f"{problem_message.author.mention}, you have a response for message {hash}:"
+        await self.bot.send_message(problem_message.author, msg, embed=response_embed)
+        await self.bot.send_message(problem_message.channel, msg, embed=response_embed)
+        self.problems.pop(hash)
+
+    @commands.command(pass_context=True, hidden=True)
+    @checks.is_owner()
+    async def review(self, ctx, hash: str):
+        if not ctx.message.channel.is_private:
+            return
+        problem_message = self.problems.get(hash)
+        print(problem_message)
+        if problem_message is None:
+            await self.bot.say(f"Hash {hash} doesn't exist, I think")
+        else:
+            await self.bot.say(f"**Message {hash}:**" , embed=problem_message.embed)
 
 def setup(bot):
     bot.add_cog(Help(bot))

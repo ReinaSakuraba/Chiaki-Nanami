@@ -98,12 +98,17 @@ class ChiakiBot(commands.Bot):
         super().__init__(command_prefix, formatter, description, pm_help, **options)
         self.loop.create_task(self.change_game())
         self.loop.create_task(self.dump_db_cycle())
+        self.databases = []
+
+    def add_database(self, db, unload=None):
+        self.databases.append((db, unload))
 
     # literally the only reason why I created a subclass
     async def dump_databases(self):
-        for cog in self.cogs.values():
-            for db in _get_databases(cog):
-                await db.dump()
+        for db, unload in self.databases:
+            if unload is not None:
+                unload()
+            await db.dump()
 
     async def logout(self):
         await self.dump_databases()

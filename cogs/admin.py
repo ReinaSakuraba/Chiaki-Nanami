@@ -5,7 +5,7 @@ import shlex
 from discord.ext import commands
 
 from .utils import checks
-from .utils.database import Database
+from .utils.database import Database, DatabasePluginMixin
 from .utils.misc import str_join
 
 
@@ -15,7 +15,7 @@ def _get_chiaki_roles(server, role):
         return None
     return [discord.utils.get(server.roles, id=id) for id in role_ids]
 
-class Admin:
+class Admin(DatabasePluginMixin):
     """Admin-only commands"""
     __prefix__ = '=>'
 
@@ -23,10 +23,7 @@ class Admin:
         self.bot = bot
         self.self_roles = Database.from_json("admin/selfroles.json",
                                              default_factory=list)
-
-    def __unload(self):
-        self.bot.loop.run_until_complete(checks.server_roles.dump())
-        self.bot.loop.run_until_complete(self.self_roles.dump())
+        self.server_roles = checks.server_roles
 
     @commands.command(name='addadminrole', pass_context=True, aliases=['aar'])
     @checks.admin_or_permissions(manage_server=True)
