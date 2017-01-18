@@ -34,10 +34,6 @@ bot = chiakibot.ChiakiBot(command_prefix=chiakibot._find_prefix_by_cog,
                           description=description, pm_help=True
                           )
 
-print(bot.formatter)
-
-OWNER = bot.get_member('239110748180054017') 
-
 initial_extensions = (
 #    'cogs.games.guess',
     'cogs.admin',
@@ -163,65 +159,6 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
-
-
-## Commented out because there was an exploit on another bot that allowed it
-## To execute commands for other bots
-## Seriously who thought a repeat command was a good idea???
-    
-##@bot.command(pass_context=True, aliases=['say'], hidden=True)
-##async def repeat(ctx, *, msg : str):
-##    '''Repeats a message'''
-##    await bot.say('\u200B' + msg)
-
-##@bot.command(pass_context=True)
-##async def spam(ctx, num : int, *msg):   
-##    '''Repeats a message num amount of times'''
-##    print(msg)
-##    await bot.say(' '.join(msg) * num)
-
-## Also might be a security hole, although look at this.
-## This is why I prefer Python over Javscript
-## Literally just 6 extra characters for a perfectly reversed Unicode string
-    
-##@bot.command(pass_context=True, hidden=True)
-##async def reverse(ctx, *, text : str):
-##    text += '\u200B'
-##    await bot.say(text[::-1])
-    
-##@bot.command(pass_context=True)
-##async def s4m(ctx, *msg : str):
-##    print(ctx.message.author.id)
-##    if ctx.message.author.id != '239110748180054017':
-##        return
-##    await bot.delete_message(ctx.message)
-##    await bot.say(' '.join(msg))
-    
-
-##    async with bot.http.session.get(avatar_url) as response:
-##        file_name = user.avatar or user.default_avatar
-##
-##        with open(file_name, 'wb') as f:
-##            while True:
-##                chunk = await response.content.read(1024)
-##                if not chunk:
-##                    break
-##                f.write(chunk)
-##                
-##        ext = "." + imghdr.what(file_name)
-##        os.rename(file_name, file_name + ext)
-##        file_name += ext
-##        
-##        with open(file_name , 'rb') as f:
-##            print(f)
-##            await bot.send_file(ctx.message.channel, f, content=av_fmt)
-##        os.remove(file_name)
-
-##    await bot.say("**{}{}'s avatar**\n{}".format(
-##        user.name,
-##        ' ({})'.format(user.nick) * (user.nick is not None),
-##        avatar))
-
 @bot.command(pass_context=True, aliases=['cid'])
 async def channelid(ctx):
     id = ctx.message.channel.id
@@ -281,10 +218,6 @@ async def slap(ctx, target: converter.ApproximateUser=None):
     await bot.say(msg1 + f"\n{slap_image}")
     await asyncio.sleep(random.uniform(0.5, 2.3))
     await bot.say(msg2)
-    
-@bot.command(pass_context=True)
-async def bam(ctx, target: converter.ApproximateUser=None):
-    "http://static.fjcdn.com/gifs/Life+in+atissue+box+hammer+more+gintama+spread+the+glory_bc36e6_5120679.gif"
 
 def load_config():
     with open('data/config.json') as f:
@@ -300,7 +233,6 @@ def main():
             traceback.print_exc()
 
     config = load_config()
-#    bot.loop.create_task(change_role_color())
     bot.run(sys.argv[1])
         
 
