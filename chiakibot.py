@@ -9,7 +9,10 @@ from discord.ext import commands
 
 from cogs.utils.misc import cycle_shuffle
 
+# You are free to change this if you want.
 DEFAULT_CMD_PREFIX = '->'
+description = '''A test for the Chiaki bot (totally not a ripoff of Nadeko)'''
+MAX_FORMATTER_WIDTH = 90
 
 def cog_prefix(cmd):
     cog = cmd.instance
@@ -90,8 +93,21 @@ class ChiakiFormatter(commands.HelpFormatter):
         self._paginator.add_line(ending_note)
         return self._paginator.pages
 
-def _get_databases(cog):
-    return (attr for attr in vars(cog).values() if hasattr(attr, "dump"))
+def _find_prefix_by_cog(bot, message):
+    if not message.content:
+        return DEFAULT_CMD_PREFIX
+
+    first_word = message.content.split()[0]
+    try:
+        maybe_cmd = re.search(r'(\w+)', first_word).group(1)
+    except AttributeError:
+        return DEFAULT_CMD_PREFIX
+
+    cmd = bot.get_command(maybe_cmd)
+    if cmd is None:
+        return DEFAULT_CMD_PREFIX
+
+    return cog_prefix(cmd)
 
 class ChiakiBot(commands.Bot):
     def __init__(self, command_prefix, formatter=None, description=None, pm_help=False, **options):
@@ -144,20 +160,9 @@ class ChiakiBot(commands.Bot):
             print("all databases successfully dumped")
             await asyncio.sleep(600)
 
-def _find_prefix_by_cog(bot, message):
-    if not message.content:
-        return DEFAULT_CMD_PREFIX
-
-    first_word = message.content.split()[0]
-    try:
-        maybe_cmd = re.search(r'(\w+)', first_word).group(1)
-    except AttributeError:
-        return DEFAULT_CMD_PREFIX
-
-    cmd = bot.get_command(maybe_cmd)
-    if cmd is None:
-        return DEFAULT_CMD_PREFIX
-
-    return cog_prefix(cmd)
-
-
+# main bot
+def chiaki_bot():
+    return ChiakiBot(command_prefix=_find_prefix_by_cog,
+                     formatter=ChiakiFormatter(width=MAX_FORMATTER_WIDTH),
+                     description=description, pm_help=None
+                    )

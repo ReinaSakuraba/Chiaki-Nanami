@@ -1,5 +1,4 @@
 import asyncio
-import chiakibot
 import discord
 import inspect
 import json
@@ -10,17 +9,18 @@ import re
 import sys
 import traceback
 
+from chiakibot import chiaki_bot
 from cogs.utils import converter
 from cogs.utils.aitertools import AIterable, ACount
 from cogs.utils.misc import image_from_url
 from discord.ext import commands
 
 
-logger = logging.getLogger('discord')
-logger.setLevel(logging.INFO)
-handler = logging.FileHandler(filename='./logs/discord.log', encoding='utf-8', mode='w')
-handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
-logger.addHandler(handler)
+##logger = logging.getLogger('discord')
+##logger.setLevel(logging.INFO)
+##handler = logging.FileHandler(filename='./logs/discord.log', encoding='utf-8', mode='w')
+##handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
+##logger.addHandler(handler)
 
 # Chiaki Nanami has a tendency to append her sentences
 # with either "I think" or "Probably"
@@ -28,11 +28,7 @@ logger.addHandler(handler)
 def negative(speech):
     return speech + '...' + random.choice(['I think', 'Probably'])
 
-description = '''A test for the Chiaki bot (totally not a ripoff of Nadeko)'''
-bot = chiakibot.ChiakiBot(command_prefix=chiakibot._find_prefix_by_cog,
-                          formatter=chiakibot.ChiakiFormatter(width=90),
-                          description=description, pm_help=True
-                          )
+bot = chiaki_bot()
 
 initial_extensions = (
 #    'cogs.games.guess',
@@ -233,7 +229,8 @@ def main():
             traceback.print_exc()
 
     config = load_config()
-    bot.run(sys.argv[1])
+    token = config.get("token") or sys.argv[1]
+    bot.run(token)
         
 
 if __name__ == '__main__':
