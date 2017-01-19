@@ -229,7 +229,7 @@ def main():
             traceback.print_exc()
 
     config = load_config()
-    token = config.get("token", sys.argv[1])
+    token = config.get("token") or sys.argv[1]
     bot.run(token)
         
 
