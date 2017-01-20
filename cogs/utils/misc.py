@@ -85,7 +85,9 @@ def test_svg(h, f):
 
 imghdr.tests.append(test_svg)
 
-async def image_from_url(url, fname=None, session=aiohttp.ClientSession()):
+async def image_from_url(url, fname=None, session=None):
+    if session is None:
+        session = aiohttp.ClientSession()
     if fname is None:
         random_thing = random.randrange(10 ** 8)
         fname = "tmp-{}".format(str(random_thing).zfill(8))
@@ -114,3 +116,11 @@ def parse_int(maybe_int, base=10):
         return int(maybe_int, base)
     except ValueError:
         return None
+
+def full_succinct_duration(secs):
+	m, s = divmod(secs, 60)
+	h, m = divmod(m, 60)
+	d, h = divmod(h, 24)
+	w, d = divmod(d, 7)
+	unit_list = [(w, 'weeks'), (d, 'days'), (h, 'hours'), (m, 'mins'), (s, 'seconds')]
+	return ', '.join(f"{round(n)} {u}" for n, u in unit_list if n)
