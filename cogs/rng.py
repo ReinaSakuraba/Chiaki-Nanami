@@ -2,6 +2,13 @@ import asyncio
 import colorsys
 import discord
 import random
+import string
+import uuid
+
+try:
+    import secrets
+except ImportError:  # unlikely but whatevs
+    secrets = random.SystemRandom()
 
 from discord.ext import commands
 
@@ -13,10 +20,16 @@ BALL_ANSWERS = ("Yes", "No", "Maybe so", "Definitely", "I think so",
                 "I don't know", "I have no idea",
                 )
 
+_default_letters = string.ascii_letters + string.digits
+def _password(length, alphabet=_default_letters):
+    return ''.join(secrets.choice(alphabet) for i in range(length))
+
+
+
 class RNG:
     def __init__(self, bot):
         self.bot = bot
-    
+
     @commands.command(pass_context=True, name="8ball", aliases=['8'])
     async def ball(self, ctx, *, question: str):
         """...it's a 8-ball"""
@@ -33,11 +46,11 @@ class RNG:
                 await self.bot.edit_message(msg,
                                             afmt.format(msg.content, "." * i))
                 await asyncio.sleep(random.uniform(0.25, 0.75))
-            
+
             await self.bot.edit_message(msg, afmt.format(msg.content, answer))
         else:
             await self.bot.say("That's not a question, I think")
-    
+
     @commands.group(pass_context=True, aliases=['rand'])
     async def random(self, ctx):
         pass
@@ -47,7 +60,7 @@ class RNG:
         """Rolls a certain number of dice"""
         fmt = "{} " * amt
         await self.bot.say(fmt.format(*[random.randint(1, 6) for _ in range(amt)]))
-    
+
     # diep.io related commands
     def _build(self, points, num_stats, max_stats):
         stats = [0] * num_stats
@@ -63,7 +76,7 @@ class RNG:
         if points > 33:
             return "You have too many points"
         return '/'.join(map(str, self._build(points, *stats)))
-    
+
     @random.command()
     async def build(self, points : int=33):
         """Gives you a random build to try out
@@ -97,6 +110,10 @@ class RNG:
 
     @random.command(aliases=['color'])
     async def colour(self):
+        """Generates a random colo(u)r.
+
+        Because of potential abuse, this commands has a 5 second cooldown
+        """
         colour_long = random.randrange(255 ** 3)
         colour = discord.Colour(colour_long)
         r, g, b = colour.to_tuple()
@@ -108,9 +125,40 @@ class RNG:
         colour_embed.add_field(name="HSV", value=', '.join(map(str, hsv)))
         await self.bot.say(embed=colour_embed)
 
+    @commands.cooldown(rate=10, per=5, type=commands.BucketType.server)
+    @random.command()
+    async def uuid(self):
+        """Generates a random uuid.
+
+        Because of potential abuse, this commands has a 5 second cooldown
+        """
+        await self.bot.say(uuid.uuid4())
+
+    @random.command(pass_context=True, aliases=['pw'])
+    async def password(self, ctx, n: int=8, *rest: str):
+        """Generates a random password
+
+        Don't worry, this uses a cryptographically secure RNG.
+        However, this won't work if you're executing this command outside of Direct Messages.
+        """
+        if not ctx.message.channel.is_private:
+            await self.bot.reply("Why are you asking for a password in public...?")
+            return
+        elif n < 8:
+            await self.bot.reply(f"How can you expect a secure password in just {n} characters?")
+            return
+
+        rest = list(map(str.lower, rest))
+        letters = _default_letters
+        if 'symbols' in rest:
+            letters += string.punctuation
+        if 'microsoft' in rest:
+            symbol_deletion = dict.fromkeys(map(ord, string.punctuation), None)
+            letters = letters.translate(symbol_deletion)
+        password = _password(n, letters)
+        print(password)
+        await self.bot.say(password)
+
 
 def setup(bot):
     bot.add_cog(RNG(bot))
-    
-
-                        
