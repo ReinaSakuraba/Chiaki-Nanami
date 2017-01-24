@@ -6,6 +6,22 @@ import re
 from collections.abc import Sequence
 from discord.ext import commands
 
+try:
+    import sympy
+except ImportError:
+    sympy = None
+else:
+    from sympy.parsing.sympy_parser import (
+        parse_expr, standard_transformations, implicit_multiplication_application
+    )
+    default_transformations = (standard_transformations +
+        (implicit_multiplication_application,))
+
+try:
+    import numpy as np
+except ImportError:
+    np = None
+
 MATH_CONTEXT = {a: getattr(math, a, None) for a in dir(math) if not a.startswith('_')}
 sec = lambda x: 1 / math.cos(x)
 csc = lambda x: 1 / math.sin(x)
@@ -247,9 +263,17 @@ def vector_sanitize(fn_str):
     return eval("lambda: " + fn_str, VECTOR_CONTEXT)
 
 class Math:
-    __prefix__ = ['+', '-', '*', '/']
+    __prefix__ = ['+', '-', '*', '/', '^']
     def __init__(self, bot):
         self.bot = bot
+
+    async def _check_module(self, module, name):
+        if not module:
+            await self.bot.say(f"This feature is not supported because {name} wasn't imported, I think.")
+            raise ModuleNotFoundError(f"Module {name} is not imported.")
+
+    async def _result_say(self, input, output):
+        return await self.bot.say(f"```css\nInput: \n{input}\n\nOutput:\n{output}```")
 
     @commands.command(aliases=['calcfuncs'])
     async def calcops(self):
@@ -269,8 +293,9 @@ class Math:
                 output = fn()
             except Exception as e:
                 output = f"{type(e).__name__}: {e}"
-
-        await self.bot.say(f"```css\nInput: \n{expr}\n\nOutput:\n{output}```")
+        if '^' in expr:
+            output += "\nNote: '^' is the XOR operator. Use '**' for power."
+        await self._result_say(expr, output)
 
     @commands.command(aliases=['vectorcalculate'])
     async def vectorcalc(self, *, expr: str):
@@ -292,7 +317,7 @@ class Math:
             except Exception as e:
                 output = f"{type(e).__name__}: {e}"
 
-        await self.bot.say(f"```css\nInput: \n{expr}\n\nOutput:\n{output}```")
+        await self._result_say(expr, output)
 
     @commands.command(aliases=['vectorfuncs'])
     async def vectorops(self):
@@ -327,6 +352,55 @@ class Math:
         vector_funcs = vars(Vector).values()
         ops = [key for key, val in VECTOR_CONTEXT.items() if val not in vector_funcs]
         await self.bot.say(f"Available misc vector functions: \n```\n{', '.join(ops)}```")
+
+    # SymPy related commands
+    # Use oo for infinity
+    @commands.command(aliases=['derivative'])
+    async def differentiate(self, expr: str, n: int=1):
+        """Finds the derivative of an equation
+
+        n is the nth derivative you wish to calcuate.
+        The expression must be in quotes.
+        """
+        await self._check_module(sympy, "SymPy")
+        equation = parse_expr(expr, evaluate=False, transformations=default_transformations)
+        symbols = list(equation.free_symbols)
+        if len(symbols) > 1:
+            await self.bot.say("You have too many symbols in your equation")
+        else:
+            result = sympy.pretty(sympy.diff(equation, *(symbols * n)))
+            await self._result_say(equation, result)
+
+    @commands.command()
+    async def limit(self, expr: str, var: sympy.Symbol, to, dir='+'):
+        """Finds the limit of an equation.
+
+        var is the nth derivative you wish to calcuate
+        to is where the var will approach
+        dir is the side the limit will be approached from
+
+        The expression must be in quotes.
+        """
+        await self._check_module(sympy, "SymPy")
+        equation = parse_expr(expr, evaluate=False, transformations=default_transformations)
+        result = sympy.pretty(sympy.limit(expr, var, to, dir))
+        await self._result_say(equation, result)
+
+    @commands.command(aliases=['integral'])
+    async def integrate(self, *, expr: str):
+        """Finds the indefinite integral (aka antiderivative of an equation)
+
+        Unlike derivative, the expression does not require quotes
+        """
+        await self._check_module(sympy, "SymPy")
+        equation = parse_expr(expr, evaluate=False, transformations=default_transformations)
+        symbols = list(equation.free_symbols)
+        if len(symbols) > 1:
+            await self.bot.say("You have too many symbols in your equation")
+        else:
+            result = sympy.pretty(sympy.integrate(equation, symbols[0]))
+            await self._result_say(equation, result)
+
 
 
 def setup(bot):
