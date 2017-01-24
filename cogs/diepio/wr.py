@@ -11,6 +11,7 @@ from itertools import chain
 from operator import itemgetter
 
 from . import utils
+from ..utils.paginator import DelimPaginator
 
 WR_RECORD_URL = 'https://dieprecords.moepl.eu/api/records/json'
 TANK_ID_URL = 'https://dieprecords.moepl.eu/api/tanks'
@@ -34,7 +35,7 @@ async def _load_gamemodes(session):
             "mobile"  : {d["name"].lower() : d["id"]
                         for d in gm_id_list if d["mobile"] == "1"} }
 
-WR_RELOAD_TIME_SECS = 150
+WR_RELOAD_TIME_SECS = 60
 
 # Best compromise between performance and up-to-date-ness I could think of
 async def load_wr_loop(bot):
@@ -46,44 +47,48 @@ async def load_wr_loop(bot):
         tank_id_list = await _load_tanks(session)
         gamemode_id_map = await _load_gamemodes(session)
         await asyncio.sleep(WR_RELOAD_TIME_SECS)
-        
+
 def tanks():
     return sorted(tank_id_list.keys())
 
-_alt_tank_names = {
-    'anni': 'annihilator',
-    'anokuu': 'necromancer',
-    'autogunner': 'auto gunner',
-    'autosmasher': 'auto smasher',
-    'auto-smasher': 'auto smasher',
-    'autotrapper': 'auto trapper',
-    'auto-trapper': 'auto trapper',
-    'basic': 'basic tank',
-    'buf': 'penta shot',
-    'buff': 'penta shot',
-    'cancer': 'booster',
-    'cancer 2': 'necromancer',
-    'junko': 'destroyer',
-    'junko enoshima': 'destroyer',
-    'master': 'factory',
-    'mg': 'booster',
-    'necro': 'necromancer',
-    'noahth3pandatank': 'predator',
-    'octo': 'octo tank',
-    'octo-tank' : 'octo tank',
-    'penta': 'penta shot',
-    'pentashot': 'penta shot',
-    'penta-shot': 'penta shot',
-    'pandatank': 'predator',
-    'spread': 'spread shot',
-    'spreadshot': 'spread shot',
-    'spread-shot': 'spread shot',
-    'tank': 'basic tank',
-    'th3pandatank': 'predator',
-    'triangle': 'tri-angle',
-    'tritrapper': 'tri-trapper',
-    'tri trapper': 'tri-trapper',
-       }
+_alt_tank_names = OrderedDict([
+    ('Adasba', 'Overlord'),
+    ('Anni', 'Annihilator'),
+    ('Anokuu', 'Necromancer'),
+    ('Auto-Smasher', 'Auto Smasher'),
+    ('Auto-Trapper', 'Auto Trapper'),
+    ('Autogunner', 'Auto Gunner'),
+    ('Autosmasher', 'Auto Smasher'),
+    ('Autotrapper', 'Auto Trapper'),
+    ('Basic', 'Basic Tank'),
+    ('Bela', 'Penta Shot'),
+    ('Buf', 'Penta Shot'),
+    ('Buf Penta', 'Penta Shot'),
+    ('Buff', 'Penta Shot'),
+    ('Buff Penta', 'Penta Shot'),
+    ('Cancer', 'Booster'),
+    ('Cancer 2', 'Necromancer'),
+    ('Junko', 'Destroyer'),
+    ('Junko Enoshima', 'Destroyer'),
+    ('Master', 'Factory'),
+    ('Mg', 'Booster'),
+    ('Necro', 'Necromancer'),
+    ('Noahth3Pandatank', 'Predator'),
+    ('Octo', 'Octo Tank'),
+    ('Octo-Tank', 'Octo Tank'),
+    ('Pandatank', 'Predator'),
+    ('Penta', 'Penta Shot'),
+    ('Penta-Shot', 'Penta Shot'),
+    ('Pentashot', 'Penta Shot'),
+    ('Spread', 'Spread Shot'),
+    ('Spread-Shot', 'Spread Shot'),
+    ('Spreadshot', 'Spread Shot'),
+    ('Tank', 'Basic Tank'),
+    ('Th3Pandatank', 'Predator'),
+    ('Tri Trapper', 'Tri-Trapper'),
+    ('Triangle', 'Tri-Angle'),
+    ('Tritrapper', 'Tri-Trapper')
+    ])
 
 def _replace_tank(tankname):
     return _alt_tank_names.get(tankname, tankname)
@@ -155,13 +160,16 @@ class WR:
         try:
             tank_id = tank_id_list[_tank]
         except KeyError:
-            await self.bot.say("Tank {} doesn't exist".format(tank))
+            await self.bot.say(f"Tank **{tank}** doesn't exist")
             return None
 
-        desktop_records = sorted(wr_records["desktop"][str(tank_id)], key=itemgetter("gamemode_id"))
-        mobile_records = sorted(wr_records["mobile"][str(tank_id)], key=itemgetter("gamemode_id"))
+        def get_records(version):
+            try:
+                return sorted(wr_records[version][str(tank_id)], key=itemgetter("gamemode_id"))
+            except KeyError:
+                return []
 
-        return desktop_records, mobile_records
+        return get_records("desktop"), get_records("mobile")
 
     @commands.command(aliases=['wr'])
     async def worldrecord(self, version, mode, *, tank : str):
@@ -172,16 +180,17 @@ class WR:
         And of course, tank is the type of tank
 
         """
+        tank = tank.title()
         if mode.lower() in ('2tdm', '4tdm'):
             mode = mode[0] + '-' + mode[1:]
         elif mode.lower() == 'tdm':
             mode = '2-tdm'
-        tank_alias = _replace_tank(tank.lower())
+        tank_alias = _replace_tank(tank)
         record = await self._wr_mode(version, mode, tank_alias)
         if record is None:
             return
 
-        tank_true = f" ({tank.title()})" * (tank_alias.lower() != tank.lower())
+        tank_true = f" ({tank})" * (tank_alias != tank)
         title = "**__{0} {gamemode} {tankname}{1}__**".format(version.title(), tank_true, **record)
         embed, extra = _wr_embed(record)
         await self.bot.say(title, embed=embed)
@@ -194,18 +203,18 @@ class WR:
 
         Use ->wr for the full info of a particular WR (proof, date, and full score)
         """
-
-        tank_alias = _replace_tank(tank.lower())
+        tank = tank.title()
+        tank_alias = _replace_tank(tank)
         record = await self._wr_tank(tank_alias)
         if record is None:
             return
         desktop, mobile = record
-        tank_true = f" ({tank.title()})" * (tank_alias.lower() != tank.lower())
-        title = f"**__{tank_alias.title()}{tank_true}__**"
+        tank_true = f" ({tank})" * (tank_alias != tank)
+        title = f"**__{tank_alias}{tank_true}__**"
 
         def embed_from_iterable(title, records):
             embed = discord.Embed(title=title.title())
-            url = _get_wiki_image(tank_alias.title())
+            url = _get_wiki_image(tank_alias)
             embed.set_thumbnail(url=url)
             for record in records:
                 line = "{name}\n**{score}**".format(**record)
@@ -214,10 +223,17 @@ class WR:
             return embed
 
         desktop_embed = embed_from_iterable("desktop", desktop)
-        mobile_embed = embed_from_iterable("mobile", mobile)
+        mobile_embed = embed_from_iterable("mobile", mobile) if mobile else None
 
         await self.bot.say(title, embed=desktop_embed)
-        await self.bot.say(embed=mobile_embed)
+        if mobile_embed is not None:
+            await self.bot.say(embed=mobile_embed)
+
+    async def player(self, ctx, *, player):
+        await ctx.invoke(self.records, player=player)
+
+    async def tank(self, ctx, *, tank):
+        await ctx.invoke(self.records, tank=tank)
 
     async def _submit(self, name: str, tankid: int, gamemodeid: int, score: int, url: str):
         payload = {'inputname': name,
@@ -227,9 +243,7 @@ class WR:
                    'proof': url}
 
         session = self.bot.http.session
-        r = await session.post('https://dieprecords.moepl.eu/api/submit/recordtest', data=payload)
-        print(r)
-        return r
+        return await session.post('https://dieprecords.moepl.eu/api/submit/record', data=payload)
 
     @commands.command()
     async def submitwr(self, name: str, tank: str, version : str, mode: str, score: int, url: str):
@@ -238,6 +252,7 @@ class WR:
         The name and tank should be in quotes if you intend on putting spaces in either parameter
         (eg if you're gonna submit a WR under Junko Enoshima you should enter it as "Junko Enoshima")
         """
+        tank = tank.title()
         tank_ = _replace_tank(tank)
         vers_ = version.lower()
         mode_ = mode.lower()
@@ -247,24 +262,22 @@ class WR:
             return
 
         full_score = record["scorefull"]
-        if score < full_score:
+        if score < 40000:
+            await self.bot.say(f"Your score ({score}) is too low. It must be at least 40000.")
+            return
+        if score < int(full_score):
             await self.bot.say(f"Your score ({score}) is too low. The WR is {full_score}.")
             return
 
-        response = await self._submit(name,
-                                      tank_id_list[_tank.title()],
-                                      gamemode_id_map[_vers][_mode],
-                                      score,
-                                      url)
-        msg = ""
-        print(response.text)
-        '''
-        if (response.text != 'Too Many Attempts.'):
-            pass
-        else:
-            msg = 'Sorry, there have been too many attempts to submit records from this bot. Please try the website directly.'
+        submission = f'("{name}" "{tank}" {version} {score} <{url}>)'
+
+        async with await self._submit(name, tank_id_list[tank_],
+                                      gamemode_id_map[vers_][mode_],
+                                      score, url) as response:
+            result = await response.json()
+
+        msg = f"**{result['status'].title()}!** {result['content']}\n{submission}"
         await self.bot.say(msg, delete_after=60)
-        '''
 
     async def site(self):
         """Site of the WRA"""
@@ -284,8 +297,15 @@ class WR:
     @commands.command()
     async def tanks(self):
         """All the tanks for diep.io"""
-        
+
         await self.bot.say(', '.join(tanks()))
+
+    @commands.command()
+    async def tankaliases(self):
+        """All the tanks for diep.io"""
+        tank_aliases = [f"{k:<18} == {v}" for k, v in _alt_tank_names.items()]
+        str_aliases = '\n'.join(tank_aliases)
+        await self.bot.say(f"```\n{str_aliases}```")
 
     @commands.command(pass_context=True)
     async def records(self, ctx, *, name: str):
@@ -330,10 +350,9 @@ class WR:
         desktop_former_str  = lines("**Desktop**: {}", desktop_former)
         mobile_former_str   = lines("**Mobile**: {}",  mobile_former)
 
-        paginator = commands.Paginator(prefix='', suffix='')
-        for line in chain(headers, desktop_current_str, mobile_current_str,
-                          former_header, desktop_former_str, mobile_former_str):
-            paginator.add_line(line)
+        all_iterables = chain(headers, desktop_current_str, mobile_current_str,
+                              former_header, desktop_former_str, mobile_former_str)
+        paginator = DelimPaginator.from_iterable(all_iterables, prefix='', suffix='')
 
         author = ctx.message.author
         channel = ctx.message.channel
