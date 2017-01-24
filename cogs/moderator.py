@@ -5,7 +5,7 @@ import re
 from .utils import checks
 from .utils.database import Database, DatabasePluginMixin
 from .utils.aitertools import AIterable
-from .utils.misc import nice_time
+from .utils.misc import nice_time, full_succinct_duration as _full_succinct_duration
 
 from collections import Counter, defaultdict
 from discord.ext import commands
@@ -46,14 +46,6 @@ def _full_duration(durations):
     durations = re.split(r"(\d+[\.]?\d*)", durations)[1:]
     print(durations, list(_pairwise(durations)))
     return sum(_parse_duration(d, u) for d, u in _pairwise(durations))
-
-def _full_succinct_duration(secs):
-	m, s = divmod(secs, 60)
-	h, m = divmod(m, 60)
-	d, h = divmod(h, 24)
-	w, d = divmod(d, 7)
-	unit_list = [(w, 'weeks'), (d, 'days'), (h, 'hours'), (m, 'mins'), (s, 'seconds')]
-	return ', '.join(f"{n} {u}" for n, u in unit_list if n)
 
 def _case_embed(num, action, target, msg, reason,
                 color: discord.Colour, time=None):
