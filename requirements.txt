@@ -1,0 +1,4 @@
+youtube_dl
+beautifulsoup4
+mpmath
+sympy
