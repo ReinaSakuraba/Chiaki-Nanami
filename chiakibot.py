@@ -5,9 +5,12 @@ import itertools
 import random
 import re
 
+from collections import Counter
+from datetime import datetime
 from discord.ext import commands
 
-from cogs.utils.misc import cycle_shuffle
+from cogs.utils.database import Database
+from cogs.utils.misc import cycle_shuffle, full_succinct_duration
 
 # You are free to change this if you want.
 DEFAULT_CMD_PREFIX = '->'
@@ -17,7 +20,7 @@ MAX_FORMATTER_WIDTH = 90
 def cog_prefix(cmd):
     cog = cmd.instance
     return (DEFAULT_CMD_PREFIX if cog is None
-            else getattr(type(cog), '__prefix__', DEFAULT_CMD_PREFIX))
+            else getattr(cog, '__prefix__', DEFAULT_CMD_PREFIX))
 
 def str_prefix(cmd):
     prefix = cog_prefix(cmd)
@@ -64,7 +67,7 @@ class ChiakiFormatter(commands.HelpFormatter):
                 self._paginator.close_page()
                 return self._paginator.pages
 
-        max_width = self.max_name_size + 2
+        max_width = self.max_name_size
 
         def category(tup):
             cmd = tup[1]
@@ -112,9 +115,18 @@ def _find_prefix_by_cog(bot, message):
 class ChiakiBot(commands.Bot):
     def __init__(self, command_prefix, formatter=None, description=None, pm_help=False, **options):
         super().__init__(command_prefix, formatter, description, pm_help, **options)
+
         self.loop.create_task(self.change_game())
         self.loop.create_task(self.dump_db_cycle())
-        self.databases = []
+        self.loop.create_task(self._start_time())
+
+        self.commands_counter = Counter()
+        self.persistent_counter = Database.from_json("stats.json")
+        self.databases = [(self.persistent_counter, None)]
+
+    async def _start_time(self):
+        await self.wait_until_ready()
+        self.start_time = datetime.now()
 
     def add_database(self, db, unload=None):
         self.databases.append((db, unload))
@@ -127,6 +139,8 @@ class ChiakiBot(commands.Bot):
             await db.dump()
 
     async def logout(self):
+        self.commands_counter.update(self.persistent_counter)
+        self.persistent_counter.update(self.commands_counter)
         await self.dump_databases()
         await super().logout()
 
@@ -159,6 +173,14 @@ class ChiakiBot(commands.Bot):
             await self.dump_databases()
             print("all databases successfully dumped")
             await asyncio.sleep(600)
+
+    @property
+    def uptime(self):
+        return datetime.now() - self.start_time
+
+    @property
+    def str_uptime(self):
+        return full_succinct_duration(self.uptime.total_seconds())
 
 # main bot
 def chiaki_bot():
