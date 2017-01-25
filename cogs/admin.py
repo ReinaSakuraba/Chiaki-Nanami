@@ -284,7 +284,11 @@ class Admin(DatabasePluginMixin):
         except discord.Forbidden:
             msg = "I need the **Manage Roles** perm to create roles, I think."
         except discord.HTTPException:
+<<<<<<< HEAD
             msg = "Creating role **{args.name}** failed, for some reason."
+=======
+            msg = "Creating the role failed, for some reason."
+>>>>>>> fbdb7cb3ae04eedbde856b78cdd14192cb6f84b4
         else:
             msg = f"Successfully created **{args.name}**!"
         await self.bot.say(msg)
@@ -303,9 +307,15 @@ class Admin(DatabasePluginMixin):
         try:
             await self.bot.delete_role(ctx.message.server, role)
         except discord.Forbidden:
+<<<<<<< HEAD
             msg = f"I can't delete {role} because I don't have the **Manage Roles** perm, I think."
         except discord.HTTPException:
             msg = f"Deleting **{role}** failed, for some reason..."
+=======
+            msg = f"I can't delete {role} because I don't have Manage Roles, I think."
+        except discord.HTTPException:
+            msg = f"Deleting {role} failed, for some reason..."
+>>>>>>> fbdb7cb3ae04eedbde856b78cdd14192cb6f84b4
         else:
             msg = "Successfully deleted **{role}**, I think."
         await self.bot.say(msg)
