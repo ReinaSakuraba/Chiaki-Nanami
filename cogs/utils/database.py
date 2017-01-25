@@ -19,6 +19,13 @@ def _load_json(name, object_hook=None):
         return {}
         
 log = logging.getLogger(f"chiaki-{__name__}")
+try:
+    handler = logging.FileHandler(filename='./logs/databases.log', encoding='utf-8', mode='w')
+except FileNotFoundError:
+    os.makedirs("logs", exist_ok=True)
+    handler = logging.FileHandler(filename='./logs/databases.log', encoding='utf-8', mode='w')
+handler.setFormatter(logging.Formatter('%(asctime)s/%(levelname)s:%(name)s: %(message)s'))
+log.addHandler(handler)
 
 class Database(IDAbleDict):
     # json sucks.
@@ -62,10 +69,9 @@ class Database(IDAbleDict):
         return True
 
     async def dump(self, path=DB_PATH):
-        now = datetime.now()
         with await self.lock:
             await self.loop.run_in_executor(None, self._dump, path)
-        log.info(f"database {self.name} successfully dumped on {now}")
+        log.info(f"database {self.name} successfully dumped")
 
     @classmethod
     def from_json(cls, filename, path=DB_PATH, default_factory=None, **kwargs):

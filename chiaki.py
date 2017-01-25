@@ -2,6 +2,7 @@ import asyncio
 import discord
 import json
 import logging
+import os
 import random
 import sys
 import traceback
@@ -12,12 +13,18 @@ from cogs.utils.aitertools import AIterable, ACount
 from cogs.utils.misc import nice_time
 from discord.ext import commands
 
-##logger = logging.getLogger('discord')
-##logger.setLevel(logging.INFO)
-##handler = logging.FileHandler(filename='./logs/discord.log', encoding='utf-8', mode='w')
-##handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
-##logger.addHandler(handler)
-##logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('discord')
+logger.setLevel(logging.INFO)
+try:
+    handler = logging.FileHandler(filename='./logs/discord.log', encoding='utf-8', mode='w')
+except FileNotFoundError:
+    os.makedirs("logs", exist_ok=True)
+    handler = logging.FileHandler(filename='./logs/discord.log', encoding='utf-8', mode='w')
+
+
+handler.setFormatter(logging.Formatter('%(asctime)s/%(levelname)s:%(name)s: %(message)s'))
+logger.addHandler(handler)
+logging.basicConfig(level=logging.INFO)
 
 
 bot = chiaki_bot()

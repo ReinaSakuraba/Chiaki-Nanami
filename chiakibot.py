@@ -14,6 +14,13 @@ from cogs.utils.database import Database
 from cogs.utils.misc import cycle_shuffle, full_succinct_duration
 
 log = logging.getLogger(__name__)
+try:
+    handler = logging.FileHandler(filename='./logs/chiakinanami.log', encoding='utf-8', mode='w')
+except FileNotFoundError:
+    os.makedirs("logs", exist_ok=True)
+    handler = logging.FileHandler(filename='./logs/chiakinanami.log', encoding='utf-8', mode='w')
+handler.setFormatter(logging.Formatter('%(asctime)s/%(levelname)s:%(name)s: %(message)s'))
+log.addHandler(handler)
 
 # You are free to change this if you want.
 DEFAULT_CMD_PREFIX = '->'
