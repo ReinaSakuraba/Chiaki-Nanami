@@ -22,16 +22,16 @@ class Cleverbot:
         disabled = self.server_disables["disabled"]
         if mode:
             if server_id not in disabled:
-                await self.bot.say("Cleverbot has already been enabled on this server")
+                await self.bot.say("Cleverbot has already been enabled on this server.")
             else:
                 disabled.remove(server_id)
-                await self.bot.say("Cleverbot has been re-enabled on this server")
+                await self.bot.say("Cleverbot has been re-enabled on this server.")
         else:
             if server_id in disabled:
-                await self.bot.say("Cleverbot has already been disabled on this server")
+                await self.bot.say("Cleverbot has already been disabled on this server.")
             else:
                 disabled.append(server_id)
-                await self.bot.say("Cleverbot has been disnabled on this server")
+                await self.bot.say("Cleverbot has been disabled on this server.")
             pass
 
     async def on_message(self, message):
