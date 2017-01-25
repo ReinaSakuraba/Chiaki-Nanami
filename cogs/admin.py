@@ -58,7 +58,6 @@ class Admin(DatabasePluginMixin):
         else:
             await self.bot.say(f"I don't see any {key} roles.")
 
-
     @commands.command(name='admins', pass_context=True)
     async def admin_roles(self, ctx):
         """Gives you all the admin roles, I think"""
@@ -106,6 +105,9 @@ class Admin(DatabasePluginMixin):
         self_roles = self.self_roles[ctx.message.server]
         if role.id in self_roles:
             await self.bot.say("That role is already self-assignable... I think")
+            return
+        if role > ctx.message.author.top_role:
+            await self.bot.say("You can't make a role that is higher than your highest role a self-role.")
             return
         self_roles.append(role.id)
         await self.bot.say(f"**{role}** is now a self-assignable role!")
@@ -193,8 +195,10 @@ class Admin(DatabasePluginMixin):
         try:
             await self.bot.add_roles(user, role)
         except discord.Forbidden:
-            msg = (f"I can't remove {user} {role}. Either I don't have the right perms, "
+            msg = (f"I can't give {user} {role}. Either I don't have the right perms, "
                     "or you're trying to add a role that's higher than mine")
+        except discord.HTTPException:
+            msg = f"Giving {role} to {user} failed, for some reason..."
         else:
             msg = f"Successfully gave {user} **{role}**, I think."
         await self.bot.say(msg)
@@ -210,14 +214,16 @@ class Admin(DatabasePluginMixin):
         author = ctx.message.author
         # This won't raise an exception, so we have to check for that
         if role >= author.top_role:
-            await self.bot.say("You can't add a role that's higher than your highest role, I think")
+            await self.bot.say("You can't remove a role that's higher than your highest role, I think")
             return
 
         try:
             await self.bot.remove_roles(user, role)
         except discord.Forbidden:
-            msg = (f"I can't give {user} {role}. Either I don't have the right perms, "
-                    "or you're trying to add a role that's higher than mine")
+            msg = (f"I can't remove **{role}** from {user}. Either I don't have the right perms, "
+                    "or you're trying to remove a role that's higher than mine")
+        except discord.HTTPException:
+            msg = f"Removing **{role}** from {user} failed, for some reason."
         else:
             msg = f"Successfully removed **{role}** from {user}, I think."
         await self.bot.say(msg)
@@ -262,7 +268,8 @@ class Admin(DatabasePluginMixin):
 
         permissions = discord.Permissions(args.permissions)
         if permissions.administrator and not (author.permissions.administrator or author == server.owner):
-            await self.bot.say("You are trying to add a role with administrator as a non-administrator. Please don't do that.")
+            await self.bot.say("You are trying to add a role with administrator permissions "
+                               "as a non-administrator. Please don't do that.")
             return
 
         kwargs = {
@@ -272,9 +279,15 @@ class Admin(DatabasePluginMixin):
             'hoist': args.hoist,
             'mentionable': args.mentionable,
         }
-
-        await self.bot.create_role(server, **kwargs)
-        await self.bot.say(f"Successfully created **{args.name}**!")
+        try:
+            await self.bot.create_role(server, **kwargs)
+        except discord.Forbidden:
+            msg = "I need the **Manage Roles** perm to create roles, I think."
+        except discord.HTTPException:
+            msg = "Creating role **{args.name}** failed, for some reason."
+        else:
+            msg = f"Successfully created **{args.name}**!"
+        await self.bot.say(msg)
 
     @commands.command(name='deleterole', pass_context=True, aliases=['delr'])
     @checks.admin_or_permissions()
@@ -290,8 +303,9 @@ class Admin(DatabasePluginMixin):
         try:
             await self.bot.delete_role(ctx.message.server, role)
         except discord.Forbidden:
-            msg = (f"I can't delete {role}. Either I don't have the right perms, "
-                    "or you're trying to add a role that's higher than mine")
+            msg = f"I can't delete {role} because I don't have the **Manage Roles** perm, I think."
+        except discord.HTTPException:
+            msg = f"Deleting **{role}** failed, for some reason..."
         else:
             msg = "Successfully deleted **{role}**, I think."
         await self.bot.say(msg)
