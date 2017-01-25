@@ -1,11 +1,8 @@
 import asyncio
 import discord
-import inspect
 import json
 import logging
-import os
 import random
-import re
 import sys
 import traceback
 
@@ -15,12 +12,13 @@ from cogs.utils.aitertools import AIterable, ACount
 from cogs.utils.misc import nice_time
 from discord.ext import commands
 
-
 ##logger = logging.getLogger('discord')
 ##logger.setLevel(logging.INFO)
 ##handler = logging.FileHandler(filename='./logs/discord.log', encoding='utf-8', mode='w')
 ##handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
 ##logger.addHandler(handler)
+##logging.basicConfig(level=logging.INFO)
+
 
 bot = chiaki_bot()
 
@@ -33,8 +31,8 @@ initial_extensions = (
     'cogs.halp',
     'cogs.math',
     'cogs.meta',
-    'cogs.moderator',     # TODO: Check for perms
-    'cogs.musictest',     # TODO: Check for perms
+    'cogs.moderator',
+    'cogs.musictest',
 #    'cogs.newpoints',
     'cogs.owner',
     'cogs.rng',
@@ -45,13 +43,12 @@ initial_extensions = (
 #    'cogs.games.eventhost',
     'cogs.games.fizzbuzz',
     'cogs.games.hangman',
+    'cogs.games.math',
     'cogs.games.rps',
     'cogs.games.tictactoe',
     'cogs.games.trivia',
+    'cogs.games.unscramble',
 )
-
-logging.basicConfig(level=logging.INFO)
-
 def log_embed(msg):
     author = msg.author
     user_name = "{0.name}#{0.discriminator} | {0.id}".format(author)
@@ -94,6 +91,7 @@ async def change_role_color():
             await bot.edit_role(server, role, colour=colour)
         # await asyncio.sleep(0.01)
 
+#------------------EVENTS----------------
 @bot.event
 async def on_ready():
     print('Logged in as')
@@ -142,40 +140,9 @@ async def on_command_error(error, ctx):
 @bot.event
 async def on_message(message):
     bot.commands_counter["Messages seen"] += 1
-    from discord.ext.commands.view import StringView
-    view = StringView(message.content)
-    if bot._skip_check(message.author, bot.user):
-        return
-
-    prefix = await bot._get_prefix(message)
-    invoked_prefix = prefix
-
-    if not isinstance(prefix, (tuple, list)):
-        if not view.skip_string(prefix):
-            return
-    else:
-        invoked_prefix = discord.utils.find(view.skip_string, prefix)
-        if invoked_prefix is None:
-            return
-
-
-##    if (not message.channel.is_private and
-##        message.server.id == config["official_server"] and
-##        message.channel.id not in config["official_server_allowed_channels"]):
-##        if bot.user != message.author:
-##           return await bot.send_message(message.channel, (
-##               "Hello {.author.mention}. "
-##               "Please use {} to use your commands please."
-##               ).format(message,
-##                        'or'.join(bot.get_channel(i).mention
-##                                  for i in config["official_server_allowed_channels"][:-1])))
-
     await bot.process_commands(message)
 
-@bot.command(pass_context=True, aliases=['cid'])
-async def channelid(ctx):
-    id = ctx.message.channel.id
-    await bot.say("This channel's id is {}".format(id))
+#-----------------MISC COMMANDS--------------
 
 @bot.command()
 async def invite():

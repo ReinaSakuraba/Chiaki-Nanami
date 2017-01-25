@@ -161,6 +161,10 @@ class ChiakiBot(commands.Bot):
         'without despair',
         'with Nadeko',
         'with Usami',
+
+        # Useful stuff
+        '->help',
+        '->invite',
         ])
         while not self.is_closed:
             name = next(GAME_CHOICES)
