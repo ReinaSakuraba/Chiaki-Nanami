@@ -2,6 +2,7 @@ import argparse
 import discord
 import shlex
 
+from collections import defaultdict
 from discord.ext import commands
 
 from .utils import checks
@@ -23,7 +24,8 @@ class Admin(DatabasePluginMixin):
         self.bot = bot
         self.self_roles = Database.from_json("admin/selfroles.json",
                                              default_factory=list)
-        self.server_roles = checks.server_roles
+        self.member_messages = Database.from_json("admin/membermessages.json",
+                                                  default_factory=lambda: defaultdict(str))
 
     @commands.command(name='addadminrole', pass_context=True, aliases=['aar'])
     @checks.admin_or_permissions(manage_server=True)
@@ -312,6 +314,34 @@ class Admin(DatabasePluginMixin):
 
     async def editrole(self, ctx, role, *, args: str):
         pass
+
+    @commands.command(pass_context=True)
+    @checks.admin_or_permissions()
+    async def welcome(self, ctx, *, message: str):
+        """Sets the bot's message when a member joins this server"""
+        self.member_messages["join"][ctx.message.server] = message
+        await self.bot.say("Welcome message has been set")
+
+    async def on_member_join(self, member):
+        server = member.server
+        message = self.member_messages["join"][server]
+        if not message:
+            return
+        await self.bot.send_message(server, message)
+
+    @commands.command(pass_context=True)
+    @checks.admin_or_permissions()
+    async def byebye(self, ctx, *, message: str):
+        """Sets the bot's message when a member leaves this server"""
+        self.member_messages["leave"][ctx.message.server] = message
+        await self.bot.say("Leave message has been set")
+
+    async def on_member_leave(self, member):
+        server = member.server
+        message = self.member_messages["leave"][server]
+        if not message:
+            return
+        await self.bot.send_message(server, message)
 
 
 def setup(bot):
