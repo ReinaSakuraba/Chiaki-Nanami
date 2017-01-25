@@ -28,7 +28,6 @@ class Database(IDAbleDict):
     def __init__(self, name, default_factory=None, mapping=(), **kwargs):
         self.name = name
         super().__init__(default_factory, mapping)
-        self.logger = logging.getLogger("nanami_data")
         # Pay no attention to this copyness
         self.loop = kwargs.pop('loop', asyncio.get_event_loop())
         self.object_hook = kwargs.pop('object_hook', None)
@@ -67,16 +66,6 @@ class Database(IDAbleDict):
     def from_json(cls, filename, path=DB_PATH, default_factory=None, **kwargs):
         data = _load_json(path + filename, kwargs.get('object_hook'))
         return cls(filename, default_factory, data, **kwargs)
-
-class DatabasePluginMixin:
-    def __setattr__(self, name, val):
-        if isinstance(val, Database):
-            unload = getattr(self, '_unload', None)
-            try:
-                self.bot.add_database(val, unload)
-            except AttributeError:
-                pass
-        super().__setattr__(name, val)
 
 def check_dir(dir_):
     os.makedirs(dir_, exist_ok=True)

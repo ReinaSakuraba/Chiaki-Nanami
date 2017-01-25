@@ -6,7 +6,7 @@ from collections import defaultdict
 from discord.ext import commands
 
 from .utils import checks
-from .utils.database import Database, DatabasePluginMixin
+from .utils.database import Database
 from .utils.misc import str_join
 
 
@@ -16,7 +16,7 @@ def _get_chiaki_roles(server, role):
         return None
     return [discord.utils.get(server.roles, id=id) for id in role_ids]
 
-class Admin(DatabasePluginMixin):
+class Admin:
     """Admin-only commands"""
     __prefix__ = '=>'
 

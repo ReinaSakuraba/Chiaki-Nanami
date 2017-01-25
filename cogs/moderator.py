@@ -3,7 +3,7 @@ import discord
 import re
 
 from .utils import checks
-from .utils.database import Database, DatabasePluginMixin
+from .utils.database import Database
 from .utils.aitertools import AIterable
 from .utils.misc import nice_time, full_succinct_duration as _full_succinct_duration
 
@@ -85,7 +85,7 @@ class ServerWarn:
 
 MOD_FOLDER = "mod/"
 
-class Moderator(DatabasePluginMixin):
+class Moderator:
     """Moderator-related commands
 
     Most of these require the Moderator role (defined by =>addmodrole) or the right permissions

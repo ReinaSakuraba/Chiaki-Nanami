@@ -10,7 +10,7 @@ from itertools import zip_longest
 
 from . import utils
 from ..utils import checks
-from ..utils.database import Database, DatabasePluginMixin
+from ..utils.database import Database
 
 
 # I would like to tank rjt.rockx (aka Obliterator) for providing me information
@@ -179,7 +179,7 @@ def _set_mode_bool(d, key, mode):
         return False
     return None
 
-class PartyLinks(DatabasePluginMixin):
+class PartyLinks:
     def __init__(self, bot):
         self.bot = bot
         config_default = lambda: {"detect" : True, "delete" : True}

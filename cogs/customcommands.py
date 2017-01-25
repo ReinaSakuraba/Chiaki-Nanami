@@ -7,7 +7,7 @@ from discord.ext import commands
 from operator import itemgetter
 
 from .utils import checks
-from .utils.database import Database, DatabasePluginMixin
+from .utils.database import Database
 from .utils.paginator import DelimPaginator
 
 CC_FILE_NAME = "customcommands.json"
@@ -21,7 +21,7 @@ def _smart_truncate(content, length=100, suffix='...'):
     else:
         return ' '.join(content[:length+1].split(' ')[0:-1]) + suffix
 
-class CustomReactions(DatabasePluginMixin):
+class CustomReactions:
     def __init__(self, bot):
         self.bot = bot
         self.db = Database.from_json(CC_FILE_NAME)

@@ -2,11 +2,11 @@ import discord
 
 from discord.ext import commands
 from .utils.transformdict import IDAbleDict
-from .utils.database import Database, DatabasePluginMixin
+from .utils.database import Database
 
 AFK_FILE_NAME = "afk.json"
 
-class AFK(DatabasePluginMixin):
+class AFK:
     def __init__(self, bot):
         self.bot = bot
         self.db = Database.from_json(AFK_FILE_NAME,

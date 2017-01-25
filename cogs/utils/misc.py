@@ -7,6 +7,7 @@ import xml.etree.cElementTree as et
 
 from datetime import timezone
 from discord import utils, Colour, Status
+from discord.ext import commands
 
 def code_say(bot, msg):
     return bot.say(code_msg(msg))
@@ -55,7 +56,7 @@ def convert_to_bool(argument):
     elif lowered in ('no', 'n', 'false', 'f', '0', 'disable', 'off'):
         return False
     else:
-        raise BadArgument(lowered + ' is not a recognised boolean option')
+        raise commands.BadArgument(lowered + ' is not a recognised boolean option')
 
 
 def str_swap(string, swap1, swap2):

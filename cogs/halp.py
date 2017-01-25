@@ -9,7 +9,7 @@ from datetime import datetime
 from discord.ext import commands
 
 from .utils import checks
-from .utils.database import Database, DatabasePluginMixin
+from .utils.database import Database
 from .utils.misc import nice_time, str_swap, str_join
 
 _mentions_transforms = {
@@ -123,7 +123,6 @@ class ProblemMessage:
         print(list(self))
         return hashlib.sha256(str_join('', self).encode('utf-8')).hexdigest()
 
-# fuck JSON and it's way of fucking up namedtuples
 class ProblemEncoder(json.JSONEncoder):
     def default(self, o):
         if type(o) is ProblemMessage:
@@ -137,7 +136,7 @@ class ProblemEncoder(json.JSONEncoder):
                 }
         return super().default(o)
 
-class Help(DatabasePluginMixin):
+class Help:
     def __init__(self, bot):
         self.bot = bot
         self.bot.loop.create_task(self.load_database())
@@ -148,6 +147,7 @@ class Help(DatabasePluginMixin):
         hook = functools.partial(problem_hook, self.bot)
         self.problems = Database.from_json("issues.json", encoder=ProblemEncoder,
                         object_hook=hook)
+        self.problems.setdefault("blocked", [])
 
     @commands.command(pass_context=True, aliases=['HALP'])
     async def halp(self, ctx, *commands : str):
@@ -167,11 +167,30 @@ class Help(DatabasePluginMixin):
 
     @commands.command(pass_context=True)
     async def contact(self, ctx, *, problem: str):
+        """Contacts the bot owner
+
+        Try not to abuse this, as the owner can block you at will.
+        """
+        author = ctx.message.author
+        if author.id in self.problems["blocked"]:
+            await self.bot.reply("You have been blocked from contacting the owner")
+            return
         appinfo = await self.bot.application_info()
+        owner = appinfo.owner
+        # TODO, make this work with namedtuples
         problem_message = ProblemMessage(ctx.message)
         self.problems[problem_message.hash] = problem_message
-        print(problem_message, repr(problem_message))
-        await self.bot.send_message(appinfo.owner, embed=problem_message.embed)
+        # print(problem_message, repr(problem_message))
+        await self.bot.send_message(owner, f"**{owner.mention} New message from {author}!**",
+                                    embed=problem_message.embed)
+
+    @commands.command(pass_context=True)
+    @checks.is_owner()
+    async def contactblock(self, ctx, *, user: discord.User):
+        if not ctx.message.channel.is_private:
+            return
+        self.problems["blocked"].append(user.id)
+        await self.bot.say(f"Blocked user {user} successfully")
 
     @commands.command(pass_context=True, hidden=True)
     @checks.is_owner()
@@ -205,7 +224,11 @@ class Help(DatabasePluginMixin):
         if problem_message is None:
             await self.bot.say(f"Hash {hash} doesn't exist, I think")
         else:
-            await self.bot.say(f"**Message {hash}:**" , embed=problem_message.embed)
+            await self.bot.say(f"**Saved Message from {problem_message.author}:**" , embed=problem_message.embed)
+
+    async def modules(self):
+        modules = '\n'.join(['+' + cog.name for cog in self.bot.cogs])
+        await self.bot.say(f"Available Modules: ```css\n{modules}```")
 
 def setup(bot):
     bot.add_cog(Help(bot))

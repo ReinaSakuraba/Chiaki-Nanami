@@ -1,10 +1,10 @@
 from discord.ext import commands
 
 from .utils import checks, cleverbot
-from .utils.database import Database, DatabasePluginMixin
+from .utils.database import Database
 from .utils.misc import convert_to_bool
 
-class Cleverbot(DatabasePluginMixin):
+class Cleverbot:
     def __init__(self, bot):
         self.bot = bot
         self.cb_session = cleverbot.Cleverbot('test', session=bot.http.session, loop=bot.loop)

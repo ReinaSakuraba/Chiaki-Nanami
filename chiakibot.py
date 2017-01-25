@@ -122,21 +122,12 @@ class ChiakiBot(commands.Bot):
 
         self.commands_counter = Counter()
         self.persistent_counter = Database.from_json("stats.json")
-        self.databases = [(self.persistent_counter, None)]
+        self.databases = [self.persistent_counter]
+        self.unloads = []
 
     async def _start_time(self):
         await self.wait_until_ready()
         self.start_time = datetime.now()
-
-    def add_database(self, db, unload=None):
-        self.databases.append((db, unload))
-
-    # literally the only reason why I created a subclass
-    async def dump_databases(self):
-        for db, unload in self.databases:
-            if unload is not None:
-                unload()
-            await db.dump()
 
     async def logout(self):
         self.commands_counter.update(self.persistent_counter)
@@ -144,8 +135,39 @@ class ChiakiBot(commands.Bot):
         await self.dump_databases()
         await super().logout()
 
-    def get_member(self, id):
-        return discord.utils.get(self.get_all_members(), id=id)
+    def add_cog(self, cog):
+        members = inspect.getmembers(cog)
+        for name, member in members:
+            # add any databases
+            if isinstance(member, Database):
+                self.add_database(member)
+
+        super().add_cog(cog)
+
+    def remove_cog(self, name):
+        cog = self.cogs.get(name, None)
+        if cog is None:
+            return
+        members = inspect.getmembers(cog)
+        for name, member in members:
+            # add any databases
+            if isinstance(member, Database):
+                self.remove_database(member)
+        super().remove_cog(name)
+
+    def add_database(self, db):
+        if db not in self.databases:
+            self.databases.append(db)
+
+    def remove_database(self, db):
+        if db in self.databases:
+            self.loop.create_task(db.dump())
+            self.databases.remove(db)
+
+    # literally the only reason why I created a subclass
+    async def dump_databases(self):
+        for db in self.databases:
+            await db.dump()
 
     # Just some looping functions
     async def change_game(self):
