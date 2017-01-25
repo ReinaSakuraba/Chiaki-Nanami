@@ -2,6 +2,7 @@ import asyncio
 import discord
 import inspect
 import itertools
+import logging
 import random
 import re
 
@@ -11,6 +12,8 @@ from discord.ext import commands
 
 from cogs.utils.database import Database
 from cogs.utils.misc import cycle_shuffle, full_succinct_duration
+
+log = logging.getLogger(__name__)
 
 # You are free to change this if you want.
 DEFAULT_CMD_PREFIX = '->'
@@ -141,7 +144,6 @@ class ChiakiBot(commands.Bot):
             # add any databases
             if isinstance(member, Database):
                 self.add_database(member)
-
         super().add_cog(cog)
 
     def remove_cog(self, name):
@@ -155,14 +157,34 @@ class ChiakiBot(commands.Bot):
                 self.remove_database(member)
         super().remove_cog(name)
 
+    def load_extension(self, name):
+        try:
+            super().load_extension(name)
+        except Exception as e:
+            log.error(f"{type(e).__name__}: {e}")
+            raise
+        else:
+            log.info(f"{name} successfully loaded")
+
+    def unload_extension(self, name):
+        try:
+            super().load_extension(name)
+        except Exception as e:
+            log.error(f"{type(e).__name__}: {e}")
+            raise
+        else:
+            log.info(f"{name} successfully unloaded")
+
     def add_database(self, db):
         if db not in self.databases:
             self.databases.append(db)
+        log.info(f"database {db.name} successfully added")
 
     def remove_database(self, db):
         if db in self.databases:
             self.loop.create_task(db.dump())
             self.databases.remove(db)
+        log.info(f"database {db.name} successfully removed")
 
     # literally the only reason why I created a subclass
     async def dump_databases(self):

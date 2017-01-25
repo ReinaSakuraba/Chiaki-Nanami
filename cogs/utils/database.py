@@ -4,6 +4,7 @@ import logging
 import os
 import uuid
 
+from datetime import datetime
 from .transformdict import IDAbleDict
 
 DATA_PATH = 'data/'
@@ -16,6 +17,8 @@ def _load_json(name, object_hook=None):
             return json.load(f, object_hook=object_hook)
     except (FileNotFoundError, json.decoder.JSONDecodeError) as e:
         return {}
+        
+log = logging.getLogger(f"chiaki-{__name__}")
 
 class Database(IDAbleDict):
     # json sucks.
@@ -59,8 +62,10 @@ class Database(IDAbleDict):
         return True
 
     async def dump(self, path=DB_PATH):
+        now = datetime.now()
         with await self.lock:
             await self.loop.run_in_executor(None, self._dump, path)
+        log.info(f"database {self.name} successfully dumped on {now}")
 
     @classmethod
     def from_json(cls, filename, path=DB_PATH, default_factory=None, **kwargs):
