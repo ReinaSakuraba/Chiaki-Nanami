@@ -27,8 +27,5 @@ class DelimPaginator(commands.Paginator):
         return paginator
           
 async def iterable_say(delim, iterable, bot, **kwargs):
-    paginator = DelimPaginator(join_delim=delim, **kwargs)
-    for role in map(str, iterable):
-        paginator.add_line(role)
-    for page in paginator:
+    for page in DelimPaginator.from_iterable(map(str, iterable), join_delim=delim, **kwargs):
         await bot.say(page)
