@@ -47,25 +47,16 @@ def filter_attr(iterable, **attrs):
         return True
 
     return filter(predicate, iterable)
+    
+def convert_to_bool(argument):
+    lowered = argument.lower()
+    if lowered in ('yes', 'y', 'true', 't', '1', 'enable', 'on'):
+        return True
+    elif lowered in ('no', 'n', 'false', 'f', '0', 'disable', 'off'):
+        return False
+    else:
+        raise BadArgument(lowered + ' is not a recognised boolean option')
 
-@utils.deprecated("discord.utils.cached_property")
-class lazy_property(object):
-    '''
-    Meant to be used for lazy evaluation of an object attribute.
-    Property should represent non-mutable data, as it replaces itself.
-    '''
-
-    def __init__(self,fget):
-        self.fget = fget
-        self.func_name = fget.__name__
-
-
-    def __get__(self, obj, cls):
-        if obj is None:
-            return None
-        value = self.fget(obj)
-        setattr(obj, self.func_name, value)
-        return value
 
 def str_swap(string, swap1, swap2):
     return string.replace(swap1, '%temp%').replace(swap2, swap1).replace('%temp%', swap2)

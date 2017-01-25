@@ -11,7 +11,6 @@ from itertools import zip_longest
 from . import utils
 from ..utils import checks
 from ..utils.database import Database, DatabasePluginMixin
-from ..utils.misc import lazy_property
 
 
 # I would like to tank rjt.rockx (aka Obliterator) for providing me information
@@ -31,6 +30,10 @@ async def _load_servers_from_site():
         data = await response.text()
     servers = _pairwise(data[2:].split('\x00'))
     return [DiepioServer(*s) for s in servers]
+
+async def _produce_server_list():
+    global SERVER_LIST
+    SERVER_LIST = await _load_servers_from_site()
 
 def _search(pattern, string):
     try:
@@ -236,7 +239,5 @@ class PartyLinks(DatabasePluginMixin):
 
 
 def setup(bot):
-    global SERVER_LIST
-    SERVER_LIST = bot.loop.run_until_complete(_load_servers_from_site())
-    pl = PartyLinks(bot)
-    bot.add_cog(pl)
+    bot.loop.create_task(_produce_server_list())
+    bot.add_cog(PartyLinks(bot))
