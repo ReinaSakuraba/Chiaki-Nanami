@@ -237,6 +237,11 @@ class ChiakiBot(commands.Bot):
     def str_uptime(self):
         return full_succinct_duration(self.uptime.total_seconds())
 
+    @property
+    def invite_url(self):
+        chiaki_permissions = discord.Permissions(2146823295)
+        return discord.utils.oauth_url(self.user.id, chiaki_permissions)
+
 # main bot
 def chiaki_bot():
     return ChiakiBot(command_prefix=_find_prefix_by_cog,

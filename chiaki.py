@@ -158,7 +158,7 @@ async def invite():
     invite_url = await bot.create_invite(official_server)
     await bot.say(f"""
 I am not a not a public bot yet... but here's the invite link just in case:
-https://discordapp.com/oauth2/authorize?client_id={bot.user.id}&scope=bot&permissions=2146823295
+{bot.invite_url}
 
 But in the meantime, here's a link to the offical Chiaki Nanami server:
 {invite_url}
