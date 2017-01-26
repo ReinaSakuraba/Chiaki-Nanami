@@ -22,7 +22,6 @@ def cycle_shuffle(iterable):
         for element in saved:
               yield element
 
-
 status_colors = {
     Status.online         : Colour(0x43b581),
     Status.offline        : Colour(0x747f8d),
@@ -57,7 +56,6 @@ def convert_to_bool(argument):
         return False
     else:
         raise commands.BadArgument(lowered + ' is not a recognised boolean option')
-
 
 def str_swap(string, swap1, swap2):
     return string.replace(swap1, '%temp%').replace(swap2, swap1).replace('%temp%', swap2)

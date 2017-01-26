@@ -319,12 +319,12 @@ class Admin:
     @checks.admin_or_permissions()
     async def welcome(self, ctx, *, message: str):
         """Sets the bot's message when a member joins this server"""
-        self.member_messages["join"][ctx.message.server] = message
+        self.member_messages["join"][ctx.message.server.id] = message
         await self.bot.say("Welcome message has been set")
 
     async def on_member_join(self, member):
         server = member.server
-        message = self.member_messages["join"][server]
+        message = self.member_messages["join"][server.id]
         if not message:
             return
         await self.bot.send_message(server, message)
@@ -333,12 +333,12 @@ class Admin:
     @checks.admin_or_permissions()
     async def byebye(self, ctx, *, message: str):
         """Sets the bot's message when a member leaves this server"""
-        self.member_messages["leave"][ctx.message.server] = message
+        self.member_messages["leave"][ctx.message.server.id] = message
         await self.bot.say("Leave message has been set")
 
     async def on_member_leave(self, member):
         server = member.server
-        message = self.member_messages["leave"][server]
+        message = self.member_messages["leave"][server.id]
         if not message:
             return
         await self.bot.send_message(server, message)
