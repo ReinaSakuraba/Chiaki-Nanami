@@ -1,3 +1,4 @@
+from collections import defaultdict
 from discord.ext import commands
 
 from .utils import checks, cleverbot
@@ -7,15 +8,24 @@ from .utils.misc import convert_to_bool
 class Cleverbot:
     def __init__(self, bot):
         self.bot = bot
-        self.cb_session = cleverbot.Cleverbot('test', session=bot.http.session, loop=bot.loop)
+        self.sessions = {}
         self.server_disables = Database.from_json("cleverbotdisabled.json")
         self.server_disables.setdefault("disabled", [])
+
+    def _get_session(self, channel):
+        if channel not in self.sessions:
+            cb = cleverbot.Cleverbot(f"test-{channel.id}",
+                                     session=self.bot.http.session,
+                                     loop=self.bot.loop)
+            self.sessions[channel] = cb
+            return cb
+        return self.sessions[channel]
 
     @commands.command(pass_context=True, hidden=True, aliases=['scb'])
     @checks.admin_or_permissions(administrator=True)
     async def setcleverbot(self, ctx, mode):
         """Enables or disables Cleverbot for this server
-        
+
         The following arguments enables Cleverbot:
             'yes', 'y', 'true', 't', '1', 'enable', 'on'
         The following arguments disables Cleverbot:
@@ -61,8 +71,9 @@ class Cleverbot:
         else:
             return
 
+        session = self._get_session(channel)
         await self.bot.send_typing(channel)
-        response = await self.cb_session.ask(content)
+        response = await session.ask(content)
         await self.bot.send_message(channel, f"{author.mention} {response}")
 
 def setup(bot):
