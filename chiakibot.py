@@ -175,7 +175,7 @@ class ChiakiBot(commands.Bot):
 
     def unload_extension(self, name):
         try:
-            super().load_extension(name)
+            super().unload_extension(name)
         except Exception as e:
             log.error(f"{type(e).__name__}: {e}")
             raise
