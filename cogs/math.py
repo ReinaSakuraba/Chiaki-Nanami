@@ -5,6 +5,12 @@ import re
 
 from collections.abc import Sequence
 from discord.ext import commands
+from random import randrange
+
+try:
+    import numpy as np
+except ImportError:
+    np = None
 
 try:
     import sympy
@@ -14,13 +20,7 @@ else:
     from sympy.parsing.sympy_parser import (
         parse_expr, standard_transformations, implicit_multiplication_application
     )
-    default_transformations = (standard_transformations +
-        (implicit_multiplication_application,))
-
-try:
-    import numpy as np
-except ImportError:
-    np = None
+    default_transformations = (implicit_multiplication_application, *standard_transformations)
 
 MATH_CONTEXT = {a: getattr(math, a, None) for a in dir(math) if not a.startswith('_')}
 sec = lambda x: 1 / math.cos(x)
@@ -35,27 +35,33 @@ MATH_CONTEXT.update(ln=math.log, arcsin=math.asin, arccos=math.acos, arctan=math
 del sec, csc, cot, sign
 OTHER_OPS = ['and', 'or', 'not', ]
 
-def _is_sane(token):
-    if not token:
-        return True
-    elif token == '__builtins__':
-        return False
-    return token in MATH_CONTEXT or token in OTHER_OPS
 
-def sanitize(fn_str):
-    words = re.split(r"[0-9.+\-*/^&|<>, ()=]+", fn_str)
-    for token in words:
-        if not _is_sane(token):
-            raise ValueError(f"Unrecognized token: {token}")
+def _sanitize_func(pat, ctx, sanity_check):
+    def sanitize(fn_str):
+        words = re.split(pat, fn_str)
+        for token in words:
+            if not sanity_check(token):
+                raise ValueError(f"Unrecognized token: {token}")
+        return eval("lambda: " + fn_str, ctx)
+    return sanitize
 
-    return eval("lambda: " + fn_str, MATH_CONTEXT)
+def _is_sane_func(ctx):
+    def is_sane(token):
+        if not token:
+            return True
+        elif token == '__builtins__':
+            return False
+        return token in ctx
+    return is_sane
 
-class IncompatibleDimensions(Exception):
-    pass
+_sanitize = _sanitize_func(r"[0-9.+\-*/^&|<>, ()=]+", MATH_CONTEXT, _is_sane_func(list(MATH_CONTEXT) + OTHER_OPS))
 
 # Pure Python Vector class implementation by Gareth Rees
 # https://github.com/gareth-rees/geometry/blob/master/vector.py
 # TODO: Use numpy
+class IncompatibleDimensions(Exception):
+    pass
+
 class Vector(tuple):
     def __new__(cls, *args):
         if len(args) == 1: args = args[0]
@@ -66,7 +72,7 @@ class Vector(tuple):
         return fmt.format(type(self).__name__, tuple(self))
 
     def __str__(self):
-        return '[{}]'.format(', '.join(map(str, self)))
+        return f"[{', '.join(map(str, self))}]"
 
     def _check_compatibility(self, other):
         if len(self) != len(other):
@@ -225,45 +231,48 @@ def _make_vectors(*values):
 
 VECTOR_CONTEXT = {
     'Vector': Vector,
-    'angle': Vector.angle,
-    'cross': Vector.cross,
-    'dot': Vector.dot,
-    'magnitude_squared': Vector.magnitude_squared,
-    'mag_squared': Vector.mag_squared,
-    'magnitude': Vector.magnitude,
-    'mag': Vector.mag,
-    'normalized': Vector.normalized,
-    'projected': Vector.projected,
-    'distance': Vector.distance,
-    'scaled': Vector.scaled,
-    'taxicab': Vector.taxicab,
-    'zero': Vector.zero,
-    'x': Vector.x,
-    'y': Vector.y,
-    'z': Vector.z,
     'abs': abs,
     'bool': bool,
     'degrees': math.degrees,
     '__builtins__': None,
+    **{name: getattr(Vector, name) for name in dir(Vector) if not name.startswith('_')},
     }
+_vector_sanitize = _sanitize_func(r"[0-9, +-/*()]+", VECTOR_CONTEXT, _is_sane_func(VECTOR_CONTEXT))
 
-def _vector_is_sane(token):
-    if not token:
-        return True
-    elif token == '__builtins__':
-        return False
-    return token in VECTOR_CONTEXT
+# Miller-Rabin primality test written by Gareth Rees
+# Wow I use a lot of his code
+# http://stackoverflow.com/a/14616936
+_small_primes = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31] # etc.
 
-def vector_sanitize(fn_str):
-    words = re.split(r"[0-9, +-/*()]+", fn_str)
-    for token in words:
-        if not _vector_is_sane(token):
-            raise ValueError(f"Unrecognized token: {token}")
+def _probably_prime(n, k):
+    """Return True if n passes k rounds of the Miller-Rabin primality`
+    test (and is probably prime). Return False if n is proved to be
+    composite.
 
-    return eval("lambda: " + fn_str, VECTOR_CONTEXT)
+    """
+    if n < 2: return False
+    for p in _small_primes:
+        if n < p * p: return True
+        if n % p == 0: return False
+    r, s = 0, n - 1
+    while s % 2 == 0:
+        r += 1
+        s //= 2
+    for _ in range(k):
+        a = randrange(2, n - 1)
+        x = pow(a, s, n)
+        if x == 1 or x == n - 1:
+            continue
+        for _ in range(r - 1):
+            x = pow(x, 2, n)
+            if x == n - 1:
+                break
+        else:
+            return False
+    return True
 
 class Math:
-    __prefix__ = ['+', '-', '*', '/', '^']
+    __prefix__ = ['+', '-', '*', '/', '^', '=']
     def __init__(self, bot):
         self.bot = bot
 
@@ -275,6 +284,31 @@ class Math:
     async def _result_say(self, input, output):
         return await self.bot.say(f"```css\nInput: \n{input}\n\nOutput:\n{output}```")
 
+    def _calculate(self, fn_str, sanitizer):
+        try:
+            fn = sanitizer(fn_str)
+        except (ValueError, SyntaxError) as e:
+            output = f"{type(e).__name__}: {e}"
+        else:
+            try:
+                output = fn()
+            except Exception as e:
+                output = f"{type(e).__name__}: {e}"
+        return output
+
+    @commands.command()
+    async def isprime(self, num: int, accuracy: int=40):
+        """Determines if a number is probably prime.
+
+        This command uses the Miller-Rabin primality test.
+        As a result, it's not certain if a number is a prime, but there's a good chance it is.
+
+        An optional accuracy number can be passed. Defaults to 40.
+        """
+        result = _probably_prime(num, accuracy)
+        prime_or_not = "not " * (not result)
+        await self.bot.say(f"**{num}** is {prime_or_not}prime, probably.")
+
     @commands.command(aliases=['calcfuncs'])
     async def calcops(self):
         """Lists all the math functions that can be used"""
@@ -284,17 +318,15 @@ class Math:
     @commands.command(aliases=['calc'])
     async def calculate(self, *, expr: str):
         """Calculates a mathematical expression"""
-        try:
-            fn = sanitize(expr)
-        except (ValueError, SyntaxError) as e:
-            output = f"{type(e).__name__}: {e}"
-        else:
-            try:
-                output = fn()
-            except Exception as e:
-                output = f"{type(e).__name__}: {e}"
+        output = self._calculate(expr, _sanitize)
         if '^' in expr:
             output += "\nNote: '^' is the XOR operator. Use '**' for power."
+        await self._result_say(expr, output)
+
+    @commands.command(aliases=['leval'])
+    async def literaleval(self, *, expr: str):
+        """Basically a "safe" eval"""
+        output = self._calculate(expr, lambda s: lambda: ast.literal_eval(s))
         await self._result_say(expr, output)
 
     @commands.command(aliases=['vectorcalculate'])
@@ -307,17 +339,7 @@ class Math:
         """
         vector_repr_func = lambda s: repr(Vector(ast.literal_eval(s.group(1))))
         vector_expr_string = re.sub(r'(\[[^"]*?\])', vector_repr_func, expr)
-        try:
-            fn = vector_sanitize(vector_expr_string)
-        except (ValueError, SyntaxError) as e:
-            output = f"{type(e).__name__}: {e}"
-        else:
-            try:
-                output = fn()
-            except Exception as e:
-                output = f"{type(e).__name__}: {e}"
-
-        await self._result_say(expr, output)
+        await self._result_say(expr, self._calculate(vector_expr_string, _vector_sanitize))
 
     @commands.command(aliases=['vectorfuncs'])
     async def vectorops(self):
@@ -338,7 +360,6 @@ class Math:
 
         These can only be called as vec.func
         """
-
         ops = [key for key, val in VECTOR_CONTEXT.items() if isinstance(val, property)]
         await self.bot.say(f"Available vector properties: \n```\n{', '.join(ops)}```")
 
@@ -372,7 +393,7 @@ class Math:
             await self._result_say(equation, result)
 
     @commands.command()
-    async def limit(self, expr: str, var: sympy.Symbol, to, dir='+'):
+    async def limit(self, expr: str, var, to, dir='+'):
         """Finds the limit of an equation.
 
         var is the nth derivative you wish to calcuate
@@ -382,6 +403,8 @@ class Math:
         The expression must be in quotes.
         """
         await self._check_module(sympy, "SymPy")
+        # Can't use annotations because it wouldn't even compile if sympy wasn't imported
+        var = sympy.Symbol(var)
         equation = parse_expr(expr, evaluate=False, transformations=default_transformations)
         result = sympy.pretty(sympy.limit(expr, var, to, dir))
         await self._result_say(equation, result)
@@ -400,8 +423,6 @@ class Math:
         else:
             result = sympy.pretty(sympy.integrate(equation, symbols[0]))
             await self._result_say(equation, result)
-
-
 
 def setup(bot):
     bot.add_cog(Math(bot))
