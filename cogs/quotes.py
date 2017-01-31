@@ -49,7 +49,7 @@ class Quotes:
             try:
                 return random.choice(self.quotes_db["private"])
             except IndexError:
-                await self.bot.say(f"This server has no quotes.")
+                await self.bot.say(f"There are no quotes made in DMs... yet.")
                 return None
         if number_or_user is not None:
             result = parse_int(number_or_user)
@@ -80,6 +80,12 @@ class Quotes:
 
     @commands.command(pass_context=True)
     async def quote(self, ctx, *, number_or_user: str=None):
+        """Fetches a quote.
+
+        If a number is given, it will attempt to find the quote with that number.
+        If a user is given, it will attempt to give a random quote from the user.
+        Otherwise it will just give a random quote.
+        """
         quote = await self._quote_dict(ctx, number_or_user)
         if quote is None:
             return
@@ -89,9 +95,10 @@ class Quotes:
     @commands.command(pass_context=True)
     async def addquote(self, ctx, quote: str, *,
                        author: converter.ApproximateUser=None):
-        """Adds a quote
+        """Adds a quote to the list of the server's quotes.
 
-        Your quote must be in quotations marks
+        Your quote must be in quotation marks.
+        If an author is not specified, it defaults to the author of the message.
         Example: ->addquote "This is not a quote" bob#4200
         """
         message = ctx.message
