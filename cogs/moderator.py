@@ -95,6 +95,8 @@ class Moderator:
         self.muted_roles_db = Database.from_json(MOD_FOLDER + "mutedroles.json")
         self.muted_users_db = Database.from_json(MOD_FOLDER + "mutedusers.json",
                                                  default_factory=dict)
+        self.temp_bans_db = Database.from_json(MOD_FOLDER + "tempbans.json",
+                                               default_factory=dict)
         self.cases_db = Database.from_json(MOD_FOLDER + "case-action.json",
                                            default_factory=dict)
         self.slowmodes = defaultdict(SlowmodeUpdater)
@@ -102,7 +104,7 @@ class Moderator:
         server_warn_default = lambda: {"warn_limit": 2, "users_warns" : Counter()}
         self.warns_db = Database.from_json(MOD_FOLDER + "warns.json",
                                            default_factory=server_warn_default)
-        self.bot.loop.create_task(self.update_muted_users())
+        self.bot.loop.create_task(self.update())
 
     async def _regen_muted_permissions(self, role):
         overwrite = discord.PermissionOverwrite(send_messages=False,
@@ -163,23 +165,38 @@ class Moderator:
             pass
         #await self._set_perms_for_mute(member, False, True)
 
-    async def update_muted_users(self):
+    async def _update_db(self, db, action):
+        for server_id, affected_members in list(db.items()):
+            server = self.bot.get_server(server_id)
+
+            for member_id, status in list(affected_members.items()):
+                now = datetime.now()
+                last_time = time(status["time"], "%Y-%m-%d %H:%M:%S.%f")
+
+                # yay for hax
+                if (now - last_time).total_seconds() >= status["duration"]:
+                    member = server.get_member(member_id)
+                    await action(member, status)
+                    
+    async def update(self):
         await self.bot.wait_until_ready()
-        time = datetime.strptime
-        while not self.bot.is_closed:
-            for server_id, muted_members in list(self.muted_users_db.items()):
-                server = self.bot.get_server(server_id)
-
-                for member_id, status in list(muted_members.items()):
-                    now = datetime.now()
-                    last_time = time(status["time"], "%Y-%m-%d %H:%M:%S.%f")
-
-                    # yay for hax
-                    if (now - last_time).total_seconds() >= status["duration"]:
-                        member = server.get_member(member_id)
-                        await self._unmute(member)
-
-            # Must end the blocking or else the program will hang
+        update_db = self._update_db
+        # let's hope async lambdas become a thing
+        async def unmute(member, status):
+            await self._unmute(member)
+        async def unban(member, status):
+            server = self.bot.get_server(status["server"])
+            member = await self.bot.get_user_info(status["user"])
+            await self.bot.unban(server, member)
+            invite = await self.bot.create_invite(server)
+            await self.bot.send_message(member, 
+                                        f"You have been unbanned from {server}, "
+                                        "please be on your best behaviour from now on...\n"
+                                        f"{invite}"
+                                        )
+        while not self.bot.is_killed:
+            await update_db(self.muted_users_db, unmute)
+            await update_db(self.temp_bans_db, unban)
             await asyncio.sleep(0)
 
     # TODO
@@ -306,7 +323,7 @@ class Moderator:
     # This also applies to kick, ban, and unmute
 
     @commands.command(pass_context=True, no_pm=True)
-    @checks.mod_or_permissions()
+    @checks.is_mod()
     async def warn(self, ctx, member: discord.Member, *, reason: str="None"):
         server = ctx.message.server
         author = ctx.message.author
@@ -404,6 +421,40 @@ class Moderator:
 
     @commands.command(pass_context=True, no_pm=True)
     @checks.mod_or_permissions(ban_members=True)
+    async def tempban(self, ctx, member: discord.Member, durations, *, reason: str):
+        """Temporarily bans a user (obviously)
+
+        Because of the reason parameter, if you don't want to mention the user
+        you must put the user in quotes if you're gonna put a reason
+        
+        usage: tempban "Junko Enoshima#6666" 16d Too much despair!
+        """
+        server_mutes = self.temp_bans_db[member.server]
+        duration = _full_duration(durations)
+        data = {
+            "server": member.server.id,
+            "user": member.id,
+            "time": str(datetime.now()),
+            "duration": duration,
+            "reason": reason,
+            }
+
+        server_mutes[member.id] = data
+        full_succinct_duration = _full_succinct_duration(duration)
+        try:
+            await self.bot.ban(member)
+        except discord.Forbidden:
+            await self.bot.say("I don't have the permission to ban members, I think.")
+        except discord.HTTPException:
+            await self.bot.say("Banning failed. I don't know what happened.")
+        else:
+            
+            await self.bot.say("Done, please don't make me do that again.")
+            await self._make_case("was temporarily banned :hammer_pick:", ctx.message,
+                                  member, reason, 0xCC0000)
+
+    @commands.command(pass_context=True, no_pm=True)
+    @checks.mod_or_permissions(ban_members=True)
     async def ban(self, ctx, member: discord.Member, *, reason: str):
         """Bans a user (obviously)
 
@@ -422,14 +473,13 @@ class Moderator:
             await self._make_case("was banned :hammer:", ctx.message,
                                   member, reason, 0xAA1111)
 
-    @commands.command(pass_context=True, no_pm=True)
-    @checks.mod_or_permissions(ban_members=True)
+
+    @commands.command(pass_context=True, no_pm=True, disabled=True)
+    @checks.is_owner()
     async def unban(self, ctx, member: discord.Member, *, reason: str):
         """Unbans a user (obviously)
-
-        Because of the reason parameter, if you don't want to mention the user
-        you must put the user in quotes if you're gonna put a reason
-        e.g. ban "Junko Enoshima#6666" Too much despair
+        
+        As of right now, this command doesn't work, as the user is effectively removed from the server upon banning.
         """
         try:
             await self.bot.unban(ctx.message.server, member)
@@ -440,15 +490,15 @@ class Moderator:
         else:
             await self.bot.say(f"Done. What did {member.mention} do to get banned in the first place?")
             await self._make_case("was unbanned :slight_smile:", ctx.message,
-                                  member, reason, 0xAA1111)
+                                  member, reason, 0x33FF00)
 
     @commands.group(pass_context=True, no_pm=True)
-    @checks.admin_or_permissions()
+    @checks.is_admin()
     async def caseset(self, ctx):
         pass
 
     @caseset.command(pass_context=True, no_pm=True)
-    @checks.admin_or_permissions()
+    @checks.is_admin()
     async def log(self, ctx, *, channel: discord.Channel=None):
         if channel is None:
             channel = ctx.message.channel
@@ -459,7 +509,7 @@ class Moderator:
         await self.bot.say(f"Cases will now be made on channel {channel.mention}")
 
     @caseset.command(pass_context=True, no_pm=True)
-    @checks.admin_or_permissions()
+    @checks.is_admin()
     async def reset(self, ctx):
         server_cases = self.cases_db[ctx.message.server]
         server_cases["case_num"] = 1

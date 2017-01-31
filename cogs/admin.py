@@ -1,5 +1,6 @@
 import argparse
 import discord
+import re
 import shlex
 
 from collections import defaultdict
@@ -16,6 +17,11 @@ def _get_chiaki_roles(server, role):
         return None
     return [discord.utils.get(server.roles, id=id) for id in role_ids]
 
+def _inplace_replace(string, d):
+    substrs = sorted(replacements, key=len, reverse=True)
+    pattern = re.compile("|".join(map(re.escape, substrs)))
+    return pattern.sub(lambda m: rep[re.escape(m.group(0))], string)
+
 class Admin:
     """Admin-only commands"""
     __prefix__ = '=>'
@@ -24,8 +30,7 @@ class Admin:
         self.bot = bot
         self.self_roles = Database.from_json("admin/selfroles.json",
                                              default_factory=list)
-        self.member_messages = Database.from_json("admin/membermessages.json",
-                                                  default_factory=lambda: defaultdict(str))
+        self.member_messages = Database.from_json("admin/membermessages.json")
 
     @commands.command(name='addadminrole', pass_context=True, aliases=['aar'])
     @checks.admin_or_permissions(manage_server=True)
@@ -41,7 +46,7 @@ class Admin:
         await self.bot.say(f"Made {role} an **Admin role**!")
 
     @commands.command(name='addmodrole', pass_context=True, aliases=['amr'])
-    @checks.admin_or_permissions()
+    @checks.admin_or_permissions(manage_server=True)
     async def add_mod_role(self, ctx, *, role: discord.Role):
         """Add a role from the 'Moderators' role
 
@@ -72,7 +77,7 @@ class Admin:
 
     @commands.command(name='removeadminrole', pass_context=True,
                       aliases=['rar', 'remadminrole'])
-    @checks.admin_or_permissions()
+    @checks.admin_or_permissions(manage_server=True)
     async def remove_admin_role(self, ctx, *, role: discord.Role):
         """Removes a role from the 'Admins' role
 
@@ -86,7 +91,7 @@ class Admin:
 
     @commands.command(name='removemodrole',
                       pass_context=True, aliases=['rmr', 'remmodrole'])
-    @checks.admin_or_permissions()
+    @checks.admin_or_permissions(manage_server=True)
     async def remove_mod_role(self, ctx, *, role: discord.Role):
         """Removes a role from the 'Moderators' role
 
@@ -97,7 +102,7 @@ class Admin:
         await self.bot.say(f"Made **{role}** an Moderators!")
 
     @commands.command(name='addselfrole', pass_context=True, aliases=['asar',])
-    @checks.admin_or_permissions()
+    @checks.admin_or_permissions(manage_server=True)
     async def add_self_role(self, ctx, *, role: discord.Role):
         """Adds a self-assignable role to the server
 
@@ -116,7 +121,7 @@ class Admin:
 
     @commands.command(name='removeselfrole',
                       pass_context=True, aliases=['rsar', 'remselfrole'])
-    @checks.admin_or_permissions()
+    @checks.admin_or_permissions(manage_server=True)
     async def remove_self_role(self, ctx, *, role: discord.Role):
         """Removes a self-assignable role from the server
 
@@ -131,7 +136,7 @@ class Admin:
             await self.bot.say(f"**{role}** is no longer a self-assignable role!")
 
     @commands.command(name='listselfrole', pass_context=True, aliases=['lsar'])
-    @checks.admin_or_permissions()
+    @checks.is_admin()
     async def list_self_role(self, ctx):
         """List all the self-assignable roles in the server
 
@@ -231,7 +236,7 @@ class Admin:
         await self.bot.say(msg)
 
     @commands.command(name='createrole', pass_context=True, no_pm=True, aliases=['crr'])
-    @checks.admin_or_permissions()
+    @checks.is_admin()
     async def create_role(self, ctx, *, args: str):
         """Creates a role with some custom arguments
 
@@ -292,7 +297,7 @@ class Admin:
         await self.bot.say(msg)
 
     @commands.command(name='deleterole', pass_context=True, aliases=['delr'])
-    @checks.admin_or_permissions()
+    @checks.is_admin()
     async def delete_role(self, ctx, *, role: discord.Role):
         """Deletes a role from the server
 
@@ -316,21 +321,35 @@ class Admin:
         pass
 
     @commands.command(pass_context=True)
-    @checks.admin_or_permissions()
+    @checks.is_admin()
     async def welcome(self, ctx, *, message: str):
-        """Sets the bot's message when a member joins this server"""
+        """Sets the bot's message when a member joins this server.
+
+        The following special formats can be in the message:
+        {user}   = the member that joined. If one isn't placed, it's placed at the beginning of the message.
+        {server} = Optional, the name of the server.
+        """
+        if "{user}" not in message:
+            message = "{user} " + message
         self.member_messages["join"][ctx.message.server.id] = message
         await self.bot.say("Welcome message has been set")
 
     async def on_member_join(self, member):
         server = member.server
-        message = self.member_messages["join"][server.id]
+        message = self.member_messages["join"].get(server.id)
         if not message:
             return
+
+        replacements = {
+            "{user}": member.mention,
+            "{server}": str(server),
+        }
+
+        message = _inplace_replace(message, replacements)
         await self.bot.send_message(server, message)
 
     @commands.command(pass_context=True)
-    @checks.admin_or_permissions()
+    @checks.is_admin()
     async def byebye(self, ctx, *, message: str):
         """Sets the bot's message when a member leaves this server"""
         self.member_messages["leave"][ctx.message.server.id] = message
@@ -338,11 +357,12 @@ class Admin:
 
     async def on_member_leave(self, member):
         server = member.server
-        message = self.member_messages["leave"][server.id]
+        message = self.member_messages["leave"].get(server.id)
         if not message:
             return
-        await self.bot.send_message(server, message)
 
+        message = message.replace("{user}", member.mention)
+        await self.bot.send_message(server, message)
 
 def setup(bot):
     bot.add_cog(Admin(bot))

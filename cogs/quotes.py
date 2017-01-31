@@ -61,7 +61,7 @@ class Quotes:
                 return quote
             else:
                 try:
-                    result = converter.ApproximateUser(ctx, number_or_user).convert()
+                    result = await converter.ApproximateUser(ctx, number_or_user).convert()
                 except commands.BadArgument:
                     await self.bot.say(f"{number_or_user} is neither a number nor user, I think.")
                     return None
@@ -108,6 +108,7 @@ class Quotes:
         quotes = self.quotes_db[server]
         quote_stats = {
                        "index": len(quotes) + 1,
+                       "name": author.display_name,
                        "user": author.id,
                        "colour": str(getattr(author, "colour", discord.Colour.default())),
                        "time": nice_time(message.timestamp),
@@ -115,8 +116,6 @@ class Quotes:
                        "quote": quote,
                        }
 
-        if author.nick is not None:
-            quote_stats["name"] = author.nick
         quotes.append(quote_stats)
         await self.bot.say(f'Successfully added quote #{len(quotes)}: **"{quote}"**')
 
@@ -134,8 +133,8 @@ class Quotes:
             await self.bot.say(f"Successfully removed quote #{index}")
 
     @commands.command(pass_context=True)
-    @checks.admin_or_permissions()
-    async def clearquote(self, ctx, index: int):
+    @checks.is_admin()
+    async def clearquote(self, ctx):
         """Clears all the quotes
 
         Only use this if there are too many troll or garbage quotes

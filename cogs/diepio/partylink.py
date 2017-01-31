@@ -214,13 +214,13 @@ class PartyLinks:
                 await self.bot.send_message(message.channel, embed=em)
 
     @commands.group(hidden=True, aliases=['plset'])
-    @checks.admin_or_permissions()
+    @checks.is_admin()
     async def partylinkset(self):
         pass
 
     @partylinkset.command(pass_context=True)
     # Just in case.
-    @checks.admin_or_permissions()
+    @checks.is_admin()
     async def detect(self, ctx, mode : str):
         result = _set_mode_bool(self.pl_config_db[ctx.message.server], "detect", mode)
         if result is None:
@@ -229,7 +229,7 @@ class PartyLinks:
 
     @partylinkset.command(pass_context=True)
     # Just in case.
-    @checks.admin_or_permissions()
+    @checks.is_admin()
     async def delete(self, ctx, mode : str):
         """Configures if sandbox party links should be deleted"""
         result = _set_mode_bool(self.pl_config_db[ctx.message.server], "delete", mode)

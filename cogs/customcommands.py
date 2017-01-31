@@ -46,7 +46,7 @@ class CustomReactions:
         pass
 
     @customcommand.command(pass_context=True)
-    @checks.admin_or_permissions()
+    @checks.is_admin()
     async def add(self, ctx, trigger, *, reaction : str):
         """Adds a new custom reaction/trigger (depending on what bot you use)
 
@@ -85,7 +85,7 @@ class CustomReactions:
         await self.bot.say(msg)
 
     @customcommand.command(pass_context=True, aliases=['delete', 'del', 'rem',])
-    @checks.admin_or_permissions()
+    @checks.is_admin()
     async def remove(self, ctx, *, ccid: int):
         """Removes a new custom reaction/trigger (depending on what bot you use)
 
@@ -108,7 +108,7 @@ class CustomReactions:
             await self.bot.say("{} command removed".format(ccid))
 
     @customcommand.command(pass_context=True)
-    @checks.admin_or_permissions()
+    @checks.is_admin()
     async def edit(self, ctx, ccid: int, *, new_react: str):
         ccid = ccid.lower()
         server = ctx.message.server
