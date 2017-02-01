@@ -42,6 +42,7 @@ initial_extensions = (
     'cogs.musictest',
 #    'cogs.newpoints',
     'cogs.owner',
+    'cogs.quotes',
     'cogs.rng',
     'cogs.searches',
     'cogs.timer',
