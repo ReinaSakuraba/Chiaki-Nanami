@@ -27,12 +27,18 @@ DEFAULT_CMD_PREFIX = '->'
 description = '''A test for the Chiaki bot (totally not a ripoff of Nadeko)'''
 MAX_FORMATTER_WIDTH = 90
 
-def cog_prefix(cmd):
+def cog_prefix(cmd, bot, server):
     cog = cmd.instance
-    return (DEFAULT_CMD_PREFIX if cog is None
-            else getattr(cog, '__prefix__', DEFAULT_CMD_PREFIX))
+    cog_references = bot.custom_prefixes.get(server)
+    default_prefix = lambda cog: (DEFAULT_CMD_PREFIX if cog is None else
+                                  getattr(cog, '__prefix__', DEFAULT_CMD_PREFIX))
+    if cog_references:
+        if cog_references.get("use_default"):
+            return cog_references.get("default", default_prefix(cog))
+        return cog_references.get(type(cog).__name__, default_prefix(cog))
+    return default_prefix(cog)
 
-def str_prefix(cmd):
+def str_prefix(cmd, bot, server):
     prefix = cog_prefix(cmd)
     return prefix if isinstance(prefix, str) else '|'.join(prefix)
 
@@ -44,7 +50,9 @@ class ChiakiFormatter(commands.HelpFormatter):
 
     @property
     def clean_prefix(self):
-        return super().clean_prefix if self.is_bot() or self.is_cog() else str_prefix(self.command)
+        ctx = self.context
+        return (super().clean_prefix if self.is_bot() or self.is_cog() else
+                str_prefix(self.command, ctx.bot, ctx.message.server))
 
     def format(self):
         """Handles the actual behaviour involved with formatting.
@@ -55,6 +63,7 @@ class ChiakiFormatter(commands.HelpFormatter):
             A paginated output of the help command.
         """
         from discord.ext import commands
+        bot, server = self.context.bot, self.context.message.server
         self._paginator = commands.Paginator()
         # we need a padding of ~80 or so
 
@@ -81,7 +90,7 @@ class ChiakiFormatter(commands.HelpFormatter):
 
         def category(tup):
             cmd = tup[1]
-            prefix = cog_prefix(cmd)
+            prefix = cog_prefix(cmd, bot, server)
             # we insert the zero width space there to give it approximate
             # last place sorting position.
             return f'{cmd.cog_name} (Prefix: {prefix})' if cmd.cog_name is not None else '\u200bNo Category:'
@@ -106,22 +115,6 @@ class ChiakiFormatter(commands.HelpFormatter):
         self._paginator.add_line(ending_note)
         return self._paginator.pages
 
-def _find_prefix_by_cog(bot, message):
-    if not message.content:
-        return DEFAULT_CMD_PREFIX
-
-    first_word = message.content.split()[0]
-    try:
-        maybe_cmd = re.search(r'(\w+)', first_word).group(1)
-    except AttributeError:
-        return DEFAULT_CMD_PREFIX
-
-    cmd = bot.get_command(maybe_cmd)
-    if cmd is None:
-        return DEFAULT_CMD_PREFIX
-
-    return cog_prefix(cmd)
-
 class ChiakiBot(commands.Bot):
     def __init__(self, command_prefix, formatter=None, description=None, pm_help=False, **options):
         super().__init__(command_prefix, formatter, description, pm_help, **options)
@@ -132,7 +125,8 @@ class ChiakiBot(commands.Bot):
 
         self.commands_counter = Counter()
         self.persistent_counter = Database.from_json("stats.json")
-        self.databases = [self.persistent_counter]
+        self.custom_prefixes = Database.from_json("customprefixes.json", default_factory=dict)
+        self.databases = [self.persistent_counter, self.custom_prefixes, ]
         self.unloads = []
 
     async def _start_time(self):
@@ -144,6 +138,19 @@ class ChiakiBot(commands.Bot):
         self.persistent_counter.update(self.commands_counter)
         await self.dump_databases()
         await super().logout()
+
+    def run(self, *args, **kwargs):
+        try:
+            self.loop.run_until_complete(self.start(*args, **kwargs))
+        except KeyboardInterrupt:
+            self.loop.run_until_complete(self.logout())
+            pending = asyncio.Task.all_tasks(loop=self.loop)
+            gathered = asyncio.gather(*pending, loop=self.loop)
+            # Do not cancel the tasks. It will interfere with database dumping
+            self.loop.run_until_complete(gathered)
+        finally:
+            print('loop closed...')
+            self.loop.close()
 
     def add_cog(self, cog):
         members = inspect.getmembers(cog)
@@ -159,7 +166,7 @@ class ChiakiBot(commands.Bot):
             return
         members = inspect.getmembers(cog)
         for name, member in members:
-            # add any databases
+            # remove any databases
             if isinstance(member, Database):
                 self.remove_database(member)
         super().remove_cog(name)
@@ -193,7 +200,6 @@ class ChiakiBot(commands.Bot):
             self.databases.remove(db)
         log.info(f"database {db.name} successfully removed")
 
-    # literally the only reason why I created a subclass
     async def dump_databases(self):
         for db in self.databases:
             await db.dump()
@@ -241,6 +247,35 @@ class ChiakiBot(commands.Bot):
     def invite_url(self):
         chiaki_permissions = discord.Permissions(2146823295)
         return discord.utils.oauth_url(self.user.id, chiaki_permissions)
+
+    @property
+    def default_prefix(self):
+        return DEFAULT_CMD_PREFIX
+
+    @property
+    def default_prefixes(self):
+        return {cog_name: getattr(cog, '__prefix__', DEFAULT_CMD_PREFIX)
+                for cog_name, cog in self.cogs.items()}
+
+
+def _find_prefix_by_cog(bot, message):
+    custom_prefixes = bot.custom_prefixes.get(message.server, {})
+    default_prefix = custom_prefixes.get("default", DEFAULT_CMD_PREFIX)
+
+    if not message.content:
+        return default_prefix
+
+    first_word = message.content.split()[0]
+    try:
+        maybe_cmd = re.search(r'(\w+)$', first_word).group(1)
+    except AttributeError:
+        return default_prefix
+
+    cmd = bot.get_command(maybe_cmd)
+    if cmd is None:
+        return default_prefix
+
+    return cog_prefix(cmd, bot, message.server)
 
 # main bot
 def chiaki_bot():

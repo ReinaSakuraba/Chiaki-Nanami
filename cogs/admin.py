@@ -8,7 +8,7 @@ from discord.ext import commands
 
 from .utils import checks
 from .utils.database import Database
-from .utils.misc import ordinal, str_join
+from .utils.misc import convert_to_bool, ordinal, str_join
 
 
 def _get_chiaki_roles(server, role):
@@ -370,6 +370,109 @@ class Admin:
 
         message = message.replace("{user}", member.mention)
         await self.bot.send_message(server, message)
+
+    @commands.command(pass_context=True)
+    @checks.is_admin()
+    async def prefix(self, ctx, cog, prefix):
+        """Sets a prefix for a particular cog (or "default")"""
+        if prefix[-1].isalpha():
+            await self.bot.say("Your prefix must end with a non-letter.")
+            return
+
+        cog = cog.lower()
+        cog_name = ("default" if cog == "default" else
+                    discord.utils.find(lambda s: s.lower() == cog, self.bot.cogs))
+        if cog_name is None:
+            await self.bot.say(f"Cog **{cog}** doesn't exist.")
+            return
+        cog_references = self.bot.custom_prefixes[ctx.message.server]
+        cog_references[cog_name] = [prefix]
+        await self.bot.say(f"Successfully set **{cog_name}**'s prefix to \"{prefix}\"!")
+
+    @commands.command(name="addprefix", pass_context=True, no_pm=True)
+    @checks.is_admin()
+    async def add_prefix(self, ctx, cog, prefix):
+        """Adds a prefix for a particular cog (or "default")"""
+        if prefix[-1].isalpha():
+            await self.bot.say("Your prefix must end with a non-letter.")
+            return
+
+        cog = cog.lower()
+        cog_name = ("default" if cog == "default" else
+                    discord.utils.find(lambda s: s.lower() == cog, self.bot.cogs))
+        if cog_name is None:
+            await self.bot.say(f"Cog **{cog}** doesn't exist.")
+            return
+
+        cog_references = self.bot.custom_prefixes[ctx.message.server]
+        cog_references.setdefault(cog_name, [])
+        prefixes = cog_references[cog_name]
+        if prefix in prefixes:
+            await self.bot.say(f"\"{prefix}\" was already added to **{cog_name}**...")
+        else:
+            cog_references[cog_name].append(prefix)
+            await self.bot.say(f"Successfully added prefix \"{prefix}\" to **{cog_name}**!")
+
+    @commands.command(name="removeprefix", pass_context=True, no_pm=True)
+    @checks.is_admin()
+    async def remove_prefix(self, ctx, cog, prefix):
+        """Removes a prefix for a particular cog (or "default")"""
+        if prefix[-1].isalpha():
+            await self.bot.say("Your prefix must end with a non-letter.")
+            return
+
+        cog = cog.lower()
+        cog_name = ("default" if cog == "default" else
+                    discord.utils.find(lambda s: s.lower() == cog, self.bot.cogs))
+        if cog_name is None:
+            await self.bot.say(f"Cog **{cog}** doesn't exist.")
+            return
+
+        cog_references = self.bot.custom_prefixes[ctx.message.server]
+        prefixes = cog_references.get(cog_name, [])
+        try:
+            prefixes.remove(prefix)
+        except (AttributeError, ValueError):
+            await self.bot.say(f"\"{prefix}\" was never in **{cog_name}**...")
+        else:
+            if not prefixes:
+                cog_references.pop(cog_name)
+            await self.bot.say(f"Successfully removed prefix \"{prefix}\" in **{cog_name}**!")
+
+    @commands.command(name="resetprefix", pass_context=True, no_pm=True)
+    @checks.is_admin()
+    async def reset_prefix(self, ctx, cog):
+        """Resets a prefix for a particular cog (or "default")"""
+        cog = cog.lower()
+        cog_name = ("default" if cog == "default" else
+                    discord.utils.find(lambda s: s.lower() == cog, self.bot.cogs))
+        if cog_name is None:
+            await self.bot.say(f"Cog **{cog}** doesn't exist.")
+            return
+
+        cog_references = self.bot.custom_prefixes[ctx.message.server]
+        try:
+            cog_references.pop(cog_name)
+        except KeyError:
+            await self.bot.say(f"**{cog_name}** never had any custom prefixes...")
+        else:
+            await self.bot.say(f"Done. **{cog_name}** no longer has any custom prefixes")
+
+    @commands.command(name="use_default_prefix", pass_context=True, no_pm=True, aliases=['udpf'])
+    @checks.is_admin()
+    async def use_default_prefix(self, ctx, boo):
+        result = convert_to_bool(boo)
+        cog_references = self.bot.custom_prefixes[ctx.message.server]
+        cog_references["use_default_prefix"] = result
+        cog_references["default"].setdefault("prefix", self.bot.default_prefix)
+        msg = (f"{cog_references['default']} will now be used for all modules." if result else
+               "Custom prefixes will be used for all modules.")
+        await self.bot.say(msg)
+
+
+
+
+
 
 def setup(bot):
     bot.add_cog(Admin(bot))
