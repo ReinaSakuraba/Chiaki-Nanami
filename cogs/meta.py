@@ -9,12 +9,8 @@ from discord.ext import commands
 from operator import attrgetter, itemgetter
 
 from .utils import converter
-from .utils.misc import str_join, filter_attr, status_color, image_from_url, nice_time
+from .utils.misc import str_join, filter_attr, status_color, image_from_url, nice_time, ordinal
 from .utils.paginator import DelimPaginator, iterable_say
-
-def _ordinal(num):
-    # pay no attention to this ugliness
-    return "%d%s" % (num,"tsnrhtdd"[(num//10%10!=1)*(num%10<4)*num%10::4])
 
 def _ilen(gen):
     return sum(1 for _ in gen)
@@ -148,7 +144,7 @@ class Meta:
         hex_role_color = str(role.colour).upper()
         permissions = role.permissions.value
         permission_binary = "{0:32b}".format(permissions)
-        str_position = _ordinal(role.position)
+        str_position = ordinal(role.position)
         nice_created_at = nice_time(role.created_at)
         description = f"Just chilling as the {str_position} role"
         footer = f"Created at: {nice_created_at} | ID: {role.id}"
@@ -239,9 +235,12 @@ class Meta:
         bot = self.bot
         user = bot.user
         appinfo = await bot.application_info()
+        description = ("\"{0}\"\nMade in Python using {1.__title__}.py {1.__version__}!"
+                       ).format(appinfo.description, discord)
         app_icon_url = appinfo.icon_url
+        print(app_icon_url)
         user_icon_url = user.avatar_url or user.default_avatar_url
-        bot_embed = (discord.Embed(title=appinfo.name, description=appinfo.description, colour=0xFFDDDD)
+        bot_embed = (discord.Embed(title=appinfo.name, description=description, colour=0xFFDDDD)
                     .set_author(name=f"{user.name} | {appinfo.id}", icon_url=user_icon_url)
                     .add_field(name="Owner", value=appinfo.owner)
                     .add_field(name="Uptime", value=bot.str_uptime)

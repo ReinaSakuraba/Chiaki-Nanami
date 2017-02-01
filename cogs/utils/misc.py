@@ -114,3 +114,7 @@ def full_succinct_duration(secs):
 	w, d = divmod(d, 7)
 	unit_list = [(w, 'weeks'), (d, 'days'), (h, 'hours'), (m, 'mins'), (s, 'seconds')]
 	return ', '.join(f"{round(n)} {u}" for n, u in unit_list if n)
+
+def ordinal(num):
+    # pay no attention to this ugliness
+    return "%d%s" % (num,"tsnrhtdd"[(num//10%10!=1)*(num%10<4)*num%10::4])

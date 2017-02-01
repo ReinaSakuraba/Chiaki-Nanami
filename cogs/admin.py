@@ -8,7 +8,7 @@ from discord.ext import commands
 
 from .utils import checks
 from .utils.database import Database
-from .utils.misc import str_join
+from .utils.misc import ordinal, str_join
 
 
 def _get_chiaki_roles(server, role):
@@ -17,10 +17,10 @@ def _get_chiaki_roles(server, role):
         return None
     return [discord.utils.get(server.roles, id=id) for id in role_ids]
 
-def _inplace_replace(string, d):
+def _inplace_replace(string, replacements):
     substrs = sorted(replacements, key=len, reverse=True)
     pattern = re.compile("|".join(map(re.escape, substrs)))
-    return pattern.sub(lambda m: rep[re.escape(m.group(0))], string)
+    return pattern.sub(lambda m: replacements[m.group(0)], string)
 
 class Admin:
     """Admin-only commands"""
@@ -321,37 +321,44 @@ class Admin:
         pass
 
     @commands.command(pass_context=True)
-    @checks.is_admin()
+    @checks.admin_or_permissions(manage_server=True)
     async def welcome(self, ctx, *, message: str):
         """Sets the bot's message when a member joins this server.
 
         The following special formats can be in the message:
-        {user}   = the member that joined. If one isn't placed, it's placed at the beginning of the message.
-        {server} = Optional, the name of the server.
+        {user}     = the member that joined. If one isn't placed, it's placed at the beginning of the message.
+        {server}   = Optional, the name of the server.
+        {count}    = how many members are in the server now. ,
+        {countord} = like {count}, but as an ordinal.
         """
         if "{user}" not in message:
             message = "{user} " + message
+        self.member_messages.setdefault("join", {})
         self.member_messages["join"][ctx.message.server.id] = message
         await self.bot.say("Welcome message has been set")
 
     async def on_member_join(self, member):
         server = member.server
         message = self.member_messages["join"].get(server.id)
+        member_count = len(server.members)
         if not message:
             return
 
         replacements = {
             "{user}": member.mention,
             "{server}": str(server),
+            "{count}": member_count,
+            "{countord}": ordinal(member_count),
         }
 
         message = _inplace_replace(message, replacements)
         await self.bot.send_message(server, message)
 
     @commands.command(pass_context=True)
-    @checks.is_admin()
+    @checks.admin_or_permissions(manage_server=True)
     async def byebye(self, ctx, *, message: str):
         """Sets the bot's message when a member leaves this server"""
+        self.member_messages.setdefault("leave", {})
         self.member_messages["leave"][ctx.message.server.id] = message
         await self.bot.say("Leave message has been set")
 
