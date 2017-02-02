@@ -39,12 +39,13 @@ def cog_prefix(cmd, bot, server):
     return default_prefix(cog)
 
 def str_prefix(cmd, bot, server):
-    prefix = cog_prefix(cmd)
+    prefix = cog_prefix(cmd, bot, server)
     return prefix if isinstance(prefix, str) else '|'.join(prefix)
 
 class ChiakiFormatter(commands.HelpFormatter):
     def _add_subcommands_to_page(self, max_width, commands):
-        commands = ((str_prefix(cmd) + name, cmd) for name, cmd in commands
+        ctx = self.context
+        commands = ((str_prefix(cmd, ctx.bot, ctx.message.server) + name, cmd) for name, cmd in commands
                     if name not in cmd.aliases)
         super()._add_subcommands_to_page(max_width, commands)
 
