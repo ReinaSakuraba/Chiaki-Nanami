@@ -3,7 +3,6 @@ from discord.ext import commands
 
 from .utils import checks, cleverbot
 from .utils.database import Database
-from .utils.misc import convert_to_bool
 
 class Cleverbot:
     def __init__(self, bot):
@@ -23,17 +22,9 @@ class Cleverbot:
 
     @commands.command(pass_context=True, hidden=True, aliases=['scb'])
     @checks.admin_or_permissions(administrator=True)
-    async def setcleverbot(self, ctx, mode):
-        """Enables or disables Cleverbot for this server
-
-        The following arguments enables Cleverbot:
-            'yes', 'y', 'true', 't', '1', 'enable', 'on'
-        The following arguments disables Cleverbot:
-            'no', 'n', 'false', 'f', '0', 'disable', 'off'
-        Anything else throws an error."""
+    async def setcleverbot(self, ctx, mode: bool):
+        """Enables or disables Cleverbot for this server"""
         # In the future when I make a permissions system this will be redone
-        print(mode)
-        mode = convert_to_bool(mode)
         server_id = ctx.message.server.id
         disabled = self.server_disables["disabled"]
         if mode:
