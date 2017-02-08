@@ -11,14 +11,11 @@ from itertools import zip_longest
 from . import utils
 from ..utils import checks
 from ..utils.database import Database
+from ..utils.misc import pairwise
 
 
 # I would like to tank rjt.rockx (aka Obliterator) for providing me information
 # on how the diep.io party links work. Without him, this wouldn't be possible
-
-def _pairwise(t):
-    it = iter(t)
-    return zip(it, it)
 
 def _swap_pairs(s):
     it = iter(s)
@@ -28,7 +25,7 @@ SERVERS_URL = "http://lb.diep.io/v2/find_servers"
 async def _load_servers_from_site():
     async with aiohttp.get(SERVERS_URL) as response:
         data = await response.text()
-    servers = _pairwise(data[2:].split('\x00'))
+    servers = pairwise(data[2:].split('\x00'))
     return [DiepioServer(*s) for s in servers]
 
 async def _produce_server_list():
@@ -76,7 +73,6 @@ class DiepioServer(namedtuple('DiepioServer', 'ip_port name')):
 
     @property
     def mode(self):
-        print(self._server[2])
         return self._translations.get(self._server[2], 'FFA')
 
 class LinkServerData(namedtuple('LinkServerData', 'code server')):
@@ -131,9 +127,6 @@ def _ip_from_hex(hexs):
     addr_long = _hex_to_int(new_hex)
     return socket.inet_ntoa(struct.pack("<L", addr_long)[::-1])
 
-def _ip_to_hex(ip):
-    hexes = []
-
 def _extract_links(message):
     return re.findall(r'\s?(diep.io/#[1234567890ABCDEF]*)\s?', message)
 
@@ -149,8 +142,6 @@ def _is_valid_hex(s):
         return True
 
 def _is_valid_party_code(code):
-    if not code:
-        return False
     code_len = len(code)
     if code_len % 2:
         return False
@@ -169,22 +160,12 @@ def read_link(link):
         return None
     return LinkServerData(code, server)
 
-def _set_mode_bool(d, key, mode):
-    mode = mode.lower()
-    if mode in ("enable", "true", "1"):
-        d[key] = True
-        return True
-    elif mode in ("disable", "false", "0"):
-        d[key] = False
-        return False
-    return None
-
 class PartyLinks:
     def __init__(self, bot):
         self.bot = bot
         config_default = lambda: {"detect" : True, "delete" : True}
-        self.pl_config_db = Database.from_json("plconfig.json",
-                                               default_factory=config_default)
+        self.pl_config_db = Database.from_json("plconfig.json", default_factory=config_default)
+        self.bot.loop.create_task(_produce_server_list())
 
     async def on_message(self, message):
         server = message.server
@@ -202,8 +183,8 @@ class PartyLinks:
             notif_fmt = ("{.author.mention} Please DM (direct message) "
                          "your sandbox links, unless you want Arena Closers")
 
-            return await self.bot.send_message(message.channel,
-                                               notif_fmt.format(message))
+            await self.bot.send_message(message.channel, notif_fmt.format(message))
+            return
 
         data_formats = [data.format() for data in link_data]
         if config["detect"] and data_formats:
@@ -221,23 +202,17 @@ class PartyLinks:
     @partylinkset.command(pass_context=True)
     # Just in case.
     @checks.is_admin()
-    async def detect(self, ctx, mode : str):
-        result = _set_mode_bool(self.pl_config_db[ctx.message.server], "detect", mode)
-        if result is None:
-            return
-        await self.bot.say("Party link detection {}abled, I think".format("deins"[result::2]))
+    async def detect(self, ctx, mode: bool):
+        self.pl_config_db[ctx.message.server]["detect"] = mode
+        await self.bot.say(f"Party link detection {'deins'[mode::2]}abled, I think")
 
     @partylinkset.command(pass_context=True)
     # Just in case.
     @checks.is_admin()
-    async def delete(self, ctx, mode : str):
+    async def delete(self, ctx, mode: bool):
         """Configures if sandbox party links should be deleted"""
-        result = _set_mode_bool(self.pl_config_db[ctx.message.server], "delete", mode)
-        if result is None:
-            return
-        await self.bot.say("Sandbox link deletion {}abled, I think".format("deins"[result::2]))
-
+        self.pl_config_db[ctx.message.server]["delete"] = mode
+        await self.bot.say(f"Sandbox link deletion {'deins'[mode::2]}abled, I think")
 
 def setup(bot):
-    bot.loop.create_task(_produce_server_list())
     bot.add_cog(PartyLinks(bot))

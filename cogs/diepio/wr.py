@@ -1,7 +1,6 @@
 import aiohttp
 import asyncio
 import discord
-import sys
 
 from collections import OrderedDict
 from datetime import datetime
@@ -11,6 +10,8 @@ from itertools import chain
 from operator import itemgetter
 
 from . import utils
+from ..utils.errors import InvalidUserArgument, ResultsNotFound
+from ..utils.misc import usage
 from ..utils.paginator import DelimPaginator
 
 WR_RECORD_URL = 'https://dieprecords.moepl.eu/api/records/json'
@@ -21,35 +22,7 @@ async def _load_json(session, url):
     async with session.get(url) as r:
         return await r.json()
 
-async def _load_records(session):
-    return await _load_json(session, WR_RECORD_URL)
-
-async def _load_tanks(session):
-    tank_list = await _load_json(session, TANK_ID_URL)
-    return {d["tankname"] : d["id"] for d in tank_list if d["enabled"]}
-
-async def _load_gamemodes(session):
-    gm_id_list = await _load_json(session, GAMEMODE_ID_URL)
-    return {"desktop" : {d["name"].lower() : d["id"]
-                        for d in gm_id_list if d["mobile"] == "0"},
-            "mobile"  : {d["name"].lower() : d["id"]
-                        for d in gm_id_list if d["mobile"] == "1"} }
-
 WR_RELOAD_TIME_SECS = 60
-
-# Best compromise between performance and up-to-date-ness I could think of
-async def load_wr_loop(bot):
-    await bot.wait_until_ready()
-    global wr_records, tank_id_list, gamemode_id_map
-    session = bot.http.session
-    while not bot.is_closed:
-        wr_records = await _load_records(session)
-        tank_id_list = await _load_tanks(session)
-        gamemode_id_map = await _load_gamemodes(session)
-        await asyncio.sleep(WR_RELOAD_TIME_SECS)
-
-def tanks():
-    return sorted(tank_id_list.keys())
 
 _alt_tank_names = OrderedDict([
     ('Adasba', 'Overlord'),
@@ -91,7 +64,8 @@ _alt_tank_names = OrderedDict([
     ])
 
 def _replace_tank(tankname):
-    return _alt_tank_names.get(tankname, tankname)
+    t = tankname.title()
+    return _alt_tank_names.get(t, t)
 
 def _get_wiki_image(tank):
     if tank == "Basic Tank":
@@ -104,21 +78,18 @@ def _get_wiki_image(tank):
 
 def _wr_embed(records):
     game_mode = records["gamemode"]
-    data = discord.Embed(colour=utils.mode_colour(game_mode))
-
     url = _get_wiki_image(records["tankname"])
-    print(url)
-    data.set_thumbnail(url=url)
+    approved_date = datetime.strptime(records["approvedDate"], '%Y-%m-%d %H:%M:%S').date()
 
-    for field_name, key in (("Achieved by", "name"), ("Score", "score"),
-                            ("Full Score", "scorefull"),):
-        data.add_field(name=field_name, value=records[key])
+    data = (discord.Embed(colour=utils.mode_colour(game_mode))
+            .set_thumbnail(url=url)
+            .add_field(name="Achieved by", value=records["name"])
+            .add_field(name="Score", value=records["score"])
+            .add_field(name="Full Score", value=records["scorefull"])
+            .add_field(name="Date", value=str(approved_date))
+            )
 
-    approved_date = datetime.strptime(records["approvedDate"],
-                                      '%Y-%m-%d %H:%M:%S').date()
-    data.add_field(name="Date", value=str(approved_date))
     submitted_url = records["submittedlink"]
-
     if "youtube" in submitted_url:
         # No clean way to set the video yet
         rest = submitted_url
@@ -126,53 +97,93 @@ def _wr_embed(records):
         rest = submitted_url
     else:
         data.set_image(url=submitted_url)
-        rest = ""
+        rest = ''
 
     return data, rest
 
-class WR:
+class WRA:
+    wr_records, tank_ids, gamemode_ids = {}, {}, {}
+    _mode_translations = {
+        'tdm': '2-TDM', '2tdm': '2-TDM', '2teams': '2-TDM',
+        '4tdm': '4-TDM', '4teams': '4-TDM',
+        }
     def __init__(self, bot):
         self.bot = bot
+        self.session = aiohttp.ClientSession()
+        self.bot.loop.create_task(self._load_wr_loop())
 
-    async def _wr_mode(self, version, mode, tank):
-        _version = version.lower()
-        _mode = mode.lower()
-        _tank = tank.title()
-        try:
-            tank_id = tank_id_list[_tank]
-        except KeyError:
-            await self.bot.say(f"Tank **{tank}** doesn't exist")
-            return None
-        try:
-            records = wr_records[_version]
-        except KeyError:
-            await self.bot.say(f"Version **{version}** is not valid")
-            return None
-        try:
-            index = gamemode_id_map[_version][_mode] % 4 - 1
-        except KeyError:
-            await self.bot.say(f"Mode **{mode}** not recognized for {version}")
-            return None
-        return records[str(tank_id)][index]
+    def __unload(self):
+        # pray it closes
+        self.bot.loop.create_task(self.session.close())
 
-    async def _wr_tank(self, tank):
-        _tank = tank.title()
+    async def _load_records(self):
+        return await _load_json(self.session, WR_RECORD_URL)
+
+    async def _load_tanks(self):
+        tank_list = await _load_json(self.session, TANK_ID_URL)
+        return {d["tankname"] : d["id"] for d in tank_list if d["enabled"]}
+
+    async def _load_gamemodes(self):
+        gm_id_list = await _load_json(self.session, GAMEMODE_ID_URL)
+        return {"desktop" : {d["name"] : d["id"]
+                            for d in gm_id_list if d["mobile"] == "0"},
+                "mobile"  : {d["name"] : d["id"]
+                            for d in gm_id_list if d["mobile"] == "1"} }
+
+    # Best compromise between performance and up-to-date-ness I could think of
+    async def _load_wr_loop(self):
+        await self.bot.wait_until_ready()
+        while not self.bot.is_closed:
+            self.wr_records.update(await self._load_records())
+            self.tank_ids.update(await self._load_tanks())
+            self.gamemode_ids.update(await self._load_gamemodes())
+            await asyncio.sleep(WR_RELOAD_TIME_SECS)
+
+    @classmethod
+    def _find_mode(cls, mode, version):
+        lowered = mode.lower()
+        if lowered in cls._mode_translations:
+            return cls._mode_translations[lowered]
+        result = discord.utils.find(lambda e: e.lower() == lowered, cls.gamemode_ids[version])
+        print(cls.gamemode_ids)
+        if result is not None:
+            return result
+        raise commands.BadArgument(f"Mode **{mode}** not recognized for WRs")
+
+    def all_tanks(self):
+        return sorted(self.tank_ids)
+
+    def _tank_id(self, tank):
         try:
-            tank_id = tank_id_list[_tank]
+            return str(self.tank_ids[tank])
         except KeyError:
-            await self.bot.say(f"Tank **{tank}** doesn't exist")
-            return None
+            raise commands.BadArgument(f"Tank **{tank}** doesn't exist")
+
+    def _wr_mode(self, version, mode, tank):
+        tank_id = self._tank_id(tank)
+        print("...")
+        try:
+            records = self.wr_records[version]
+        except KeyError:
+            raise commands.BadArgument(f"Version **{version}** is not valid")
+        print("...", mode)
+        index = self.gamemode_ids[version][mode] % 4 - 1
+        return records[tank_id][index]
+
+    def _wr_tank(self, tank):
+        tank_id = self._tank_id(tank)
 
         def get_records(version):
             try:
-                return sorted(wr_records[version][str(tank_id)], key=itemgetter("gamemode_id"))
+                return sorted(self.wr_records[version][tank_id], key=itemgetter("gamemode_id"))
             except KeyError:
                 return []
 
         return get_records("desktop"), get_records("mobile")
 
+    @usage('wr desktop ffa sniper')
     @commands.command(aliases=['wr'])
-    async def worldrecord(self, version, mode, *, tank : str):
+    async def worldrecord(self, version: str, mode, *, tank : _replace_tank):
         """Retrieves the world record from the WRA site
 
         version is version of diep.io (mobile or desktop)
@@ -180,46 +191,35 @@ class WR:
         And of course, tank is the type of tank
 
         """
-        tank = tank.title()
-        if mode.lower() in ('2tdm', '4tdm'):
-            mode = mode[0] + '-' + mode[1:]
-        elif mode.lower() == 'tdm':
-            mode = '2-tdm'
-        tank_alias = _replace_tank(tank)
-        record = await self._wr_mode(version, mode, tank_alias)
-        if record is None:
-            return
+        version = version.lower()
+        mode = WRA._find_mode(mode, version)
+        record = self._wr_mode(version, mode, tank)
 
-        tank_true = f" ({tank})" * (tank_alias != tank)
-        title = "**__{0} {gamemode} {tankname}{1}__**".format(version.title(), tank_true, **record)
+        title = "**__{0} {gamemode} {tankname}__**".format(version.title(), **record)
         embed, extra = _wr_embed(record)
         await self.bot.say(title, embed=embed)
         if extra:
             await self.bot.say(extra)
 
-    @commands.command()
-    async def wrtank(self, *, tank : str):
+    @usage('wr sniper')
+    @commands.command(pass_context=True)
+    async def wrtank(self, ctx, *, tank: _replace_tank):
         """Gives a summary of the WRs for a particular tank
 
         Use ->wr for the full info of a particular WR (proof, date, and full score)
         """
-        tank = tank.title()
-        tank_alias = _replace_tank(tank)
-        record = await self._wr_tank(tank_alias)
-        if record is None:
-            return
-        desktop, mobile = record
-        tank_true = f" ({tank})" * (tank_alias != tank)
-        title = f"**__{tank_alias}{tank_true}__**"
+        desktop, mobile = self._wr_tank(tank)
+        title = f"**__{tank}__**"
+        prefix = self.bot.str_prefix(self, ctx.message.server)
 
         def embed_from_iterable(title, records):
             embed = discord.Embed(title=title.title())
-            url = _get_wiki_image(tank_alias)
+            url = _get_wiki_image(tank)
             embed.set_thumbnail(url=url)
             for record in records:
                 line = "{name}\n**{score}**".format(**record)
                 embed.add_field(name=record["gamemode"], value=line)
-            embed.set_footer(text=f'Type "->wr {title} <gamemode> {tank}" for the full WR info')
+            embed.set_footer(text=f'Type "{prefix}wr {title} <gamemode> {tank}" for the full WR info')
             return embed
 
         desktop_embed = embed_from_iterable("desktop", desktop)
@@ -229,76 +229,57 @@ class WR:
         if mobile_embed is not None:
             await self.bot.say(embed=mobile_embed)
 
-    async def player(self, ctx, *, player):
-        await ctx.invoke(self.records, player=player)
-
-    async def tank(self, ctx, *, tank):
-        await ctx.invoke(self.records, tank=tank)
-
-    async def _submit(self, name: str, tankid: int, gamemodeid: int, score: int, url: str):
+    async def _submit(self, name, tankid, gamemodeid, score, url):
         payload = {'inputname': name,
                    'gamemode_id': gamemodeid,
                    'selectclass': tankid,
                    'score': score,
                    'proof': url}
+        return await self.session.post('https://dieprecords.moepl.eu/api/submit/record', data=payload)
 
-        session = self.bot.http.session
-        return await session.post('https://dieprecords.moepl.eu/api/submit/record', data=payload)
-
+    @usage('submitwr "Junko Enoshima" destroyer desktop ffa 1666714 http://i.imgur.com/tIHCj5K.png')
     @commands.command()
-    async def submitwr(self, name: str, tank: str, version : str, mode: str, score: int, url: str):
+    async def submitwr(self, name: str, tank: _replace_tank, version : str, mode: _find_mode,
+                       score: int, url: str):
         """Submits a potential WR to the WR site
 
         The name and tank should be in quotes if you intend on putting spaces in either parameter
         (eg if you're gonna submit a WR under Junko Enoshima you should enter it as "Junko Enoshima")
         """
-        tank = tank.title()
-        tank_ = _replace_tank(tank)
-        vers_ = version.lower()
-        mode_ = mode.lower()
-        record = await self._wr_mode(vers_, mode_, tank_)
 
-        if record is None:
-            return
+        vers_ = version.lower()
+        record = await self._wr_mode(vers_, mode, tank)
 
         full_score = record["scorefull"]
-        if score < 40000:
-            await self.bot.say(f"Your score ({score}) is too low. It must be at least 40000.")
-            return
+        if score < 50000:
+            raise InvalidUserArgument(f"Your score ({score}) is too low. It must be at least 50000.")
         if score < int(full_score):
-            await self.bot.say(f"Your score ({score}) is too low. The WR is {full_score}.")
-            return
+            raise InvalidUserArgument(f"Your score ({score}) is too low. The WR is {full_score}.")
 
         submission = f'("{name}" "{tank}" {version} {score} <{url}>)'
 
-        async with await self._submit(name, tank_id_list[tank_],
-                                      gamemode_id_map[vers_][mode_],
+        async with await self._submit(name, tank_ids[tank_],
+                                      gamemode_ids[vers_][mode_],
                                       score, url) as response:
             result = await response.json()
 
         msg = f"**{result['status'].title()}!** {result['content']}\n{submission}"
         await self.bot.say(msg, delete_after=60)
 
-    async def site(self):
-        """Site of the WRA"""
-        await self.bot.say('https://dieprecords.moepl.eu/')
-
     # TODO: Make this look pretty
     @commands.command()
     async def gamemodes(self):
         """All the gamemodes for diep.io"""
-        desktop_gamemodes = sorted(gamemode_id_map["desktop"].keys())
-        dt_gm_names = map(str.title, desktop_gamemodes)
-        mobile_gamemodes = sorted(gamemode_id_map["mobile"].keys())
-        m_gm_names = map(str.title, mobile_gamemodes)
-        fmt = "List of desktop gamemodes:\n{}\n\nList of mobile gamemodes:\n{}"
-        await self.bot.say(fmt.format(', '.join(dt_gm_names), ', '.join(m_gm_names)))
+        def names(version):
+            modes = sorted(self.gamemode_ids[version])
+            str_modes = ', '.join(modes)
+            return f"List of {version} gamemodes:\n{str_modes}\n"
+        await self.bot.say(names('desktop') + names('mobile'))
 
     @commands.command()
     async def tanks(self):
         """All the tanks for diep.io"""
-
-        await self.bot.say(', '.join(tanks()))
+        await self.bot.say(', '.join(self.all_tanks()))
 
     @commands.command()
     async def tankaliases(self):
@@ -310,38 +291,30 @@ class WR:
     @commands.command(pass_context=True)
     async def records(self, ctx, *, name: str):
         """Finds all the diep.io WRs for a particular name"""
-        records = await _load_json(self.bot.http.session,
-                                  'https://dieprecords.moepl.eu/api/recordsByName/' + name)
+        records = await _load_json(self.session, f'https://dieprecords.moepl.eu/api/recordsByName/{name}')
 
         # For some reason the recordsByName api uses either
         # a list or a dict for current/former records
         # We must account for both
         def get_records(l_or_d):
-            try:
-                return l_or_d.values()
-            except AttributeError:
-                return l_or_d
+            return getattr(l_or_d, "values", lambda: l_or_d)()
         current = sorted(get_records(records["current"]), key=itemgetter("tank"))
         former  = sorted(get_records(records["former"]),  key=itemgetter("tank"))
 
         if not (current or former):
-            await self.bot.say("I can't find records for {} :(".format(name))
-            return
+            raise ResultsNotFound("I can't find records for {} :(".format(name))
 
-        def sort_records(records, mobile):
-            return [rec for rec in records if mobile == int(rec["mobile"])]
+        def records_by_type(records, mobile):
+            return ([rec for rec in records if not int(rec["mobile"])],
+                    [rec for rec in records if int(rec["mobile"])])
 
-        desktop_current = sort_records(current, False)
-        mobile_current  = sort_records(current, True)
-
-        desktop_former = sort_records(former, False)
-        mobile_former  = sort_records(former, True)
-
-        def mapper(record):
-            return "__{tank} {gamemode}__ | {score} |  <{submittedlink}>".format(**record)
+        desktop_current, mobile_current = records_by_version(current)
+        desktop_former, mobile_former = records_by_version(former)
 
         def lines(header, records):
-            return [header.format(len(records))] + list(map(mapper, records))
+            def mapper(record):
+                return "__{tank}__ __{gamemode}__ | {score} |  <{submittedlink}>".format(**record)
+            return [header.format(len(records)), *list(map(mapper, records))]
 
         headers = [f"**__{name}__**", f"**Current World Records**: {len(current)}"]
         desktop_current_str = lines("**Desktop**: {}", desktop_current)
@@ -352,18 +325,16 @@ class WR:
 
         all_iterables = chain(headers, desktop_current_str, mobile_current_str,
                               former_header, desktop_former_str, mobile_former_str)
+
         paginator = DelimPaginator.from_iterable(all_iterables, prefix='', suffix='')
-
-        author = ctx.message.author
-        channel = ctx.message.channel
         pages = paginator.pages
-        destination = author if len(pages) >= 2 else channel
+        destination = ctx.message.channel
 
-        if destination == author:
+        if sum(map(len, pages)) >= 1000:
             await self.bot.say("The records has been sent to your private messages due to the length")
+            destination = ctx.message.author
         for page in pages:
             await self.bot.send_message(destination, page)
 
 def setup(bot):
-    bot.loop.create_task(load_wr_loop(bot))
-    bot.add_cog(WR(bot))
+    bot.add_cog(WRA(bot))

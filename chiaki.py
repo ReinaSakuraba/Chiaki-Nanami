@@ -8,8 +8,9 @@ import sys
 import traceback
 
 from chiakibot import chiaki_bot
-from cogs.utils import converter
-from cogs.utils.aitertools import AIterable, ACount
+from cogs.utils import converter, errors
+from cogs.utils.aitertools import AIterable, acount
+from cogs.utils.compat import user_colour
 from cogs.utils.misc import nice_time
 from discord.ext import commands
 
@@ -30,7 +31,7 @@ logging.basicConfig(level=logging.INFO)
 bot = chiaki_bot()
 
 initial_extensions = (
-#    'cogs.games.guess',
+#   'cogs.games.guess',
     'cogs.admin',
     'cogs.afk',
     'cogs.cleverbot',
@@ -40,27 +41,27 @@ initial_extensions = (
     'cogs.meta',
     'cogs.moderator',
     'cogs.musictest',
-#    'cogs.newpoints',
+#   'cogs.newpoints',
     'cogs.owner',
+    'cogs.permissions',
     'cogs.quotes',
     'cogs.rng',
     'cogs.searches',
-    'cogs.timer',
     'cogs.diepio.partylink',
     'cogs.diepio.wr',
-#    'cogs.games.eventhost',
-    'cogs.games.fizzbuzz',
-    'cogs.games.hangman',
+#   'cogs.games.eventhost',
+#    'cogs.games.fizzbuzz',
+#    'cogs.games.hangman',
     'cogs.games.math',
     'cogs.games.rps',
     'cogs.games.tictactoe',
     'cogs.games.trivia',
-    'cogs.games.unscramble',
+#    'cogs.games.unscramble',
 )
 def log_embed(msg):
     author = msg.author
-    user_name = "{0.name}#{0.discriminator} | {0.id}".format(author)
-    avatar = author.avatar_url or avatar.default_avatar_url
+    user_name = "{0} | {0.id}".format(author)
+    avatar = author.avatar_url or author.default_avatar_url
     location = f"from #{msg.channel} in {msg.server}"
     return (discord.Embed(description=location)
             .set_author(name=user_name, icon_url=avatar)
@@ -72,32 +73,9 @@ def log_embed(msg):
 async def log(msg):
     if not config["log"]: return
     embed = log_embed(msg)
+    embed.colour = await user_colour(msg.author)
     async for log_channel in AIterable(config["logging_channels"]):
         await bot.send_message(bot.get_channel(log_channel), embed=embed)
-
-def to_colour_long(r, g, b):
-    return r << 16 | g << 8 | b
-
-def find_chiaki_nanamis():
-    for server in bot.servers:
-        if server.id == '252525368865456130':
-            continue
-        maybe_role = discord.utils.get(server.roles, name='Chiaki Nanami')
-        print(server, maybe_role)
-        if maybe_role is not None and maybe_role.permissions.manage_roles:
-            yield server, maybe_role
-
-async def change_role_color():
-    from math import sin
-    await bot.wait_until_ready()
-    async for i in ACount(1):
-        sine = sin(i / 10) + 1
-        val = int(sine * 64 + 128)
-        colour = discord.Colour(to_colour_long(255, val, val))
-        # print(val, colour)
-        async for server, role in AIterable(find_chiaki_nanamis()):
-            await bot.edit_role(server, role, colour=colour)
-        # await asyncio.sleep(0.01)
 
 #------------------EVENTS----------------
 @bot.event
@@ -109,36 +87,36 @@ async def on_ready():
 
 @bot.event
 async def on_command(cmd, ctx):
-    bot.commands_counter["Commands Executed"] += 1
+    bot.counter["Commands Executed"] += 1
     if cmd.hidden:
-        bot.commands_counter["Private Commands"] += 1
         return
     message = ctx.message
     if message.channel.is_private:
+        bot.counter["Private Commands"] += 1
         return
     owner = (await bot.application_info()).owner
     if message.author == owner:
         return
-    fmt = "{0.author} from {0.server} input `{0.content}` in {0.channel}"
-    await log(ctx.message)
+    await log(message)
 
 @bot.event
 async def on_command_completion(cmd, ctx):
-    bot.commands_counter["Commands Successful"] += 1
+    bot.counter["Commands Successful"] += 1
 
 @bot.event
 async def on_command_error(error, ctx):
-    bot.commands_counter["Commands Failed"] += 1
+    bot.counter["Commands Failed"] += 1
     if isinstance(error, commands.NoPrivateMessage):
         await bot.send_message(ctx.message.author, 'This command cannot be used in private messages.')
     elif isinstance(error, commands.CommandInvokeError):
         print('In {0.command.qualified_name}:'.format(ctx), file=sys.stderr)
+        traceback.print_tb(error.original.__traceback__)
         traceback.print_tb(error.__traceback__)
         print('{0.__class__.__name__}: {0}'.format(error), file=sys.stderr)
     elif isinstance(error, commands.MissingRequiredArgument):
         await bot.send_message(ctx.message.channel,
                                     'This command (' + ctx.command.name + ') needs another Parameter\n')
-    elif isinstance(error, commands.BadArgument):
+    elif isinstance(error, (commands.UserInputError, errors.PrivateMessagesOnly)):
         await bot.send_message(ctx.message.channel, error)
         traceback.print_tb(error.__cause__.__traceback__)
         print(error.__cause__, "\n--------------")
@@ -147,7 +125,7 @@ async def on_command_error(error, ctx):
 
 @bot.event
 async def on_message(message):
-    bot.commands_counter["Messages seen"] += 1
+    bot.counter["Messages seen"] += 1
     await bot.process_commands(message)
 
 #-----------------MISC COMMANDS--------------
@@ -217,7 +195,7 @@ def main():
         try:
             bot.load_extension(ext)
         except Exception as e:
-            print('Failed to load extension {}\n'.format(ext))
+            print(f'Failed to load extension {ext}\n')
             traceback.print_exc()
 
     config = load_config()

@@ -1,26 +1,19 @@
 import argparse
 import discord
-import re
-import shlex
+import operator
 
-from collections import defaultdict
 from discord.ext import commands
 
 from .utils import checks
+from .utils.converter import bot_cog_default
 from .utils.database import Database
-from .utils.misc import convert_to_bool, ordinal, str_join
+from .utils.errors import InvalidUserArgument
+from .utils.misc import multi_replace, nice_time, ordinal, str_join
 
-
-def _get_chiaki_roles(server, role):
-    role_ids = checks.server_roles[server].get(role)
-    if role_ids is None:
-        return None
-    return [discord.utils.get(server.roles, id=id) for id in role_ids]
-
-def _inplace_replace(string, replacements):
-    substrs = sorted(replacements, key=len, reverse=True)
-    pattern = re.compile("|".join(map(re.escape, substrs)))
-    return pattern.sub(lambda m: replacements[m.group(0)], string)
+def _sanitize_prefix(prefix):
+    if prefix[-1].isalnum():
+        raise InvalidUserArgument("Your prefix cannot end with a letter or number.")
+    return prefix
 
 class Admin:
     """Admin-only commands"""
@@ -28,13 +21,33 @@ class Admin:
 
     def __init__(self, bot):
         self.bot = bot
-        self.self_roles = Database.from_json("admin/selfroles.json",
-                                             default_factory=list)
+        self.self_roles = Database.from_json("admin/selfroles.json", default_factory=list)
         self.member_messages = Database.from_json("admin/membermessages.json")
 
-    @commands.command(name='addadminrole', pass_context=True, aliases=['aar'])
-    @checks.admin_or_permissions(manage_server=True)
-    async def add_admin_role(self, ctx, *, role: discord.Role):
+    def _check_role_position(self, ctx, role, action):
+        top_role = ctx.message.author.top_role
+        if role >= top_role:
+            raise InvalidUserArgument(f"You can't {action} a role higher than or equal "
+                                      f"to your highest role (**{top_role}**)")
+
+    async def _set_chiaki_role(self, ctx, key, role, action):
+        # if role is not None:
+            # self._check_role_position(ctx, role, action)
+        checks.assign_role(ctx.message.server, key, role)
+        msg = (f"Made {role} an **{key} role**!" if role is not None else
+               f"Removed the **{key}** role, please set it back")
+        await self.bot.say(msg)
+
+    async def _chiaki_roles(self, ctx, key):
+        server = ctx.message.server
+        id = checks.server_roles[server][key]
+        role = discord.utils.get(server.roles, id=id)
+        await self.bot.say(f'**{role}** is your \"{key}\" role.' if role is not None else
+                           f'There are no "{key}" roles. Please set one soon.')
+
+    @commands.command(name='setadminrole', pass_context=True, no_pm=True, aliases=['sar'])
+    @checks.is_admin()
+    async def set_admin_role(self, ctx, *, role: discord.Role):
         """Adds a role for the 'Admins' role
 
         Admins are a special type of administrator. They have access to most of the permission-related
@@ -42,11 +55,10 @@ class Admin:
         More than one role can be considered as "Admin"
         (This might be changed)
         """
-        checks.add_admin_role(ctx.message.server, role)
-        await self.bot.say(f"Made {role} an **Admin role**!")
+        await self._set_chiaki_role(ctx, checks.ChiakiRole.admin, role, 'assign an Admin role to')
 
-    @commands.command(name='addmodrole', pass_context=True, aliases=['amr'])
-    @checks.admin_or_permissions(manage_server=True)
+    @commands.command(name='addmodrole', pass_context=True, no_pm=True, aliases=['amr'])
+    @checks.is_admin()
     async def add_mod_role(self, ctx, *, role: discord.Role):
         """Add a role from the 'Moderators' role
 
@@ -54,55 +66,42 @@ class Admin:
         More than one role can be considered as "Moderator"
         (This might be changed)
         """
-        checks.add_mod_role(ctx.message.server, role)
-        await self.bot.say(f"Made {role} an **Moderator role**!")
-
-    async def _chiaki_roles(self, ctx, key):
-        roles = _get_chiaki_roles(ctx.message.server, key)
-        str_roles = str_join(', ', roles)
-        if str_roles:
-            await self.bot.say(f"Here are all the {key} roles: ```css\n{str_roles}```")
-        else:
-            await self.bot.say(f"I don't see any {key} roles.")
+        await self._set_chiaki_role(ctx, checks.ChiakiRole.mod, role, 'assign an Moderator role to')
 
     @commands.command(name='admins', pass_context=True)
     async def admin_roles(self, ctx):
         """Gives you all the admin roles, I think"""
-        await self._chiaki_roles(ctx, "admin")
+        await self._chiaki_roles(ctx, checks.ChiakiRole.admin)
 
     @commands.command(name='moderators', pass_context=True)
     async def mod_roles(self, ctx):
         """Gives you all the moderator roles, I think"""
-        await self._chiaki_roles(ctx, "moderator")
+        await self._chiaki_roles(ctx, checks.ChiakiRole.mod)
 
-    @commands.command(name='removeadminrole', pass_context=True,
-                      aliases=['rar', 'remadminrole'])
-    @checks.admin_or_permissions(manage_server=True)
-    async def remove_admin_role(self, ctx, *, role: discord.Role):
-        """Removes a role from the 'Admins' role
+    @commands.command(name='removeadminrole', pass_context=True, no_pm=True, aliases=['rar'])
+    @checks.is_admin()
+    async def remove_admin_role(self, ctx):
+        """Revokes a role from the 'Admins'
 
         Admins are a special type of administrator. They have access to most of the permission-related
         or server-related commands.
         More than one role can be considered as "Admin"
         (This might be changed)
         """
-        checks.add_admin_role(ctx.message.server, role)
-        await self.bot.say(f"Removed **{role}** from Admins!")
+        await self._set_chiaki_role(ctx, checks.ChiakiRole.admin, None, 'remove an Admin role from')
 
-    @commands.command(name='removemodrole',
-                      pass_context=True, aliases=['rmr', 'remmodrole'])
-    @checks.admin_or_permissions(manage_server=True)
+    @commands.command(name='removemodrole', pass_context=True, no_pm=True, aliases=['rmr', 'remmodrole'])
+    @checks.is_admin()
     async def remove_mod_role(self, ctx, *, role: discord.Role):
-        """Removes a role from the 'Moderators' role
+        """Revokes a role from the 'Moderators' role
 
         More than one role can be considered as "Moderator"
         (This might be changed)
         """
-        checks.add_mod_role(ctx.message.server, role)
-        await self.bot.say(f"Made **{role}** an Moderators!")
+        await self._set_chiaki_role(ctx, checks.ChiakiRole.mod, None, 'remove an Admin role from')
 
-    @commands.command(name='addselfrole', pass_context=True, aliases=['asar',])
-    @checks.admin_or_permissions(manage_server=True)
+    @commands.command(name='addselfrole', pass_context=True, no_pm=True, aliases=['asar',])
+    @checks.is_admin()
     async def add_self_role(self, ctx, *, role: discord.Role):
         """Adds a self-assignable role to the server
 
@@ -111,23 +110,20 @@ class Admin:
         """
         self_roles = self.self_roles[ctx.message.server]
         if role.id in self_roles:
-            await self.bot.say("That role is already self-assignable... I think")
-            return
-        if role > ctx.message.author.top_role:
-            await self.bot.say("You can't make a role that is higher than your highest role a self-role.")
-            return
+            raise InvalidUserArgument("That role is already self-assignable... I think")
+        self._check_role_position(ctx, role, "assign as a self role")
         self_roles.append(role.id)
         await self.bot.say(f"**{role}** is now a self-assignable role!")
 
-    @commands.command(name='removeselfrole',
-                      pass_context=True, aliases=['rsar', 'remselfrole'])
-    @checks.admin_or_permissions(manage_server=True)
+    @commands.command(name='removeselfrole', pass_context=True, no_pm=True, aliases=['rsar',])
+    @checks.is_admin()
     async def remove_self_role(self, ctx, *, role: discord.Role):
         """Removes a self-assignable role from the server
 
         A self-assignable role is one that you can assign to yourself
         using =>iam or =>selfrole
         """
+        self._check_role_position(ctx, role, "remove as a self role")
         try:
             self.self_roles[ctx.message.server].remove(role.id)
         except ValueError:
@@ -135,7 +131,7 @@ class Admin:
         else:
             await self.bot.say(f"**{role}** is no longer a self-assignable role!")
 
-    @commands.command(name='listselfrole', pass_context=True, aliases=['lsar'])
+    @commands.command(name='listselfrole', pass_context=True, no_pm=True, aliases=['lsar'])
     @checks.is_admin()
     async def list_self_role(self, ctx):
         """List all the self-assignable roles in the server
@@ -147,27 +143,24 @@ class Admin:
         self_roles = [discord.utils.get(server.roles, id=id) for id in self_roles_ids]
         str_self_roles = str_join(', ', self_roles)
 
-
-    async def _self_role(self, member, role_action):
+    async def _self_role(self, member, role_action, role):
         server = member.server
-        self_roles = self.self_roles[ctx.message.server]
+        self_roles = self.self_roles[server]
         if role.id not in self_roles:
-            await self.bot.say("That role is not self-assignable... :neutral_face:")
-            return False
+            raise InvalidUserArgument("That role is not self-assignable... :neutral_face:")
         await role_action(member, role)
-        return True
 
     @commands.command(pass_context=True, no_pm=True)
     async def iam(self, ctx, *, role: discord.Role):
         """Gives a self-assignable role (and only a self-assignable role) to yourself."""
-        if await self._self_role(ctx.message.author, self.bot.add_roles):
-            await self.bot.say(f"You are now **{role}**... I think.")
+        await self._self_role(ctx.message.author, self.bot.add_roles, role)
+        await self.bot.say(f"You are now **{role}**... I think.")
 
     @commands.command(pass_context=True, no_pm=True)
     async def iamnot(self, ctx, *, role: discord.Role):
-        """Removes a self-assignable role (and only a self-assignable role) to yourself."""
-        if await self._self_role(ctx.message.author, self.bot.remove_roles):
-            await self.bot.say(f"You are no longer **{role}**... probably.")
+        """Removes a self-assignable role (and only a self-assignable role) from yourself."""
+        await self._self_role(ctx.message.author, self.bot.remove_roles, role)
+        await self.bot.say(f"You are no longer **{role}**... probably.")
 
     @commands.command(pass_context=True, no_pm=True)
     async def selfrole(self, ctx, *, role: discord.Role):
@@ -183,8 +176,8 @@ class Admin:
         else:
             msg = f"You are now **{role}**... I think."
             role_action = self.bot.remove_roles
-        if await self._self_role(author, role_action):
-            await self.bot.say(msg)
+        await self._self_role(author, role_action, role)
+        await self.bot.say(msg)
 
     @commands.command(name='addrole', pass_context=True, no_pm=True, aliases=['ar'])
     @checks.admin_or_permissions(manage_roles=True)
@@ -193,12 +186,8 @@ class Admin:
 
         This role must be lower than both the bot's highest role and your highest role.
         """
-        author = ctx.message.author
         # This won't raise an exception, so we have to check for that
-        if role >= author.top_role:
-            await self.bot.say("You can't add a role that's higher than your highest role, I think")
-            return
-
+        self._check_role_position(ctx, role, "add")
         try:
             await self.bot.add_roles(user, role)
         except discord.Forbidden:
@@ -216,13 +205,9 @@ class Admin:
         """Removes a role from a user
 
         This role must be lower than both the bot's highest role and your highest role.
-        Do not confuse this with =>deleterole, which deletes a role from the server.
+        Do not confuse this with deleterole, which deletes a role from the server.
         """
-        author = ctx.message.author
-        # This won't raise an exception, so we have to check for that
-        if role >= author.top_role:
-            await self.bot.say("You can't remove a role that's higher than your highest role, I think")
-            return
+        self._check_role_position(ctx, role, "remove")
 
         try:
             await self.bot.remove_roles(user, role)
@@ -237,20 +222,17 @@ class Admin:
 
     @commands.command(name='createrole', pass_context=True, no_pm=True, aliases=['crr'])
     @checks.is_admin()
-    async def create_role(self, ctx, *, args: str):
-        """Creates a role with some custom arguments
+    async def create_role(self, ctx, *args: str):
+        """Creates a role with some custom arguments:
 
-        name                     The name of the new role. This is the only required role.
-        -c/--color/--colour      Colour of the new role. Default is black.
-        --perms/--permissions    Permissions of the new role. Default is no permissions (0).
-        -h/--hoist               Whether or not the role can be displayed separately. Default is false.
-        -m/--mentionable         Whether or not the role can be mentionable. Default is false.
+        name                      The name of the new role. This is the only required role.
+        -c, --color, --colour     Colour of the new role. Default is grey (default color).
+        --perms, --permissions    Permissions of the new role. Default is no permissions (0).
+        -h, --hoist               Whether or not the role can be displayed separately. Default is false.
+        -m, --mentionable         Whether or not the role can be mentionable. Default is false.
         """
         author = ctx.message.author
         server = ctx.message.server
-        if not server:
-            await self.bot.say("You can't make roles in a private channel, I think.")
-            return
 
         parser = argparse.ArgumentParser(description='Just a random role thing')
         parser.add_argument('name')
@@ -258,20 +240,14 @@ class Admin:
         parser.add_argument('--permissions', '--perms', nargs='+', type=int, default=0)
         parser.add_argument('--hoist', action='store_true')
         parser.add_argument('-m', '--mentionable', action='store_true')
-        parser.add_argument('--pos', '--position', nargs='+', type=int, default=1)
 
         try:
-            args = parser.parse_args(shlex.split(args))
+            args = parser.parse_args(args)
         except Exception as e:
-            await self.bot.say(str(e))
-            return
+            raise commands.BadArgument(f"Failed to parse args. Exception: ```\n{e}```")
 
-        colour_arg = args.color or args.colour
-        colour_converter = commands.ColourConverter(ctx, colour_arg)
-        try:
-            colour = colour_converter.convert()
-        except commands.BadArgument:
-            await self.bot.say(f"{colour_arg} is not a valid color. It should be hexadecimal.")
+        colour_arg = args.color
+        colour = commands.ColourConverter(ctx, colour_arg).convert()
 
         permissions = discord.Permissions(args.permissions)
         if permissions.administrator and not (author.permissions.administrator or author == server.owner):
@@ -291,21 +267,19 @@ class Admin:
         except discord.Forbidden:
             msg = "I need the **Manage Roles** perm to create roles, I think."
         except discord.HTTPException:
-            msg = "Creating role **{args.name}** failed, for some reason."
+            msg = f"Creating role **{args.name}** failed, for some reason."
         else:
             msg = f"Successfully created **{args.name}**!"
         await self.bot.say(msg)
 
-    @commands.command(name='deleterole', pass_context=True, aliases=['delr'])
+    @commands.command(name='deleterole', pass_context=True, no_pm=True, aliases=['delr'])
     @checks.is_admin()
     async def delete_role(self, ctx, *, role: discord.Role):
         """Deletes a role from the server
 
-        Do not confuse this with =>removerole, which deletes a role from the server.
+        Do not confuse this with removerole, which deletes a role from the server.
         """
-        if role >= author.top_role:
-            await self.bot.say("You can't delete a role that's higher than your highest role, I think")
-            return
+        self._check_role_position(ctx, role, "delete")
 
         try:
             await self.bot.delete_role(ctx.message.server, role)
@@ -314,13 +288,13 @@ class Admin:
         except discord.HTTPException:
             msg = f"Deleting **{role}** failed, for some reason..."
         else:
-            msg = "Successfully deleted **{role}**, I think."
+            msg = f"Successfully deleted **{role}**, I think."
         await self.bot.say(msg)
 
-    async def editrole(self, ctx, role, *, args: str):
+    async def editrole(self, ctx, role: discord.Role, *args: str):
         pass
 
-    @commands.command(pass_context=True)
+    @commands.command(pass_context=True, no_pm=True)
     @checks.admin_or_permissions(manage_server=True)
     async def welcome(self, ctx, *, message: str):
         """Sets the bot's message when a member joins this server.
@@ -330,6 +304,7 @@ class Admin:
         {server}   = Optional, the name of the server.
         {count}    = how many members are in the server now. ,
         {countord} = like {count}, but as an ordinal.
+        {joinedat} = The date and time when the member joined
         """
         if "{user}" not in message:
             message = "{user} " + message
@@ -339,7 +314,7 @@ class Admin:
 
     async def on_member_join(self, member):
         server = member.server
-        message = self.member_messages["join"].get(server.id)
+        message = self.member_messages.setdefault("join", {}).get(server.id)
         member_count = len(server.members)
         if not message:
             return
@@ -349,17 +324,18 @@ class Admin:
             "{server}": str(server),
             "{count}": member_count,
             "{countord}": ordinal(member_count),
+            "{joinedat}": nice_time(member.joined_at)
         }
 
-        message = _inplace_replace(message, replacements)
+        message = multi_replace(message, replacements)
         await self.bot.send_message(server, message)
 
-    @commands.command(pass_context=True)
+    @commands.command(pass_context=True, no_pm=True)
     @checks.admin_or_permissions(manage_server=True)
     async def byebye(self, ctx, *, message: str):
         """Sets the bot's message when a member leaves this server"""
         self.member_messages.setdefault("leave", {})
-        self.member_messages["leave"][ctx.message.server.id] = message
+        self.member_messages.setdefault("leave", {})[ctx.message.server.id] = message
         await self.bot.say("Leave message has been set")
 
     async def on_member_leave(self, member):
@@ -371,108 +347,67 @@ class Admin:
         message = message.replace("{user}", member.mention)
         await self.bot.send_message(server, message)
 
-    @commands.command(pass_context=True)
+    @commands.command(pass_context=True, no_pm=True)
     @checks.is_admin()
-    async def prefix(self, ctx, cog, prefix):
+    async def prefix(self, ctx, cog: bot_cog_default("default"), prefix: _sanitize_prefix):
         """Sets a prefix for a particular cog (or "default")"""
-        if prefix[-1].isalpha():
-            await self.bot.say("Your prefix must end with a non-letter.")
-            return
-
-        cog = cog.lower()
-        cog_name = ("default" if cog == "default" else
-                    discord.utils.find(lambda s: s.lower() == cog, self.bot.cogs))
-        if cog_name is None:
-            await self.bot.say(f"Cog **{cog}** doesn't exist.")
-            return
         cog_references = self.bot.custom_prefixes[ctx.message.server]
-        cog_references[cog_name] = [prefix]
-        await self.bot.say(f"Successfully set **{cog_name}**'s prefix to \"{prefix}\"!")
+        cog_references[cog] = [prefix]
+        await self.bot.say(f"Successfully set **{cog}**'s prefix to \"{prefix}\"!")
 
     @commands.command(name="addprefix", pass_context=True, no_pm=True)
     @checks.is_admin()
-    async def add_prefix(self, ctx, cog, prefix):
+    async def add_prefix(self, ctx, cog: bot_cog_default("default"), prefix: _sanitize_prefix):
         """Adds a prefix for a particular cog (or "default")"""
-        if prefix[-1].isalpha():
-            await self.bot.say("Your prefix must end with a non-letter.")
-            return
-
-        cog = cog.lower()
-        cog_name = ("default" if cog == "default" else
-                    discord.utils.find(lambda s: s.lower() == cog, self.bot.cogs))
-        if cog_name is None:
-            await self.bot.say(f"Cog **{cog}** doesn't exist.")
-            return
-
         cog_references = self.bot.custom_prefixes[ctx.message.server]
-        cog_references.setdefault(cog_name, [])
-        prefixes = cog_references[cog_name]
+        prefixes = cog_references.setdefault(cog, [])
         if prefix in prefixes:
-            await self.bot.say(f"\"{prefix}\" was already added to **{cog_name}**...")
+            await self.bot.say(f"\"{prefix}\" was already added to **{cog}**...")
         else:
-            cog_references[cog_name].append(prefix)
-            await self.bot.say(f"Successfully added prefix \"{prefix}\" to **{cog_name}**!")
+            prefixes.append(prefix)
+            await self.bot.say(f"Successfully added prefix \"{prefix}\" to **{cog}**!")
 
     @commands.command(name="removeprefix", pass_context=True, no_pm=True)
     @checks.is_admin()
-    async def remove_prefix(self, ctx, cog, prefix):
+    async def remove_prefix(self, ctx, cog: bot_cog_default("default"), prefix: _sanitize_prefix):
         """Removes a prefix for a particular cog (or "default")"""
-        if prefix[-1].isalpha():
-            await self.bot.say("Your prefix must end with a non-letter.")
-            return
-
-        cog = cog.lower()
-        cog_name = ("default" if cog == "default" else
-                    discord.utils.find(lambda s: s.lower() == cog, self.bot.cogs))
-        if cog_name is None:
-            await self.bot.say(f"Cog **{cog}** doesn't exist.")
-            return
 
         cog_references = self.bot.custom_prefixes[ctx.message.server]
-        prefixes = cog_references.get(cog_name, [])
+        prefixes = cog_references.get(cog, [])
         try:
             prefixes.remove(prefix)
         except (AttributeError, ValueError):
-            await self.bot.say(f"\"{prefix}\" was never in **{cog_name}**...")
+            await self.bot.say(f"\"{prefix}\" was never in **{cog}**...")
         else:
             if not prefixes:
-                cog_references.pop(cog_name)
-            await self.bot.say(f"Successfully removed prefix \"{prefix}\" in **{cog_name}**!")
+                cog_references.pop(cog)
+            await self.bot.say(f"Successfully removed prefix \"{prefix}\" in **{cog}**!")
 
     @commands.command(name="resetprefix", pass_context=True, no_pm=True)
     @checks.is_admin()
-    async def reset_prefix(self, ctx, cog):
+    async def reset_prefix(self, ctx, cog: bot_cog_default("default")):
         """Resets a prefix for a particular cog (or "default")"""
-        cog = cog.lower()
-        cog_name = ("default" if cog == "default" else
-                    discord.utils.find(lambda s: s.lower() == cog, self.bot.cogs))
-        if cog_name is None:
-            await self.bot.say(f"Cog **{cog}** doesn't exist.")
-            return
 
         cog_references = self.bot.custom_prefixes[ctx.message.server]
         try:
-            cog_references.pop(cog_name)
+            cog_references.pop(cog)
         except KeyError:
-            await self.bot.say(f"**{cog_name}** never had any custom prefixes...")
+            await self.bot.say(f"**{cog}** never had any custom prefixes...")
         else:
-            await self.bot.say(f"Done. **{cog_name}** no longer has any custom prefixes")
+            await self.bot.say(f"Done. **{cog}** no longer has any custom prefixes")
 
-    @commands.command(name="use_default_prefix", pass_context=True, no_pm=True, aliases=['udpf'])
+    @commands.command(name="usedefaultprefix", pass_context=True, no_pm=True, aliases=['udpf'])
     @checks.is_admin()
-    async def use_default_prefix(self, ctx, boo):
-        result = convert_to_bool(boo)
+    async def use_default_prefix(self, ctx, bool: bool):
+        """Sets whether or not the default prefix (either defined in the server
+        or the bot's default prefix) should be used
+        """
         cog_references = self.bot.custom_prefixes[ctx.message.server]
-        cog_references["use_default_prefix"] = result
-        cog_references["default"].setdefault("prefix", self.bot.default_prefix)
-        msg = (f"{cog_references['default']} will now be used for all modules." if result else
+        cog_references["use_default_prefix"] = bool
+        default_prefix = cog_references["default"].setdefault("prefix", self.bot.default_prefix)
+        msg = (f"{default_prefix} will now be used for all modules." if bool else
                "Custom prefixes will be used for all modules.")
         await self.bot.say(msg)
-
-
-
-
-
 
 def setup(bot):
     bot.add_cog(Admin(bot))

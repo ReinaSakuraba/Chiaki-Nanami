@@ -1,30 +1,27 @@
 import discord.utils
-import functools
+import enum
 
 from discord.ext import commands
 
 from .database import Database
 
-server_role_default = lambda: {"admin": [], "moderator": []}
-server_roles = Database.from_json("admin/adminsandmods.json", default_factory=server_role_default)
+DEFAULT = 'Bot Admin'
+class ChiakiRole(enum.Enum):
+    admin = 'admin'
+    mod = 'moderator'
+    permissions = 'permissions'
 
-def add_admin_role(server, role):
-    server_roles[server]["admin"].append(role.id)
+    def __str__(self):
+        return self.value.title()
 
-def add_mod_role(server, role):
-    server_roles[server]["moderator"].append(role.id)
+server_role_default = dict.fromkeys(map(str, ChiakiRole), DEFAULT)
+server_roles = Database.from_json("admin/adminsandmods.json", default_factory=server_role_default.copy)
 
-def remove_admin_role(server, role):
-    try:
-        server_roles[server]["admin"].remove(role.id)
-    except ValueError:
-        pass
+def assign_role(server, key, role):
+    server_roles[server][str(key)] = getattr(role, 'id', DEFAULT)
 
-def remove_mod_role(server, role):
-    try:
-        server_roles[server]["moderator"].remove(role.id)
-    except ValueError:
-        pass
+def get_role(server, key):
+    return server_roles[server][str(key)]
 
 # -----------PREDICATES AND CHECKS------------
 
@@ -35,9 +32,9 @@ def is_owner():
     return commands.check(is_owner_predicate)
 
 def permissions_predicate(ctx, **perms):
-    msg = ctx.message
     if is_owner_predicate(ctx):
         return True
+    msg = ctx.message
     ch = msg.channel
     author = msg.author
     resolved = ch.permissions_for(author)
@@ -45,13 +42,17 @@ def permissions_predicate(ctx, **perms):
                for perm, value in perms.items())
 
 def role_predicate(ctx, role):
+    if is_owner_predicate(ctx):
+        return True
     ch = ctx.message.channel
     author = ctx.message.author
+    server = ctx.message.server
     if ch.is_private:
         return False
-    role_ids = server_roles[ctx.message.server][role]
-    role = discord.utils.find((lambda r: r.id in role_ids), author.roles)
-    return role is not None
+    role_id = get_role(server, role)
+    role = discord.utils.get(author.roles, id=role_id)
+    role_name = discord.utils.get(author.roles, name=str(DEFAULT))
+    return None not in (role, role_name)
 
 def role_or_perms_predicate(ctx, role, **perms):
     return role_predicate(ctx, role) or permissions_predicate(ctx, **perms)
@@ -68,13 +69,13 @@ def has_role_or_perms(role, **perms):
     return commands.check(predicate)
 
 def is_admin():
-    return has_role("admin")
+    return has_role(ChiakiRole.admin)
 
 def is_mod():
-    return has_role("moderator")
+    return has_role(ChiakiRole.mod)
 
 def admin_or_permissions(**perms):
-    return has_role_or_perms("admin", **perms)
+    return has_role_or_perms(ChiakiRole.admin, **perms)
 
 def mod_or_permissions(**perms):
-    return has_role_or_perms("moderator", **perms)
+    return has_role_or_perms(ChiakiRole.mod, **perms)

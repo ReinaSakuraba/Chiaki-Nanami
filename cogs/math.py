@@ -1,16 +1,16 @@
 import ast
 import inspect
 import math
+import random
 import re
 
 from collections.abc import Sequence
 from discord.ext import commands
+from operator import itemgetter
 from random import randrange
 
-try:
-    import numpy as np
-except ImportError:
-    np = None
+from .utils.errors import InvalidArgument
+from .utils.misc import usage
 
 try:
     import sympy
@@ -22,7 +22,10 @@ else:
     )
     default_transformations = (implicit_multiplication_application, *standard_transformations)
 
-MATH_CONTEXT = {a: getattr(math, a, None) for a in dir(math) if not a.startswith('_')}
+def _get_context(obj):
+    return {attr: func for attr, func in inspect.getmembers(obj) if not attr.startswith('_')}
+
+MATH_CONTEXT = _get_context(math)
 sec = lambda x: 1 / math.cos(x)
 csc = lambda x: 1 / math.sin(x)
 cot = lambda x: 1 / math.tan(x)
@@ -30,11 +33,11 @@ sign = lambda x: (x > 0) - (x < 0)
 MATH_CONTEXT.update(ln=math.log, arcsin=math.asin, arccos=math.acos, arctan=math.atan,
                     sec=sec, secant=sec, csc=csc, cosecant=csc, cot=cot, cotangent=cot,
                     abs=abs, min=min, max=max, divmod=divmod, round=round, sign=sign,
+                    random=random.random, randrange=random.randrange,
                     __builtins__=None
                     )
 del sec, csc, cot, sign
-OTHER_OPS = ['and', 'or', 'not', ]
-
+OTHER_OPS = {'and', 'or', 'not', }
 
 def _sanitize_func(pat, ctx, sanity_check):
     def sanitize(fn_str):
@@ -54,7 +57,7 @@ def _is_sane_func(ctx):
         return token in ctx
     return is_sane
 
-_sanitize = _sanitize_func(r"[0-9.+\-*/^&|<>, ()=]+", MATH_CONTEXT, _is_sane_func(list(MATH_CONTEXT) + OTHER_OPS))
+_sanitize = _sanitize_func(r"[0-9.+\-*/^&|<>, ()=]+", MATH_CONTEXT, _is_sane_func(set(MATH_CONTEXT) | OTHER_OPS))
 
 # Pure Python Vector class implementation by Gareth Rees
 # https://github.com/gareth-rees/geometry/blob/master/vector.py
@@ -204,39 +207,17 @@ class Vector(tuple):
         """
         return self * (s / abs(self))
 
-    @property
-    def x(self):
-        return self[0]
-
-    @property
-    def y(self):
-        return self[1]
-
-    @property
-    def z(self):
-        return self[2]
+    # namedtuple-style hax
+    x = property(itemgetter(0), doc='Alias for field number 0')
+    y = property(itemgetter(1), doc='Alias for field number 1')
+    z = property(itemgetter(2), doc='Alias for field number 2')
 
     @classmethod
     def zero(cls, dim=2):
         return cls(*((0,) * dim))
 
-def _make_vectors(*values):
-    length = len(values)
-    if length in (2, 3):
-        return Vector.zero(length), Vector(*values)
-    else:
-        half = length // 2
-        h1, h2 = values[:half], values[half:]
-        return Vector(*h1), Vector(*h2)
-
-VECTOR_CONTEXT = {
-    'Vector': Vector,
-    'abs': abs,
-    'bool': bool,
-    'degrees': math.degrees,
-    '__builtins__': None,
-    **{name: getattr(Vector, name) for name in dir(Vector) if not name.startswith('_')},
-    }
+VECTOR_CONTEXT = _get_context(Vector)
+VECTOR_CONTEXT.update(Vector=Vector, abs=abs, bool=bool, degrees=math.degrees, __builtins__=None)
 _vector_sanitize = _sanitize_func(r"[0-9, +-/*()]+", VECTOR_CONTEXT, _is_sane_func(VECTOR_CONTEXT))
 
 # Miller-Rabin primality test written by Gareth Rees
@@ -245,7 +226,7 @@ _vector_sanitize = _sanitize_func(r"[0-9, +-/*()]+", VECTOR_CONTEXT, _is_sane_fu
 _small_primes = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31] # etc.
 
 def _probably_prime(n, k):
-    """Return True if n passes k rounds of the Miller-Rabin primality`
+    """Return True if n passes k rounds of the Miller-Rabin primality
     test (and is probably prime). Return False if n is proved to be
     composite.
 
@@ -275,11 +256,6 @@ class Math:
     __prefix__ = ['+', '-', '*', '/', '^', '=']
     def __init__(self, bot):
         self.bot = bot
-
-    async def _check_module(self, module, name):
-        if not module:
-            await self.bot.say(f"This feature is not supported because {name} wasn't imported, I think.")
-            raise ModuleNotFoundError(f"Module {name} is not imported.")
 
     async def _result_say(self, input, output):
         return await self.bot.say(f"```css\nInput: \n{input}\n\nOutput:\n{output}```")
@@ -374,53 +350,47 @@ class Math:
         ops = [key for key, val in VECTOR_CONTEXT.items() if val not in vector_funcs]
         await self.bot.say(f"Available misc vector functions: \n```\n{', '.join(ops)}```")
 
-    # SymPy related commands
-    # Use oo for infinity
-    @commands.command(aliases=['derivative'])
-    async def differentiate(self, expr: str, n: int=1):
-        """Finds the derivative of an equation
+    if sympy:
+        # SymPy related commands
+        # Use oo for infinity
+        @commands.command(aliases=['derivative'])
+        async def differentiate(self, expr: str, n: int=1):
+            """Finds the derivative of an equation
 
-        n is the nth derivative you wish to calcuate.
-        The expression must be in quotes.
-        """
-        await self._check_module(sympy, "SymPy")
-        equation = parse_expr(expr, evaluate=False, transformations=default_transformations)
-        symbols = list(equation.free_symbols)
-        if len(symbols) > 1:
-            await self.bot.say("You have too many symbols in your equation")
-        else:
+            n is the nth derivative you wish to calcuate.
+            The expression must be in quotes.
+            """
+            equation = parse_expr(expr, evaluate=False, transformations=default_transformations)
+            symbols = list(equation.free_symbols)
+            if len(symbols) > 1:
+                raise InvalidArgument("You have too many symbols in your equation")
             result = sympy.pretty(sympy.diff(equation, *(symbols * n)))
             await self._result_say(equation, result)
 
-    @commands.command()
-    async def limit(self, expr: str, var, to, dir='+'):
-        """Finds the limit of an equation.
+        @commands.command()
+        async def limit(self, expr: str, var: sympy.Symbol, to, dir='+'):
+            """Finds the limit of an equation.
 
-        var is the nth derivative you wish to calcuate
-        to is where the var will approach
-        dir is the side the limit will be approached from
+            var is the nth derivative you wish to calcuate
+            to is where the var will approach
+            dir is the side the limit will be approached from
 
-        The expression must be in quotes.
-        """
-        await self._check_module(sympy, "SymPy")
-        # Can't use annotations because it wouldn't even compile if sympy wasn't imported
-        var = sympy.Symbol(var)
-        equation = parse_expr(expr, evaluate=False, transformations=default_transformations)
-        result = sympy.pretty(sympy.limit(expr, var, to, dir))
-        await self._result_say(equation, result)
+            The expression must be in quotes.
+            """
+            equation = parse_expr(expr, evaluate=False, transformations=default_transformations)
+            result = sympy.pretty(sympy.limit(expr, var, to, dir))
+            await self._result_say(equation, result)
 
-    @commands.command(aliases=['integral'])
-    async def integrate(self, *, expr: str):
-        """Finds the indefinite integral (aka antiderivative of an equation)
+        @commands.command(aliases=['integral'])
+        async def integrate(self, *, expr: str):
+            """Finds the indefinite integral (aka antiderivative of an equation)
 
-        Unlike derivative, the expression does not require quotes
-        """
-        await self._check_module(sympy, "SymPy")
-        equation = parse_expr(expr, evaluate=False, transformations=default_transformations)
-        symbols = list(equation.free_symbols)
-        if len(symbols) > 1:
-            await self.bot.say("You have too many symbols in your equation")
-        else:
+            Unlike derivative, the expression does not require quotes
+            """
+            equation = parse_expr(expr, evaluate=False, transformations=default_transformations)
+            symbols = list(equation.free_symbols)
+            if len(symbols) > 1:
+                raise InvalidArgument("You have too many symbols in your equation")
             result = sympy.pretty(sympy.integrate(equation, symbols[0]))
             await self._result_say(equation, result)
 

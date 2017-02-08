@@ -8,12 +8,10 @@ from operator import itemgetter
 
 from .utils import checks
 from .utils.database import Database
+from .utils.errors import ResultsNotFound, private_message_only
 from .utils.paginator import DelimPaginator
 
-CC_FILE_NAME = "customcommands.json"
-def _cc_default():
-    return {"triggers": {}, "reactions": {}, "current_pow": 6}
-
+_cc_default = {"triggers": {}, "reactions": {}, "current_pow": 6}
 
 def _smart_truncate(content, length=100, suffix='...'):
     if len(content) <= length:
@@ -24,7 +22,7 @@ def _smart_truncate(content, length=100, suffix='...'):
 class CustomReactions:
     def __init__(self, bot):
         self.bot = bot
-        self.db = Database.from_json(CC_FILE_NAME)
+        self.db = Database.from_json("customcommands.json")
 
     def _get_all_trigger_ids(self, server):
         if server not in self.db:
@@ -36,11 +34,12 @@ class CustomReactions:
         ids = self._get_all_trigger_ids(server)
         available_ids = set(range(1, 10 ** db["current_pow"])) - set(ids)
         if not available_ids:
-            db["current_pow"] += 1
-            available_ids = set(range(1, 10 ** db["current_pow"])) - set(ids)
+            db_pow = db["current_pow"]
+            available_ids |= set(range(10 ** db_pow, 10 ** (db_pow + 1)))
+            db["current_pow"] = db_pow + 1
         return random.sample(available_ids, 1)[0]
 
-    @commands.group(aliases=["customcomm", "cc", "cr", "custreact"])
+    @commands.group(aliases=["customreact", "cc", "cr"])
     async def customcommand(self):
         """Namespace for the custom commands"""
         pass
@@ -54,15 +53,13 @@ class CustomReactions:
         """
         server = ctx.message.server
         if server not in self.db:
-            self.db[server] = _cc_default()
-
-        triggers = self.db[server]["triggers"]
-        lower_trigger = trigger.lower()
-        if lower_trigger not in triggers:
-            triggers[lower_trigger] = []
+            self.db[server] = _cc_default.copy()
 
         trigger_id = self._random_trigger(server)
-        triggers[trigger].append(trigger_id)
+
+        triggers = self.db[server]["triggers"]
+        triggers.setdefault(trigger.lower(), []).append(trigger_id)
+
         self.db[server]["reactions"][str(trigger_id)] = reaction
         await self.bot.say("Custom command added")
 
@@ -93,8 +90,7 @@ class CustomReactions:
         """
         storage = self.db.get(ctx.message.server, None)
         if storage is None:
-            await self.bot.say("There are no commands for this server")
-            return
+            raise ResultsNotFound("There are no commands for this server")
         try:
             storage["reactions"].pop(str(ccid))
         except KeyError:
@@ -105,51 +101,49 @@ class CustomReactions:
             triggers[key].remove(ccid)
             if not triggers[key]:
                 triggers.pop(key)
-            await self.bot.say("{} command removed".format(ccid))
+            await self.bot.say(f"#{ccid} successfully removed.")
 
     @customcommand.command(pass_context=True)
     @checks.is_admin()
     async def edit(self, ctx, ccid: int, *, new_react: str):
-        ccid = ccid.lower()
         server = ctx.message.server
         storage = self.db.get(server, None)
         if storage is None:
-            await self.bot.say("There are no commands for this server")
-            return
+            raise ResultsNotFound("There are no commands for this server")
         reactions = storage["reactions"]
+        ccid = str(ccid)
         if ccid not in reactions:
-            return await self.bot.say("Command {} doesn't ~~edit~~ exits".format(ccid))
+            raise ResultsNotFound("Command {} doesn't ~~edit~~ exits".format(ccid))
 
         reactions[ccid] = new_react
         await self.bot.say("{} command edited".format(ccid))
 
     @customcommand.command(pass_context=True, hidden=True)
     @checks.is_owner()
+    @private_message_only()
     async def addg(self, ctx, trigger, *, msg : str):
-        if not ctx.message.channel.is_private:
-            return
         self.db["global"][trigger] = msg
 
     @customcommand.command(pass_context=True, hidden=True)
     @checks.is_owner()
+    @private_message_only()
     async def remg(self, ctx, trigger):
-        if not ctx.message.channel.is_private:
-            return
         try:
             self.db["global"].pop(ccid.lower())
         except KeyError:
-            return await self.bot.say("{} was never a custom command".format(ccid))
+            raise ResultsNotFound(f"{ccid} was never a custom command")
 
     async def on_message(self, msg):
         storage = self.db.get(msg.server) or self.db.get("global")
         if storage is None:
             return
+
         triggers = storage["triggers"].get(msg.content.lower())
         if triggers is None:
             return
+
         trigger_id = str(random.choice(triggers))
         reaction = storage["reactions"].get(trigger_id)
-
         if reaction is not None:
             await self.bot.send_message(msg.channel, reaction)
 
