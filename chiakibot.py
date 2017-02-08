@@ -11,7 +11,7 @@ from datetime import datetime
 from discord.ext import commands
 
 from cogs.utils.database import Database
-from cogs.utils.misc import cycle_shuffle, full_succinct_duration
+from cogs.utils.misc import cycle_shuffle, duration_units
 
 log = logging.getLogger(__name__)
 try:
@@ -24,45 +24,32 @@ log.addHandler(handler)
 
 # You are free to change this if you want.
 DEFAULT_CMD_PREFIX = '->'
-description = '''A test for the Chiaki bot (totally not a ripoff of Nadeko)'''
+description = '''The gamer, for gamers (probably not a ripoff of Nadeko)'''
 MAX_FORMATTER_WIDTH = 90
-
-def cog_prefix(cmd, bot, server):
-    cog = cmd.instance
-    cog_references = bot.custom_prefixes.get(server)
-    default_prefix = lambda cog: (DEFAULT_CMD_PREFIX if cog is None else
-                                  getattr(cog, '__prefix__', DEFAULT_CMD_PREFIX))
-    if cog_references:
-        if cog_references.get("use_default"):
-            return cog_references.get("default", default_prefix(cog))
-        return cog_references.get(type(cog).__name__, default_prefix(cog))
-    return default_prefix(cog)
-
-def str_prefix(cmd, bot, server):
-    prefix = cog_prefix(cmd, bot, server)
-    return prefix if isinstance(prefix, str) else '|'.join(prefix)
 
 class ChiakiFormatter(commands.HelpFormatter):
     def _add_subcommands_to_page(self, max_width, commands):
         ctx = self.context
-        commands = ((str_prefix(cmd, ctx.bot, ctx.message.server) + name, cmd) for name, cmd in commands
-                    if name not in cmd.aliases)
+        commands = ((ctx.bot.str_prefix(cmd, ctx.message.server) + name, cmd)
+                    for name, cmd in commands if name not in cmd.aliases)
         super()._add_subcommands_to_page(max_width, commands)
 
     @property
     def clean_prefix(self):
         ctx = self.context
         return (super().clean_prefix if self.is_bot() or self.is_cog() else
-                str_prefix(self.command, ctx.bot, ctx.message.server))
+                ctx.bot.str_prefix(self.command, ctx.message.server))
 
     def format(self):
         """Handles the actual behaviour involved with formatting.
         To change the behaviour, this method should be overridden.
+
         Returns
         --------
         list
             A paginated output of the help command.
         """
+
         from discord.ext import commands
         bot, server = self.context.bot, self.context.message.server
         self._paginator = commands.Paginator()
@@ -91,10 +78,11 @@ class ChiakiFormatter(commands.HelpFormatter):
 
         def category(tup):
             cmd = tup[1]
-            prefix = cog_prefix(cmd, bot, server)
+            prefix = bot.str_prefix(cmd, server)
             # we insert the zero width space there to give it approximate
             # last place sorting position.
-            return f'{cmd.cog_name} (Prefix: {prefix})' if cmd.cog_name is not None else '\u200bNo Category:'
+            return (f'{cmd.cog_name} (Prefix: {prefix})'
+                    if cmd.cog_name is not None else '\u200bNo Category:')
 
         if self.is_bot():
             data = sorted(self.filter_command_list(), key=category)
@@ -106,7 +94,7 @@ class ChiakiFormatter(commands.HelpFormatter):
 
                 self._add_subcommands_to_page(max_width, commands)
         else:
-            prefix = getattr(type(self.command), '__prefix__', DEFAULT_CMD_PREFIX)
+            prefix = getattr(self.command, '__prefix__', DEFAULT_CMD_PREFIX)
             self._paginator.add_line('Commands:')
             self._add_subcommands_to_page(max_width, self.filter_command_list())
 
@@ -124,7 +112,7 @@ class ChiakiBot(commands.Bot):
         self.loop.create_task(self.dump_db_cycle())
         self.loop.create_task(self._start_time())
 
-        self.commands_counter = Counter()
+        self.counter = Counter()
         self.persistent_counter = Database.from_json("stats.json")
         self.custom_prefixes = Database.from_json("customprefixes.json", default_factory=dict)
         self.databases = [self.persistent_counter, self.custom_prefixes, ]
@@ -134,9 +122,14 @@ class ChiakiBot(commands.Bot):
         await self.wait_until_ready()
         self.start_time = datetime.now()
 
+    async def send_message(self, destination, content=None, *, tts=False, embed=None):
+        message = await super().send_message(destination, content, tts=tts, embed=embed)
+        self.counter["Messages Sent"] += 1
+        return message
+
     async def logout(self):
-        self.commands_counter.update(self.persistent_counter)
-        self.persistent_counter.update(self.commands_counter)
+        self.counter.update(self.persistent_counter)
+        self.persistent_counter.update(self.counter)
         await self.dump_databases()
         await super().logout()
 
@@ -191,8 +184,7 @@ class ChiakiBot(commands.Bot):
             log.info(f"{name} successfully unloaded")
 
     def add_database(self, db):
-        if db not in self.databases:
-            self.databases.append(db)
+        self.databases.append(db)
         log.info(f"database {db.name} successfully added")
 
     def remove_database(self, db):
@@ -234,7 +226,26 @@ class ChiakiBot(commands.Bot):
         while not self.is_closed:
             await self.dump_databases()
             print("all databases successfully dumped")
-            await asyncio.sleep(600)
+            await asyncio.sleep(180)
+
+    def cog_prefix(self, cmd, server):
+        cog = cmd.instance if isinstance(cmd, commands.Command) else cmd
+        cog_name = type(cog).__name__ if cog else None
+        cog_references = self.custom_prefixes.get(server)
+        default_prefix = lambda cog: getattr(cog, '__prefix__', None) or DEFAULT_CMD_PREFIX
+        if cog_references:
+            if cog_references.get("use_default"):
+                return cog_references.get("default", default_prefix(cog))
+            return cog_references.get(cog_name, default_prefix(cog))
+        return default_prefix(cog)
+
+    def str_prefix(self, cmd, server):
+        prefix = self.cog_prefix(cmd, server)
+        return prefix if isinstance(prefix, str) else '|'.join(prefix)
+
+    @discord.utils.cached_property
+    def colour(self):
+        return discord.Colour(0xFFDDDD)
 
     @property
     def uptime(self):
@@ -242,9 +253,9 @@ class ChiakiBot(commands.Bot):
 
     @property
     def str_uptime(self):
-        return full_succinct_duration(self.uptime.total_seconds())
+        return duration_units(self.uptime.total_seconds())
 
-    @property
+    @discord.utils.cached_property
     def invite_url(self):
         chiaki_permissions = discord.Permissions(2146823295)
         return discord.utils.oauth_url(self.user.id, chiaki_permissions)
@@ -252,12 +263,6 @@ class ChiakiBot(commands.Bot):
     @property
     def default_prefix(self):
         return DEFAULT_CMD_PREFIX
-
-    @property
-    def default_prefixes(self):
-        return {cog_name: getattr(cog, '__prefix__', DEFAULT_CMD_PREFIX)
-                for cog_name, cog in self.cogs.items()}
-
 
 def _find_prefix_by_cog(bot, message):
     custom_prefixes = bot.custom_prefixes.get(message.server, {})
@@ -276,7 +281,7 @@ def _find_prefix_by_cog(bot, message):
     if cmd is None:
         return default_prefix
 
-    return cog_prefix(cmd, bot, message.server)
+    return bot.cog_prefix(cmd, message.server)
 
 # main bot
 def chiaki_bot():

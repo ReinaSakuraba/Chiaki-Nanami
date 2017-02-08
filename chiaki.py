@@ -31,7 +31,6 @@ logging.basicConfig(level=logging.INFO)
 bot = chiaki_bot()
 
 initial_extensions = (
-#   'cogs.games.guess',
     'cogs.admin',
     'cogs.afk',
     'cogs.cleverbot',
@@ -40,7 +39,7 @@ initial_extensions = (
     'cogs.math',
     'cogs.meta',
     'cogs.moderator',
-    'cogs.musictest',
+    'cogs.music',
 #   'cogs.newpoints',
     'cogs.owner',
     'cogs.permissions',
@@ -50,8 +49,8 @@ initial_extensions = (
     'cogs.diepio.partylink',
     'cogs.diepio.wr',
 #   'cogs.games.eventhost',
-#    'cogs.games.fizzbuzz',
-#    'cogs.games.hangman',
+#   'cogs.games.fizzbuzz',
+#   'cogs.games.hangman',
     'cogs.games.math',
     'cogs.games.rps',
     'cogs.games.tictactoe',
