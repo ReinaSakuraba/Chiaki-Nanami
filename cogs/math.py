@@ -9,7 +9,7 @@ from discord.ext import commands
 from operator import itemgetter
 from random import randrange
 
-from .utils.errors import InvalidArgument
+from .utils.errors import InvalidUserArgument
 from .utils.misc import usage
 
 try:
