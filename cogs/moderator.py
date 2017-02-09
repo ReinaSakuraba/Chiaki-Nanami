@@ -1,30 +1,17 @@
 import asyncio
 import discord
+import enum
 import re
 
 from .utils import checks
 from .utils.database import Database
+from .utils.errors import InvalidUserArgument
 from .utils.aitertools import AIterable
-from .utils.misc import nice_time, full_succinct_duration as _full_succinct_duration
+from .utils.misc import nice_time, duration_units
 
 from collections import Counter, defaultdict
 from discord.ext import commands
-from datetime import datetime, date
-
-def _pairwise(it):
-    iterit = iter(it)
-    return zip(iterit, iterit)
-
-def _nwise(it, n=2):
-    iterit = iter(it)
-    return zip(*([iterit] * n))
-
-def parse_int(s):
-    try:
-        return int(s)
-    except ValueError:
-        return None
-
+from datetime import datetime
 
 DURATION_MULTIPLIERS = {
     's': 1,                  'sec': 1,
@@ -35,17 +22,19 @@ DURATION_MULTIPLIERS = {
     'y': 60 * 60 * 24 * 365, 'yr': 60 * 60 * 24 * 365,
 }
 
-def _parse_duration(duration, unit):
+def pairwise(iterable):
+    it = iter(iterable)
+    return zip(*[it, it])
+
+def _parse_duration(duration, unit='m'):
     duration = parse_int(duration)
-    print(unit)
     if duration is None:
         return 0
     return duration * DURATION_MULTIPLIERS.get(unit, 60)
 
-def _full_duration(durations):
+def _duration_from_string(durations):
     durations = re.split(r"(\d+[\.]?\d*)", durations)[1:]
-    print(durations, list(_pairwise(durations)))
-    return sum(_parse_duration(d, u) for d, u in _pairwise(durations))
+    return sum(_parse_duration(d, u) for d, u in pairwise(durations))
 
 def _case_embed(num, action, target, msg, reason,
                 color: discord.Colour, time=None):
@@ -151,6 +140,17 @@ class Moderator:
         server_cases["case_num"] += 1
         await self.bot.send_message(case_channel, embed=case_embed)
 
+    async def _clear(self, channel, *, limit=100, check=None):
+        try:
+            deleted = await self.bot.purge_from(channel, limit=limit, check=check)
+        except discord.Forbidden:
+            await self.bot.say("I don't have the right perms to clear messages.")
+            return None
+        except discord.HTTPException:
+            await self.bot.say("Deleting the messages failed, somehow.")
+            return None
+        else:
+            return deleted
 
     async def _mute(self, member):
         muted_role = await self._get_muted_role(member.server)
@@ -177,7 +177,7 @@ class Moderator:
                 if (now - last_time).total_seconds() >= status["duration"]:
                     member = server.get_member(member_id)
                     await action(member, status)
-                    
+
     async def update(self):
         await self.bot.wait_until_ready()
         update_db = self._update_db
@@ -189,12 +189,12 @@ class Moderator:
             member = await self.bot.get_user_info(status["user"])
             await self.bot.unban(server, member)
             invite = await self.bot.create_invite(server)
-            await self.bot.send_message(member, 
+            await self.bot.send_message(member,
                                         f"You have been unbanned from {server}, "
                                         "please be on your best behaviour from now on...\n"
                                         f"{invite}"
                                         )
-        while not self.bot.is_killed:
+        while not self.bot.is_closed:
             await update_db(self.muted_users_db, unmute)
             await update_db(self.temp_bans_db, unban)
             await asyncio.sleep(0)
@@ -275,18 +275,6 @@ class Moderator:
         else:
             await self.bot.delete_message(message)
 
-    async def _clear(self, channel, *, limit=100, check=None):
-        try:
-            deleted = await self.bot.purge_from(channel, limit=limit, check=check)
-        except discord.Forbidden:
-            await self.bot.say("I don't have the right perms to clear messages.")
-            return None
-        except discord.HTTPException:
-            await self.bot.say("Deleting the messages failed, somehow.")
-            return None
-        else:
-            return deleted
-
     #TODO: Make separate commands from number vs member
     @commands.command(pass_context=True, no_pm=True)
     @checks.mod_or_permissions(manage_messages=True)
@@ -296,25 +284,20 @@ class Moderator:
         #Is it a number?
         if number is None:
             #Maybe it's a user?
-            try:
-                user = commands.UserConverter(ctx, rest).convert()
-            except commands.BadArgument:
-                return
+            user = commands.UserConverter(ctx, rest).convert()
             deleted = await self._clear(msg.channel, check=lambda m: m.author.id == user.id)
         else:
             if number < 1:
-                await self.bot.say("How can I delete {number} messages...?")
-                return
+                raise InvalidUserArgument("How can I delete {number} messages...?")
             deleted = await self._clear(msg.channel, limit=min(number, 1000) + 1)
+        if deleted is None:
+            return
         deleted_count = len(deleted) - 1
         is_plural = 's'*(deleted_count != 1)
         await self.bot.say(
             f"Deleted {deleted_count} message{is_plural} successfully!",
             delete_after=1.5
         )
-
-    async def clear_num(self, ctx, num):
-        pass
 
     # Because of the reason parameter
     # If you don't want to mention the member
@@ -329,7 +312,7 @@ class Moderator:
         author = ctx.message.author
         server_warns = self.warns_db[server]
 
-        await self.bot.say(("Hey, {0}, {1} has warned you for: {2}. Please stop."
+        await self.bot.say(("Hey, {0}, {1} has warned you for: \"{2}\". Please stop."
                            ).format(member.mention, author.mention, reason))
         await self.bot.send_message(member, f"{author} from {server} has warned you for {reason}.")
 
@@ -344,7 +327,8 @@ class Moderator:
 
     @commands.command(pass_context=True, no_pm=True)
     @checks.mod_or_permissions(manage_roles=True)
-    async def mute(self, ctx, member : discord.Member, durations : str, *, reason : str="None"):
+    async def mute(self, ctx, member : discord.Member, durations : _duration_from_string,
+                   *, reason : str="None"):
         """Mutes a user for a given duration and reason
 
         Because of the reason parameter, if you don't want to mention the user
@@ -353,10 +337,8 @@ class Moderator:
         message = ctx.message
         server = message.server
 
-        print(durations)
         await self._mute(member)
         server_mutes = self.muted_users_db[server]
-        duration = _full_duration(durations)
         data = {
             "time": str(datetime.now()),
             "duration": duration,
@@ -364,16 +346,16 @@ class Moderator:
             }
 
         server_mutes[member.id] = data
-        full_succinct_duration = _full_succinct_duration(duration)
+        duration_units = duration_units(duration)
         await self.bot.send_message(
             message.channel,
             ("{} has now been muted by {} "
              "for {}. Reason: {}").format(member.mention,
                                           message.author.mention,
-                                          full_succinct_duration, reason)
+                                          duration_units, reason)
             )
         await self._make_case("was muted :no_mouth:", message, member,
-                             reason, 0, mod=True, duration=full_succinct_duration)
+                             reason, 0, mod=True, duration=duration_units)
         #self._set_perms_for_mute(member, False, True)
 
     async def on_member_join(self, member):
@@ -421,16 +403,15 @@ class Moderator:
 
     @commands.command(pass_context=True, no_pm=True)
     @checks.mod_or_permissions(ban_members=True)
-    async def tempban(self, ctx, member: discord.Member, durations, *, reason: str):
+    async def tempban(self, ctx, member: discord.Member, durations: _duration_from_string, *, reason: str):
         """Temporarily bans a user (obviously)
 
         Because of the reason parameter, if you don't want to mention the user
         you must put the user in quotes if you're gonna put a reason
-        
+
         usage: tempban "Junko Enoshima#6666" 16d Too much despair!
         """
         server_mutes = self.temp_bans_db[member.server]
-        duration = _full_duration(durations)
         data = {
             "server": member.server.id,
             "user": member.id,
@@ -440,7 +421,7 @@ class Moderator:
             }
 
         server_mutes[member.id] = data
-        full_succinct_duration = _full_succinct_duration(duration)
+        duration_units = duration_units(duration)
         try:
             await self.bot.ban(member)
         except discord.Forbidden:
@@ -448,7 +429,6 @@ class Moderator:
         except discord.HTTPException:
             await self.bot.say("Banning failed. I don't know what happened.")
         else:
-            
             await self.bot.say("Done, please don't make me do that again.")
             await self._make_case("was temporarily banned :hammer_pick:", ctx.message,
                                   member, reason, 0xCC0000)
@@ -478,7 +458,7 @@ class Moderator:
     @checks.is_owner()
     async def unban(self, ctx, member: discord.Member, *, reason: str):
         """Unbans a user (obviously)
-        
+
         As of right now, this command doesn't work, as the user is effectively removed from the server upon banning.
         """
         try:
@@ -504,8 +484,7 @@ class Moderator:
             channel = ctx.message.channel
         server_cases = self.cases_db[ctx.message.server]
         server_cases["channel"] = channel.id
-        if "case_num" not in server_cases:
-            server_cases["case_num"] = 1
+        server_cases.setdefault("case_num", 1)
         await self.bot.say(f"Cases will now be made on channel {channel.mention}")
 
     @caseset.command(pass_context=True, no_pm=True)
