@@ -11,6 +11,7 @@ from collections import defaultdict
 from discord.ext import commands
 
 from .utils import checks
+from .utils.compat import url_color
 from .utils.errors import ResultsNotFound
 from .utils.misc import str_join, duration_units
 
@@ -88,12 +89,17 @@ class VoiceEntry:
             fmt = fmt + f' [length: {duration_units(duration)}]'
         return fmt.format(self.player, self.requester)
 
+    async def colour_embed(self):
+        embed = self.embed
+        embed.colour = await url_color(self.info['thumbnail'])
+        return embed
+
     @property
     def embed(self):
         requester = self.requester
         avatar = requester.avatar_url or requester.default_avatar_url
         player = self.player
-        info = _get_info(player)
+        info = self.info
         print(info['thumbnails'][0]['url'] == info['thumbnail'])
 
         return (discord.Embed(title=player.title, description=f"Uploaded by {player.uploader}", url=info['webpage_url'])
@@ -243,6 +249,11 @@ class Music:
         The list of supported sites can be found here:
         https://rg3.github.io/youtube-dl/supportedsites.html
         """
+
+        if ctx.message.author.voice_channel is None:
+            await self.bot.say('You are not in a voice channel.')
+            return
+
         state = self.get_voice_state(ctx.message.server)
         opts = {
             'default_search': 'auto',

@@ -1,6 +1,4 @@
 import discord
-import functools
-import hashlib
 import json
 import re
 
@@ -11,7 +9,7 @@ from discord.ext import commands
 from .utils import checks
 from .utils.database import Database
 from .utils.errors import private_message_only, ResultsNotFound
-from .utils.misc import multi_replace, nice_time, str_join
+from .utils.misc import multi_replace, nice_time
 
 _mentions_transforms = {
     '@everyone': '@\u200beveryone',
@@ -163,9 +161,10 @@ class Help:
     # Unlike most databases, this requires the bot be ready first before loading the database
     async def load_database(self):
         await self.bot.wait_until_ready()
-        self.problems = Database.from_json("issues.json", encoder=ProblemEncoder,
+        self.problems = Database.from_json('issues.json', encoder=ProblemEncoder,
                                            object_hook=problem_hook(self.bot))
-        self.problems.setdefault("blocked", [])
+        self.problems.setdefault('blocked', [])
+        self.bot.add_database(self.problems)
 
     @commands.command(pass_context=True, aliases=['HALP'])
     async def halp(self, ctx, *commands : str):

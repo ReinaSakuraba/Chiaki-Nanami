@@ -1,3 +1,5 @@
+import asyncio
+
 from collections import defaultdict
 from discord.ext import commands
 
@@ -64,6 +66,7 @@ class Cleverbot:
 
         session = self._get_session(channel)
         await self.bot.send_typing(channel)
+        await asyncio.sleep(0.5)
         response = await session.ask(content)
         await self.bot.send_message(channel, f"{author.mention} {response}")
 
