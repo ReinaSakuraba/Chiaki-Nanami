@@ -245,6 +245,8 @@ class Admin:
             args = parser.parse_args(args)
         except Exception as e:
             raise commands.BadArgument(f"Failed to parse args. Exception: ```\n{e}```")
+        except SystemExit:     # parse_args aborts the program on error (which sucks)
+            raise commands.BadArgument(f"Failed to parse args. Exception unknown.")
 
         colour_arg = args.color
         colour = commands.ColourConverter(ctx, colour_arg).convert()
@@ -272,6 +274,68 @@ class Admin:
             msg = f"Successfully created **{args.name}**!"
         await self.bot.say(msg)
 
+    @commands.command(name='editrole', pass_context=True, no_pm=True)
+    @checks.is_admin()
+    async def edit_role(self, ctx, old_role: discord.Role, *args: str):
+        """Edits a role with some custom arguments:
+
+        -n, --name                New name of the role. Default is the old role's name.
+        -c, --color, --colour     New colour of the  role. Default is the old role's colour.
+        --perms, --permissions    New permissions of the new role. Default is the old role's permissions.
+        -h, --hoist               Whether or not the role can be displayed separately. Default is false.
+        -m, --mentionable         Whether or not the role can be mentionable. Default is false.
+        --pos, --position         The new position of the role. This cannot be zero.
+        """
+        author = ctx.message.author
+        server = ctx.message.server
+
+
+        parser = argparse.ArgumentParser(description='Just a random role thing')
+        parser.add_argument('-n', '--name', nargs='?', default=old_role.name)
+        parser.add_argument('-c', '--color', '--colour', nargs='?', default=str(old_role.colour))
+        parser.add_argument('--permissions', '--perms', nargs='+', type=int, default=old_role.permissions.value)
+        parser.add_argument('--hoist', action='store_true')
+        parser.add_argument('-m', '--mentionable', action='store_true')
+        parser.add_argument('--pos', '--position', nargs='?', type=int, default=None)
+
+        try:
+            args = parser.parse_args(args)
+        except Exception as e:
+            raise commands.BadArgument(f"Failed to parse args. Exception: ```\n{e}```")
+        except SystemExit:     # parse_args aborts the program on error (which sucks)
+            raise commands.BadArgument(f"Failed to parse args. Exception unknown")
+
+        colour_arg = args.color
+        colour = commands.ColourConverter(ctx, colour_arg).convert()
+        position = args.pos
+
+        permissions = discord.Permissions(args.permissions)
+        if permissions.administrator and not (author.permissions.administrator or author == server.owner):
+            await self.bot.say("You are trying to edit a role with administrator permissions "
+                               "as a non-administrator. Please don't do that.")
+            return
+
+        kwargs = {
+            'name': args.name,
+            'colour': colour,
+            'permissions': permissions,
+            'hoist': args.hoist,
+            'mentionable': args.mentionable,
+        }
+        try:
+            if position is not None:
+                if not position:
+                    raise InvalidUserArgument("The new position cannot be 0.")
+                await self.bot.move_role(server, old_role, position)
+            await self.bot.edit_role(server, old_role, **kwargs)
+        except discord.Forbidden:
+            msg = "I need the **Manage Roles** perm to edit roles, I think."
+        except discord.HTTPException:
+            msg = f"Creating role **{args.name}** failed, for some reason."
+        else:
+            msg = f"Successfully created **{args.name}**!"
+        await self.bot.say(msg)
+
     @commands.command(name='deleterole', pass_context=True, no_pm=True, aliases=['delr'])
     @checks.is_admin()
     async def delete_role(self, ctx, *, role: discord.Role):
@@ -290,9 +354,6 @@ class Admin:
         else:
             msg = f"Successfully deleted **{role}**, I think."
         await self.bot.say(msg)
-
-    async def editrole(self, ctx, role: discord.Role, *args: str):
-        pass
 
     @commands.command(pass_context=True, no_pm=True)
     @checks.admin_or_permissions(manage_server=True)
