@@ -39,7 +39,7 @@ class Database(IDAbleDict):
         self.name = name
         super().__init__(default_factory, mapping)
         # Pay no attention to this copyness
-        self.loop = kwargs.pop('loop', asyncio.get_event_loop())
+        self.loop = kwargs.pop('loop', None) or asyncio.get_event_loop()
         self.object_hook = kwargs.pop('object_hook', None)
         self.encoder = kwargs.pop('encoder', None)
         self.lock = asyncio.Lock()
