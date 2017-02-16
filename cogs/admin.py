@@ -23,6 +23,7 @@ class Admin:
         self.bot = bot
         self.self_roles = Database.from_json("admin/selfroles.json", default_factory=list)
         self.member_messages = Database.from_json("admin/membermessages.json")
+        self.bot.add_database(checks.server_roles)
 
     def _check_role_position(self, ctx, role, action):
         top_role = ctx.message.author.top_role
@@ -40,7 +41,7 @@ class Admin:
 
     async def _chiaki_roles(self, ctx, key):
         server = ctx.message.server
-        id = checks.server_roles[server][key]
+        id = checks.get_role(server, key)
         role = discord.utils.get(server.roles, id=id)
         await self.bot.say(f'**{role}** is your \"{key}\" role.' if role is not None else
                            f'There are no "{key}" roles. Please set one soon.')
@@ -437,14 +438,14 @@ class Admin:
         prefixes = cog_references.get(cog, [])
         try:
             prefixes.remove(prefix)
-        except (AttributeError, ValueError):
+        except ValueError:
             await self.bot.say(f"\"{prefix}\" was never in **{cog}**...")
         else:
             if not prefixes:
                 cog_references.pop(cog)
             await self.bot.say(f"Successfully removed prefix \"{prefix}\" in **{cog}**!")
 
-    @commands.command(name="resetprefix", pass_context=True, no_pm=True)
+    @commands.command(name="resetprefix", pass_context=True, no_pm=True, aliases=['clearprefix'])
     @checks.is_admin()
     async def reset_prefix(self, ctx, cog: bot_cog_default("default")):
         """Resets a prefix for a particular cog (or "default")"""

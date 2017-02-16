@@ -1,11 +1,11 @@
 import aiohttp
 import asyncio
 import discord
+import hashlib
 
 from collections import OrderedDict
 from datetime import datetime
 from discord.ext import commands
-from hashlib import md5
 from itertools import chain
 from operator import itemgetter
 
@@ -72,7 +72,7 @@ def _get_wiki_image(tank):
         tank = "Tank"
     tank = tank.replace(" ", "_")
     tank_pic = tank + ".png"
-    tank_md5 = md5(tank_pic.encode('utf-8')).hexdigest()
+    tank_md5 = hashlib.md5(tank_pic.encode('utf-8')).hexdigest()
     return ("https://hydra-media.cursecdn.com/diepio.gamepedia.com/{}/{}/{}"
             ).format(tank_md5[0], tank_md5[:2], tank_pic)
 
@@ -145,7 +145,6 @@ class WRA:
         if lowered in cls._mode_translations:
             return cls._mode_translations[lowered]
         result = discord.utils.find(lambda e: e.lower() == lowered, cls.gamemode_ids[version])
-        print(cls.gamemode_ids)
         if result is not None:
             return result
         raise commands.BadArgument(f"Mode **{mode}** not recognized for WRs")
@@ -161,18 +160,15 @@ class WRA:
 
     def _wr_mode(self, version, mode, tank):
         tank_id = self._tank_id(tank)
-        print("...")
         try:
             records = self.wr_records[version]
         except KeyError:
             raise commands.BadArgument(f"Version **{version}** is not valid")
-        print("...", mode)
         index = self.gamemode_ids[version][mode] % 4 - 1
         return records[tank_id][index]
 
     def _wr_tank(self, tank):
         tank_id = self._tank_id(tank)
-
         def get_records(version):
             try:
                 return sorted(self.wr_records[version][tank_id], key=itemgetter("gamemode_id"))
@@ -181,8 +177,8 @@ class WRA:
 
         return get_records("desktop"), get_records("mobile")
 
-    @usage('wr desktop ffa sniper')
     @commands.command(aliases=['wr'])
+    @usage('wr desktop ffa sniper')
     async def worldrecord(self, version: str, mode, *, tank : _replace_tank):
         """Retrieves the world record from the WRA site
 
@@ -201,12 +197,12 @@ class WRA:
         if extra:
             await self.bot.say(extra)
 
-    @usage('wr sniper')
     @commands.command(pass_context=True)
+    @usage('wr sniper')
     async def wrtank(self, ctx, *, tank: _replace_tank):
         """Gives a summary of the WRs for a particular tank
 
-        Use ->wr for the full info of a particular WR (proof, date, and full score)
+        Use "wr" for the full info of a particular WR (proof, date, and full score)
         """
         desktop, mobile = self._wr_tank(tank)
         title = f"**__{tank}__**"
@@ -237,8 +233,8 @@ class WRA:
                    'proof': url}
         return await self.session.post('https://dieprecords.moepl.eu/api/submit/record', data=payload)
 
-    @usage('submitwr "Junko Enoshima" destroyer desktop ffa 1666714 http://i.imgur.com/tIHCj5K.png')
     @commands.command()
+    @usage('submitwr "Junko Enoshima" destroyer desktop ffa 1666714 http://i.imgur.com/tIHCj5K.png')
     async def submitwr(self, name: str, tank: _replace_tank, version : str, mode: _find_mode,
                        score: int, url: str):
         """Submits a potential WR to the WR site
@@ -246,7 +242,6 @@ class WRA:
         The name and tank should be in quotes if you intend on putting spaces in either parameter
         (eg if you're gonna submit a WR under Junko Enoshima you should enter it as "Junko Enoshima")
         """
-
         vers_ = version.lower()
         record = await self._wr_mode(vers_, mode, tank)
 
@@ -254,12 +249,11 @@ class WRA:
         if score < 50000:
             raise InvalidUserArgument(f"Your score ({score}) is too low. It must be at least 50000.")
         if score < int(full_score):
-            raise InvalidUserArgument(f"Your score ({score}) is too low. The WR is {full_score}.")
+            raise InvalidUserArgument(f"Your score ({score}) doesn't break the current WR ({full_score}).")
 
         submission = f'("{name}" "{tank}" {version} {score} <{url}>)'
 
-        async with await self._submit(name, tank_ids[tank_],
-                                      gamemode_ids[vers_][mode_],
+        async with await self._submit(name, tank_ids[tank_], gamemode_ids[vers_][mode_],
                                       score, url) as response:
             result = await response.json()
 
@@ -284,11 +278,11 @@ class WRA:
     @commands.command()
     async def tankaliases(self):
         """All the tanks for diep.io"""
-        tank_aliases = [f"{k:<18} == {v}" for k, v in _alt_tank_names.items()]
-        str_aliases = '\n'.join(tank_aliases)
-        await self.bot.say(f"```\n{str_aliases}```")
+        tank_aliases = '\n'.join([f"{k:<18} == {v}" for k, v in _alt_tank_names.items()])
+        await self.bot.say(f"```\n{tank_aliases}```")
 
     @commands.command(pass_context=True)
+    @usage('records Anokuu')
     async def records(self, ctx, *, name: str):
         """Finds all the diep.io WRs for a particular name"""
         records = await _load_json(self.session, f'https://dieprecords.moepl.eu/api/recordsByName/{name}')
@@ -297,26 +291,27 @@ class WRA:
         # a list or a dict for current/former records
         # We must account for both
         def get_records(l_or_d):
-            return getattr(l_or_d, "values", lambda: l_or_d)()
-        current = sorted(get_records(records["current"]), key=itemgetter("tank"))
-        former  = sorted(get_records(records["former"]),  key=itemgetter("tank"))
+            records = getattr(l_or_d, "values", lambda: l_or_d)()
+            return sorted(records, key=itemgetter("tank"))
+        current = get_records(records["current"])
+        former  = get_records(records["former"])
 
         if not (current or former):
-            raise ResultsNotFound("I can't find records for {} :(".format(name))
+            raise ResultsNotFound(f"I can't find records for {name} :(")
 
-        def records_by_type(records, mobile):
+        def records_by_type(records):
             return ([rec for rec in records if not int(rec["mobile"])],
                     [rec for rec in records if int(rec["mobile"])])
 
-        desktop_current, mobile_current = records_by_version(current)
-        desktop_former, mobile_former = records_by_version(former)
+        desktop_current, mobile_current = records_by_type(current)
+        desktop_former, mobile_former = records_by_type(former)
 
         def lines(header, records):
             def mapper(record):
                 return "__{tank}__ __{gamemode}__ | {score} |  <{submittedlink}>".format(**record)
             return [header.format(len(records)), *list(map(mapper, records))]
 
-        headers = [f"**__{name}__**", f"**Current World Records**: {len(current)}"]
+        current_header = [f"**__{name}__**", f"**Current World Records**: {len(current)}"]
         desktop_current_str = lines("**Desktop**: {}", desktop_current)
         mobile_current_str  = lines("**Mobile**: {}",  mobile_current)
         former_header = ["-" * 20, f"**Former World Records**: {len(former)}"]
@@ -331,7 +326,7 @@ class WRA:
         destination = ctx.message.channel
 
         if sum(map(len, pages)) >= 1000:
-            await self.bot.say("The records has been sent to your private messages due to the length")
+            await self.bot.reply("The records has been sent to your private messages due to the length")
             destination = ctx.message.author
         for page in pages:
             await self.bot.send_message(destination, page)
