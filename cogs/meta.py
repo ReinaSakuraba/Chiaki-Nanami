@@ -23,7 +23,7 @@ def _icon_embed(idable, url, name):
             .set_footer(text=f"ID: {idable.id}"))
     return embed.set_image(url=url) if url else embed
 
-async def _mee6_stats(session, member: discord.member):
+async def _mee6_stats(session, member):
     async with session.get(f"https://mee6.xyz/levels/{member.server.id}?json=1&limit=-1") as r:
         levels = await r.json()
     for idx, user_stats in enumerate(levels['players'], start=1):
