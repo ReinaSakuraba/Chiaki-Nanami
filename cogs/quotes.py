@@ -6,7 +6,7 @@ from discord.ext import commands
 from .utils import checks, converter
 from .utils.compat import user_color
 from .utils.database import Database
-from .utils.misc import nice_time, parse_int
+from .utils.misc import nice_time, parse_int, usage
 
 QUOTE_FILE_NAME = "quotes.json"
 
@@ -35,7 +35,7 @@ class Quotes:
     async def _quote_embed(self, ctx, quote_dict):
         user_id = quote_dict["user"]
         # could use await self.bot.get_user_info() but that would rate-limit the API
-        user = discord.utils.get(bot.get_all_members(), id=user_id)
+        user = discord.utils.get(self.bot.get_all_members(), id=user_id)
         colour = await user_color(user)
         time = quote_dict["time"]
         quote = quote_dict["quote"]
@@ -45,7 +45,7 @@ class Quotes:
 
         return (discord.Embed(colour=colour)
                .set_author(name=author_text, icon_url=avatar_url)
-               .add_field(name=f'"{quote}"', value=quote_kwargs["channel"])
+               .add_field(name=f'"{quote}"', value=quote_dict["channel"])
                .set_footer(text=footer)
                )
 
@@ -74,12 +74,13 @@ class Quotes:
         await self.bot.say(embed=quote_embed)
 
     @commands.command(pass_context=True)
+    @usage('addquote "This is not a quote" bob#4200')
     async def addquote(self, ctx, quote: str, *, author: converter.ApproximateUser=None):
         """Adds a quote to the list of the server's quotes.
 
         Your quote must be in quotation marks.
+        However, you can't have quotation marks in the middle of the quote.
         If an author is not specified, it defaults to the author of the message.
-        Example: ->addquote "This is not a quote" bob#4200
         """
         message = ctx.message
         if author is None:
@@ -93,7 +94,7 @@ class Quotes:
                        "time": nice_time(message.timestamp),
                        "channel": f"#{message.channel}",
                        "quote": quote,
-                       }
+                      }
 
         quotes.append(quote_stats)
         await self.bot.say(f'Successfully added quote #{len(quotes)}: **"{quote}"**')
@@ -108,9 +109,9 @@ class Quotes:
         else:
             await self.bot.say(f"Successfully removed quote #{index}")
 
-    @commands.command(pass_context=True, no_pm=True)
+    @commands.command(pass_context=True, no_pm=True, aliases=['clrq'])
     @checks.is_admin()
-    async def clearquote(self, ctx):
+    async def clearquotes(self, ctx):
         """Clears all the quotes
 
         Only use this if there are too many troll or garbage quotes
@@ -118,7 +119,7 @@ class Quotes:
         self.quotes_db[ctx.message.server].clear()
         await self.bot.say(f"Successfully cleared all quotes from this server.")
 
-    @commands.command(hidden=True, aliases=['clrpq', 'clrdmpq'])
+    @commands.command(hidden=True, aliases=['clrpq', 'clrdmq'])
     @checks.is_owner()
     async def clearprivatequotes(self):
         """Clears all quotes from DMs
