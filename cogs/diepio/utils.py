@@ -9,5 +9,17 @@ MODE_COLOURS = {
     'Sandbox' : Colour(0xFB8EFF), # Colour.from_rgb(251, 142, 255),
     }
 
+DIEPIO_WIKI_URL = "https://hydra-media.cursecdn.com/diepio.gamepedia.com/"
+
 def mode_colour(mode):
     return MODE_COLOURS.get(mode, Colour.default())
+
+def get_tank_icon(tank):
+    tank_title = tank.title()
+    if tank_title == "Basic Tank":
+        tank_title = "Tank"
+    tank_title = tank.replace(" ", "_")
+    tank_pic = tank_title + ".png"
+    tank_md5 = hashlib.md5(tank_pic.encode('utf-8')).hexdigest()
+    return ("{0}{1[0]}/{1[:2]}/{2}"
+            ).format(DIEPIO_WIKI_URL, tank_md5, tank_pic)

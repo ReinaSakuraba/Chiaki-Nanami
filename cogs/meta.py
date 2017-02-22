@@ -1,6 +1,8 @@
 import aiohttp
 import discord
+import inspect
 import json
+import sys
 
 from collections import defaultdict, deque
 from discord.ext import commands
@@ -8,9 +10,10 @@ from operator import attrgetter, itemgetter
 
 from .utils import converter
 from .utils.compat import url_color, user_color
+from .utils.converter import RecursiveBotCommandConverter
 from .utils.errors import ResultsNotFound
 from .utils.misc import str_join, nice_time, ordinal
-from .utils.paginator import iterable_say
+from .utils.paginator import iterable_limit_say, iterable_say
 
 def _ilen(gen):
     return sum(1 for _ in gen)
@@ -21,16 +24,13 @@ def _icon_embed(idable, url, name):
     return embed.set_image(url=url) if url else embed
 
 async def _mee6_stats(session, member: discord.member):
-    server = member.server
-    async with session.get(f"https://mee6.xyz/levels/{server.id}?json=1&limit=-1") as r:
+    async with session.get(f"https://mee6.xyz/levels/{member.server.id}?json=1&limit=-1") as r:
         levels = await r.json()
-    players = levels["players"]
-    user_stats = discord.utils.find(lambda e: e.get("id") == member.id, players)
-    if not user_stats:
-        raise ResultsNotFound(f"This user ({member}) does not have a mee6 level. :frowning:")
-    # Because lists start at 0
-    user_stats["rank"] = players.index(user_stats) + 1
-    return user_stats
+    for idx, user_stats in enumerate(levels['players'], start=1):
+        if user_stats.get("id") == member.id:
+            user_stats["rank"] = idx
+            return user_stats
+    raise ResultsNotFound(f"{member} does not have a mee6 level. :frowning:")
 
 async def _user_embed(member):
     avatar_url = member.avatar_url or member.default_avatar_url
@@ -106,7 +106,7 @@ class Meta:
         avatar_url = member.avatar_url or member.default_avatar_url
 
         try:
-            stats = await _mee6_stats(self.bot.http.session, member)
+            stats = await _mee6_stats(self.session, member)
         except json.JSONDecodeError:
             raise ResultsNotFound("No stats found. You don't have mee6 in this server... I think.")
         finally:
@@ -132,7 +132,7 @@ class Meta:
     @info.command(pass_context=True)
     async def role(self, ctx, *, role: converter.ApproximateRole):
         server = ctx.message.server
-        get_bool_as_ans = lambda b: "YNeos"[not b::2]
+        bool_as_answer = lambda b: "YNeos"[not b::2]
         prefix = self.bot.str_prefix(self, server)
 
         has_roles = [mem for mem in server.members if role in mem.roles]
@@ -157,21 +157,19 @@ class Meta:
                      .add_field(name="Colour", value=hex_role_color)
                      .add_field(name="Permissions", value=permissions)
                      .add_field(name="Permissions (as binary)", value=permission_binary)
-                     .add_field(name="Mentionable?", value=get_bool_as_ans(role.mentionable))
-                     .add_field(name="Displayed separately?", value=get_bool_as_ans(role.hoist))
-                     .add_field(name="Integration role?", value=get_bool_as_ans(role.managed))
+                     .add_field(name="Mentionable?", value=bool_as_answer(role.mentionable))
+                     .add_field(name="Displayed separately?", value=bool_as_answer(role.hoist))
+                     .add_field(name="Integration role?", value=bool_as_answer(role.managed))
                      .add_field(name=members_name, value=members_value, inline=False)
                      .set_footer(text=footer)
                      )
 
         await self.bot.say(embed=role_embed)
 
-    async def _default_server_info(self, ctx):
-        server = ctx.message.server
-
+    async def _default_server_info(self, server):
         channel_count = len(server.channels)
         member_count = len(server.members)
-        is_large = "(Very large!)" * server.large
+        is_large = "(Very large!)" * bool(server.large)
         members_comment = f"{member_count} members {is_large}"
         icon = server.icon_url
         highest_role = server.role_hierarchy[0]
@@ -201,9 +199,9 @@ class Meta:
     @info.group(pass_context=True, no_pm=True)
     async def server(self, ctx):
         if ctx.subcommand_passed == "server":
-            await self._default_server_info(ctx)
+            await self._default_server_info(ctx.message.server)
         elif ctx.invoked_subcommand is None:
-            subcommands = '\n'.join(ctx.command.commands.keys())
+            subcommands = '\n'.join(ctx.command.commands)
             await self.bot.say(f"```\nAvailable server commands:\n{subcommands}```")
 
     @server.command(pass_context=True)
@@ -236,13 +234,14 @@ class Meta:
         bot = self.bot
         user = bot.user
         appinfo = await bot.application_info()
-        description = ("\"{0}\"\nMade in Python using {1.__title__}.py {1.__version__}!"
-                       ).format(appinfo.description, discord)
+
+        discord_lib = "{0.__title__}.py {0.__version__}".format(discord)
         app_icon_url = appinfo.icon_url
-        print(app_icon_url)
         user_icon_url = user.avatar_url or user.default_avatar_url
-        bot_embed = (discord.Embed(title=appinfo.name, description=description, colour=self.bot.colour)
+        bot_embed = (discord.Embed(title=appinfo.name, description=self.bot.description, colour=self.bot.colour)
                     .set_author(name=f"{user.name} | {appinfo.id}", icon_url=user_icon_url)
+                    .add_field(name="Library", value=discord_lib)
+                    .add_field(name="Python", value=str_join('.', sys.version_info[:3]))
                     .add_field(name="Owner", value=appinfo.owner)
                     .add_field(name="Uptime", value=bot.str_uptime)
                     .add_field(name="Cogs running", value=len(bot.cogs))
@@ -253,10 +252,17 @@ class Meta:
                     )
         if app_icon_url:
             bot_embed.set_thumbnail(url=app_icon_url)
-        for name, value in sorted(bot.counter.items(), key=itemgetter(0)):
+        for name, value in sorted(bot.counter.items()):
             bot_embed.add_field(name=name, value=value)
         await self.bot.say(embed=bot_embed)
 
+    @commands.command(pass_context=True)
+    async def source(self, ctx, *, cmd: RecursiveBotCommandConverter):
+        """Displays the source code for a particular command"""
+        # TODO: use GitHub
+        _, cmd = cmd
+        lines = inspect.getsourcelines(cmd.callback)[0]
+        await iterable_limit_say(lines, '', bot=self.bot, ctx=ctx, prefix='```py\n', escape_code=True)
 
     @commands.command(pass_context=True)
     async def inrole(self, ctx, *roles : discord.Role):
@@ -267,11 +273,10 @@ class Meta:
         If you don't want to mention a role, please put it in quotes,
         especially if there's a space in the role name
         """
-        has_roles = set(mem for mem in ctx.message.server.members
-                        for role in roles if role in mem.roles)
-        fmt = "Here are the members who have the {} roles".format(str_join(', ', roles))
-        role_fmt = "```css\n{}```"
-        await self.bot.say(fmt + role_fmt.format(str_join(', ', has_roles)))
+        has_roles = [mem for mem in ctx.message.server.members
+                     if any(role in mem.roles for role in roles)]
+        fmt = f"Here are the members who have the {str_join(', ', roles)} roles"
+        await self.bot.say(fmt + f"```css\n{str_join(', ', has_roles)}```")
 
     @commands.command(pass_context=True)
     async def permroles(self, ctx, *, perm: str):
@@ -283,12 +288,11 @@ class Meta:
         perm_attr = perm.replace(' ', '_').lower()
         roles_that_have_perms = [role for role in ctx.message.server.roles
                                  if getattr(role.permissions, perm_attr)]
-        fmt = "Here are the roles who have the {} perm".format(perm.title())
-        role_fmt = "```css\n{}```"
-        await self.bot.say(fmt + role_fmt.format(str_join(', ', roles_that_have_perms)))
+        fmt = f"Here are the roles who have the {perm.title()} perm."
+        await self.bot.say(fmt + f"```css\n{str_join(', ', roles_that_have_perms)}```")
 
     @commands.command(pass_context=True, aliases=['av'])
-    async def avatar(self, ctx, *, user : converter.ApproximateUser=None):
+    async def avatar(self, ctx, *, user: converter.ApproximateUser=None):
         if user is None:
             user = ctx.message.author
         avatar_url = user.avatar_url or user.default_avatar_url
@@ -317,4 +321,3 @@ class Meta:
 
 def setup(bot):
     bot.add_cog(Meta(bot))
-

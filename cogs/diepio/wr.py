@@ -12,7 +12,7 @@ from operator import itemgetter
 from . import utils
 from ..utils.errors import InvalidUserArgument, ResultsNotFound
 from ..utils.misc import usage
-from ..utils.paginator import DelimPaginator
+from ..utils.paginator import iterable_limit_say
 
 WR_RECORD_URL = 'https://dieprecords.moepl.eu/api/records/json'
 TANK_ID_URL = 'https://dieprecords.moepl.eu/api/tanks'
@@ -28,11 +28,11 @@ _alt_tank_names = OrderedDict([
     ('Adasba', 'Overlord'),
     ('Anni', 'Annihilator'),
     ('Anokuu', 'Necromancer'),
-    ('Auto-Smasher', 'Auto Smasher'),
-    ('Auto-Trapper', 'Auto Trapper'),
     ('Autogunner', 'Auto Gunner'),
     ('Autosmasher', 'Auto Smasher'),
+    ('Auto-Smasher', 'Auto Smasher'),
     ('Autotrapper', 'Auto Trapper'),
+    ('Auto-Trapper', 'Auto Trapper'),
     ('Basic', 'Basic Tank'),
     ('Bela', 'Penta Shot'),
     ('Buf', 'Penta Shot'),
@@ -60,6 +60,7 @@ _alt_tank_names = OrderedDict([
     ('Th3Pandatank', 'Predator'),
     ('Tri Trapper', 'Tri-Trapper'),
     ('Triangle', 'Tri-Angle'),
+    ('Tri Angle', 'Tri-Angle'),
     ('Tritrapper', 'Tri-Trapper')
     ])
 
@@ -67,18 +68,9 @@ def _replace_tank(tankname):
     t = tankname.title()
     return _alt_tank_names.get(t, t)
 
-def _get_wiki_image(tank):
-    if tank == "Basic Tank":
-        tank = "Tank"
-    tank = tank.replace(" ", "_")
-    tank_pic = tank + ".png"
-    tank_md5 = hashlib.md5(tank_pic.encode('utf-8')).hexdigest()
-    return ("https://hydra-media.cursecdn.com/diepio.gamepedia.com/{}/{}/{}"
-            ).format(tank_md5[0], tank_md5[:2], tank_pic)
-
 def _wr_embed(records):
     game_mode = records["gamemode"]
-    url = _get_wiki_image(records["tankname"])
+    url = utils.get_tank_icon(records["tankname"])
     approved_date = datetime.strptime(records["approvedDate"], '%Y-%m-%d %H:%M:%S').date()
 
     data = (discord.Embed(colour=utils.mode_colour(game_mode))
@@ -185,7 +177,6 @@ class WRA:
         version is version of diep.io (mobile or desktop)
         mode is the gamemode (eg FFA)
         And of course, tank is the type of tank
-
         """
         version = version.lower()
         mode = WRA._find_mode(mode, version)
@@ -198,7 +189,7 @@ class WRA:
             await self.bot.say(extra)
 
     @commands.command(pass_context=True)
-    @usage('wr sniper')
+    @usage('wrtank sniper')
     async def wrtank(self, ctx, *, tank: _replace_tank):
         """Gives a summary of the WRs for a particular tank
 
@@ -318,18 +309,10 @@ class WRA:
         desktop_former_str  = lines("**Desktop**: {}", desktop_former)
         mobile_former_str   = lines("**Mobile**: {}",  mobile_former)
 
-        all_iterables = chain(headers, desktop_current_str, mobile_current_str,
+        all_iterables = chain(current_header, desktop_current_str, mobile_current_str,
                               former_header, desktop_former_str, mobile_former_str)
 
-        paginator = DelimPaginator.from_iterable(all_iterables, prefix='', suffix='')
-        pages = paginator.pages
-        destination = ctx.message.channel
-
-        if sum(map(len, pages)) >= 1000:
-            await self.bot.reply("The records has been sent to your private messages due to the length")
-            destination = ctx.message.author
-        for page in pages:
-            await self.bot.send_message(destination, page)
+        await iterable_limit_say(all_iterables, bot=self.bot, ctx=ctx, prefix='', suffix='')
 
 def setup(bot):
     bot.add_cog(WRA(bot))
