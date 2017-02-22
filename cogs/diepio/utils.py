@@ -1,3 +1,5 @@
+import hashlib
+
 from discord import Colour
 
 # hard-coding the colours because there is no color info of each mode from the webpage
@@ -21,5 +23,5 @@ def get_tank_icon(tank):
     tank_title = tank.replace(" ", "_")
     tank_pic = tank_title + ".png"
     tank_md5 = hashlib.md5(tank_pic.encode('utf-8')).hexdigest()
-    return ("{0}{1[0]}/{1[:2]}/{2}"
-            ).format(DIEPIO_WIKI_URL, tank_md5, tank_pic)
+    return ("{0}{1}/{2}/{3}"
+            ).format(DIEPIO_WIKI_URL, tank_md5[0], tank_md5[:2], tank_pic)

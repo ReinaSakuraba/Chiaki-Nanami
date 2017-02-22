@@ -1,7 +1,6 @@
 import aiohttp
 import asyncio
 import discord
-import hashlib
 
 from collections import OrderedDict
 from datetime import datetime
