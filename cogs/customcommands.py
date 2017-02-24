@@ -148,4 +148,4 @@ class CustomReactions:
             await self.bot.send_message(msg.channel, reaction)
 
 def setup(bot):
-    bot.add_cog(CustomReactions(bot))
+    bot.add_cog(CustomReactions(bot), "CustomCommands")

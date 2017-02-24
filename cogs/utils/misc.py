@@ -1,13 +1,16 @@
+import inspect
 import random
 import re
 
+from collections import namedtuple
 from datetime import timezone
+from discord.ext import commands
 
 def code_say(bot, msg):
     return bot.say(code_msg(msg))
 
 def code_msg(msg, style=''):
-    return '```{style}\n{}```'.format(msg)
+    return f'```{style}\n{msg}```'
 
 def cycle_shuffle(iterable):
     saved = [elem for elem in iterable]
@@ -20,6 +23,9 @@ def multi_replace(string, replacements):
     substrs = sorted(replacements, key=len, reverse=True)
     pattern = re.compile("|".join(map(re.escape, substrs)))
     return pattern.sub(lambda m: replacements[m.group(0)], string)
+
+def truncate(s, length, placeholder):
+    return (s[:length] + placeholder) if len(s) > length + len(placeholder) else s
 
 def str_join(delim, iterable):
     return delim.join(map(str, iterable))
@@ -41,12 +47,12 @@ def parse_int(maybe_int, base=10):
         return None
 
 def duration_units(secs):
-	m, s = divmod(secs, 60)
-	h, m = divmod(m, 60)
-	d, h = divmod(h, 24)
-	w, d = divmod(d, 7)
-	unit_list = [(w, 'weeks'), (d, 'days'), (h, 'hours'), (m, 'mins'), (s, 'seconds')]
-	return ', '.join(f"{round(n)} {u}" for n, u in unit_list if n)
+    m, s = divmod(secs, 60)
+    h, m = divmod(m, 60)
+    d, h = divmod(h, 24)
+    w, d = divmod(d, 7)
+    unit_list = [(w, 'weeks'), (d, 'days'), (h, 'hours'), (m, 'mins'), (s, 'seconds')]
+    return ', '.join([f"{round(n)} {u}" for n, u in unit_list if n])
 
 def ordinal(num):
     # pay no attention to this ugliness
@@ -54,6 +60,31 @@ def ordinal(num):
 
 def usage(*usages):
     def wrapper(cmd):
-        cmd.__usage__ = usages
+        # @usage could've been put above or below @commands.command
+        func = cmd.callback if isinstance(cmd, commands.Command) else cmd
+        func.__usage__ = usages
         return cmd
     return wrapper
+
+AlternateException = namedtuple('AlternateException', ['type', 'message', 'successful', 'original'])
+def try_call(func, on_success=None, exception_alts=()):
+    """Attempts an action.
+
+    The original return value of a function can be accessed by the attribute "result".
+    """
+    exception_alts = dict(exception_alts)
+    try:
+        result = func()
+    except BaseException as e:
+        try:
+            msg = exception_alts[type(e)]
+        except KeyError:
+            raise
+        return AlternateException(type(e), msg.format(exc=e), False, e)
+    else:
+        return AlternateException(None, on_success, True, result)
+
+async def try_async_call(func, *args, on_success=None, exception_alts=(), **kwargs):
+    result = try_call(func, *args, on_success=on_success, exception_alts=exception_alts, **kwargs)
+    return (result._replace(type=result.type, message=result.message, successful=result.successful,
+            original=await result.original) if inspect.isawaitable(result.original) else result)

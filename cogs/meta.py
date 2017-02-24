@@ -10,7 +10,7 @@ from operator import attrgetter, itemgetter
 
 from .utils import converter
 from .utils.compat import url_color, user_color
-from .utils.converter import RecursiveBotCommandConverter
+from .utils.converter import BotCogConverter, RecursiveBotCommandConverter
 from .utils.errors import ResultsNotFound
 from .utils.misc import str_join, nice_time, ordinal
 from .utils.paginator import iterable_limit_say, iterable_say
@@ -256,13 +256,15 @@ class Meta:
             bot_embed.add_field(name=name, value=value)
         await self.bot.say(embed=bot_embed)
 
+    async def _source(self, ctx, thing):
+        lines = inspect.getsourcelines(thing)[0]
+        await iterable_limit_say(lines, '', bot=self.bot, ctx=ctx, prefix='```py\n', escape_code=True)
+
     @commands.command(pass_context=True)
     async def source(self, ctx, *, cmd: RecursiveBotCommandConverter):
         """Displays the source code for a particular command"""
         # TODO: use GitHub
-        _, cmd = cmd
-        lines = inspect.getsourcelines(cmd.callback)[0]
-        await iterable_limit_say(lines, '', bot=self.bot, ctx=ctx, prefix='```py\n', escape_code=True)
+        await self._source(ctx, cmd[1].callback)
 
     @commands.command(pass_context=True)
     async def inrole(self, ctx, *roles : discord.Role):

@@ -1,10 +1,11 @@
 import argparse
+import copy
 import discord
 import inspect
-import shlex
 import traceback
 
 from discord.ext import commands
+
 from .utils import checks
 from .utils.misc import code_msg
 
@@ -18,11 +19,11 @@ class Owner:
         try:
             self.bot.load_extension(ext)
         except Exception as e:
-            print('Failed to load extension {}\n'.format(ext))
+            print(f'Failed to load extension {ext}\n')
             traceback.print_exc()
-            await self.bot.say(code_msg(traceback.format_exc()))
+            await self.bot.say(code_msg(traceback.format_exc(), 'py'))
         else:
-            await self.bot.say("```\nload {} successful```".format(ext))
+            await self.bot.say(code_msg(f'load {ext} successful'))
 
     @commands.command(pass_context=True, hidden=True)
     @checks.is_owner()
@@ -54,15 +55,10 @@ class Owner:
 
     @commands.command(hidden=True)
     @checks.is_owner()
-    async def editbot(self, *, args: str):
+    async def editbot(self, *args: str):
         parser = argparse.ArgumentParser(description="Edit me in cool ways")
-
-    @commands.command(hidden=True, aliases=['sbg'])
-    @checks.is_owner()
-    async def setbotgame(self, *, game: str):
-        """Changes the playing status (the "playing <game> thing under the user's name)"""
-        await self.bot.change_presence(game=discord.Game(name=game))
-        await self.bot.say("Game changed to {}".format(game))
+        bot = self.bot
+        args = parser.parse_args(args)
 
     @commands.command(hidden=True)
     @checks.is_owner()
@@ -89,8 +85,32 @@ class Owner:
     @commands.command(hidden=True, aliases=['kys'])
     @checks.is_owner()
     async def die(self):
-        """Shuts me down. **Bot Owner** only."""
         raise KeyboardInterrupt("Chiaki shut down from command")
 
+    @commands.command(hidden=True)
+    @checks.is_owner()
+    async def say(self, *, msg):
+        # make sure commands for other bots (or even from itself) can't be executed
+        await self.bot.say(f"\u200b{msg}")
+
+    @commands.command(hidden=True)
+    @checks.is_owner()
+    async def announce(self, *, msg):
+        owner = (await self.bot.application_info()).owner
+        for server in bot.servers:
+            await self.bot.send_message(server, f"@everyone **Announcement from {owner}\n\"{msg}\"")
+            
+    @commands.command(name="sendmessage", hidden=True)
+    @checks.is_owner()
+    async def send_message(self, channel: discord.Channel, *, msg):
+        owner = (await self.bot.application_info()).owner
+        await self.bot.send_message(channel, f"Message from {owner}:\n{msg}")
+        await self.bot.say(f"Successfully sent message in {channel}: {msg}")
+        
+    @commands.command(name='testcommands', pass_context=True, aliases=['tcmd'])
+    async def test_commands(self, ctx):
+        message = copy.copy(ctx.message)
+
+
 def setup(bot):
-    bot.add_cog(Owner(bot))
+    bot.add_cog(Owner(bot), hidden=True)

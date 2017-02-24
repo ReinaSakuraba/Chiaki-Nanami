@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import discord
 import json
 import logging
@@ -8,8 +9,8 @@ import sys
 import traceback
 
 from chiakibot import chiaki_bot
-from cogs.utils import converter, errors
-from cogs.utils.aitertools import AIterable, acount
+from cogs.utils import checks, converter, errors
+from cogs.utils.aitertools import aiterable, acount
 from cogs.utils.compat import user_colour
 from cogs.utils.misc import nice_time
 from discord.ext import commands
@@ -27,13 +28,12 @@ handler.setFormatter(logging.Formatter('%(asctime)s/%(levelname)s:%(name)s: %(me
 logger.addHandler(handler)
 logging.basicConfig(level=logging.INFO)
 
-
 bot = chiaki_bot()
 
 initial_extensions = (
     'cogs.admin',
     'cogs.afk',
-    'cogs.cleverbot',
+#    'cogs.cleverbot',
     'cogs.customcommands',
     'cogs.halp',
     'cogs.math',
@@ -41,6 +41,7 @@ initial_extensions = (
     'cogs.moderator',
     'cogs.music',
 #   'cogs.newpoints',
+#    'cogs.otherstuff',
     'cogs.owner',
     'cogs.permissions',
     'cogs.quotes',
@@ -58,22 +59,23 @@ initial_extensions = (
 #    'cogs.games.unscramble',
 )
 def log_embed(msg):
-    author = msg.author
+    author, channel, server = msg.author, msg.channel, msg.server
     user_name = "{0} | {0.id}".format(author)
     avatar = author.avatar_url or author.default_avatar_url
-    location = f"from #{msg.channel} in {msg.server}"
-    return (discord.Embed(description=location)
+    id_fmt = '{0}\n({0.id})'
+    return (discord.Embed(timestamp=msg.timestamp)
             .set_author(name=user_name, icon_url=avatar)
             .set_thumbnail(url=avatar)
-            .add_field(name="Input", value=msg.content)
-            .set_footer(text=nice_time(msg.timestamp))
+            .add_field(name="Channel", value=id_fmt.format(channel))
+            .add_field(name="Server", value=id_fmt.format(server))
+            .add_field(name="Input", value=msg.content, inline=False)
             )
 
 async def log(msg):
     if not config["log"]: return
     embed = log_embed(msg)
     embed.colour = await user_colour(msg.author)
-    async for log_channel in AIterable(config["logging_channels"]):
+    async for log_channel in aiterable(config["logging_channels"]):
         await bot.send_message(bot.get_channel(log_channel), embed=embed)
 
 #------------------EVENTS----------------
@@ -83,18 +85,23 @@ async def on_ready():
     print(bot.user.name)
     print(bot.user.id)
     print('------')
+    bot.loop.create_task(bot.change_game())
+    bot.loop.create_task(bot.dump_db_cycle())
+    bot.loop.create_task(bot.update_official_invite(config['official_server']))
+    if not hasattr(bot, 'start_time'):
+        bot.start_time = datetime.datetime.utcnow()
 
 @bot.event
 async def on_command(cmd, ctx):
+    message = ctx.message
+    owner = (await bot.application_info()).owner
+    if message.author == owner:
+        return
     bot.counter["Commands Executed"] += 1
     if cmd.hidden:
         return
-    message = ctx.message
     if message.channel.is_private:
         bot.counter["Private Commands"] += 1
-        return
-    owner = (await bot.application_info()).owner
-    if message.author == owner:
         return
     await log(message)
 
@@ -108,16 +115,16 @@ async def on_command_error(error, ctx):
     if isinstance(error, commands.NoPrivateMessage):
         await bot.send_message(ctx.message.author, 'This command cannot be used in private messages.')
     elif isinstance(error, commands.CommandInvokeError):
-        print('In {0.command.qualified_name}:'.format(ctx), file=sys.stderr)
+        print(f'In {ctx.command.qualified_name}:', file=sys.stderr)
         traceback.print_tb(error.original.__traceback__)
-        traceback.print_tb(error.__traceback__)
         print('{0.__class__.__name__}: {0}'.format(error), file=sys.stderr)
     elif isinstance(error, commands.MissingRequiredArgument):
         await bot.send_message(ctx.message.channel,
-                                    'This command (' + ctx.command.name + ') needs another Parameter\n')
+                                    f'This command ({ctx.command.name}) needs another Parameter\n')
     elif isinstance(error, (commands.UserInputError, errors.PrivateMessagesOnly)):
         await bot.send_message(ctx.message.channel, error)
-        traceback.print_tb(error.__cause__.__traceback__)
+        if error.__cause__:
+            traceback.print_tb(error.__cause__.__traceback__)
         print(error.__cause__, "\n--------------")
 
     traceback.print_tb(error.__traceback__)
@@ -128,22 +135,6 @@ async def on_message(message):
     await bot.process_commands(message)
 
 #-----------------MISC COMMANDS--------------
-
-@bot.command()
-async def invite():
-    """...it's an invite"""
-    official_server = bot.get_server(config["official_server"])
-    invite_url = await bot.create_invite(official_server)
-    await bot.say(f"""
-I am not a not a public bot yet... but here's the invite link just in case:
-{bot.invite_url}
-
-But in the meantime, here's a link to the offical Chiaki Nanami server:
-{invite_url}
-
-And here's the source code if you want it:
-https://github.com/Ikusaba-san/Chiaki-Nanami
-    """)
 
 @bot.command(aliases=['longurl'])
 async def urlex(*, url: str):
@@ -184,6 +175,8 @@ async def slap(ctx, target: converter.ApproximateUser=None):
     await asyncio.sleep(random.uniform(0.5, 2.3))
     await bot.say(msg2)
 
+#--------------MAIN---------------
+
 def load_config():
     with open('data/config.json') as f:
         return json.load(f)
@@ -200,6 +193,7 @@ def main():
     config = load_config()
     token = config.get("token") or sys.argv[1]
     bot.run(token)
+    
 
 if __name__ == '__main__':
     main()

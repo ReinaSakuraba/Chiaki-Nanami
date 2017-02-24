@@ -2,18 +2,42 @@ import asyncio
 import colorsys
 import discord
 import random
+import secrets
 import string
 import uuid
 
-try:
-    import secrets
-except ImportError:  # unlikely but whatevs
-    secrets = random.SystemRandom()
-
 from discord.ext import commands
 
+from .utils.converter import attr_converter, number
 from .utils.errors import InvalidUserArgument, private_message_only
 from .utils.misc import str_join
+
+try:
+    import webcolors
+except ImportError:
+    webcolors = None
+else:
+    def closest_colour(requested_colour):
+        min_colours = {}
+        for key, name in webcolors.css3_hex_to_names.items():
+            r_c, g_c, b_c = webcolors.hex_to_rgb(key)
+            rd = (r_c - requested_colour[0]) ** 2
+            gd = (g_c - requested_colour[1]) ** 2
+            bd = (b_c - requested_colour[2]) ** 2
+            min_colours[(rd + gd + bd)] = name
+        return min_colours[min(min_colours.keys())]
+
+    def get_colour_name(requested_colour):
+        try:
+            closest_name = actual_name = webcolors.rgb_to_name(requested_colour)
+        except ValueError:
+            closest_name = closest_colour(requested_colour)
+            actual_name = None
+        return actual_name, closest_name
+
+with open(r'data\tanks.txt') as f:
+    _back_up_tanks = f.read().splitlines()
+
 
 SMASHERS = ("Auto Smasher", "Landmine", "Smasher", "Spike",)
 BALL_ANSWERS = ("Yes", "No", "Maybe so", "Definitely", "I think so",
@@ -44,34 +68,51 @@ def _make_maze(w=16, h=8):
 
     walk(randrange(w), randrange(h))
     return(''.join(a + ['\n'] + b) for (a, b) in zip(hor, ver))
+    
+_available_distributions = {
+    'uniform': random.uniform,
+    'int': random.randint,
+    'range': random.randrange,
+    'triangular': random.triangular,
+    }
 
 class RNG:
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(pass_context=True, name="8ball", aliases=['8'])
+    @commands.command(name="8ball", pass_context=True, aliases=['8'])
     async def ball(self, ctx, *, question: str):
         """...it's a 8-ball"""
-        if question.endswith('?'):
-            qfmt = "\n:question:: **{}**\n"
-            msg = await self.bot.reply(qfmt.format(question))
-            await asyncio.sleep(random.uniform(0.5, 1.5))
-            afmt =  "{}\n:8ball:: {}"
-            for i in range(4):
-                await self.bot.edit_message(msg, afmt.format(msg.content, "." * i))
-                await asyncio.sleep(random.uniform(0.75, 1.25))
-            answer = random.choice(BALL_ANSWERS)
-            await self.bot.edit_message(msg, afmt.format(msg.content, f"***__{answer    }__***"))
-        else:
-            await self.bot.say("That's not a question, I think")
+        if not question.endswith('?'):
+            return await self.bot.reply(f"That's not a question, I think.")
+        msg = await self.bot.reply(f"\n:question:: **{question}**\n")
+        await asyncio.sleep(random.uniform(0.5, 1.5))
+        afmt =  "{}\n:8ball:: {}"
+        for i in range(4):
+            await self.bot.edit_message(msg, afmt.format(msg.content, "." * i))
+            await asyncio.sleep(random.uniform(0.75, 1.25))
+        answer = random.choice(BALL_ANSWERS)
+        await self.bot.edit_message(msg, afmt.format(msg.content, f"***__{answer}.__***"))
 
-    @commands.group(pass_context=True, aliases=['rand'])
-    async def random(self, ctx):
-        """Super-command for all the random commands"""
-        if ctx.invoked_subcommand is None:
-            is_alias = lambda cmd: any(cmd in c.aliases for c in ctx.command.commands.values())
-            subcommands = '\n'.join([cmd for cmd in ctx.command.commands if not is_alias(cmd)])
-            await self.bot.say(f"```\nAvailable info commands:\n{subcommands}```")
+    @commands.group(aliases=['rand'], invoke_without_command=True)
+    async def random(self, lo: number, hi: number=None, dist='range'):
+        """Super-command for all the random commands. Or generates a value between lo and hi given"""
+        distribution = _available_distributions.get(dist)
+        if distribution is None:
+            raise commands.BadArgument(f"{dist} is not a distribution for random numbers")
+        if hi is None:
+            lo, hi = 0, lo
+        result = distribution(lo, hi)
+        answer = f"Your random {distribution.__name__} number between is..."
+        msg = await self.bot.say(answer)
+        await asyncio.sleep(random.uniform(0, 1))
+        await self.bot.edit_message(msg, answer + f'**{result}!!**')
+        
+    @random.command(aliases=['dists'])
+    async def distributions(self):
+        """Shows all the distributions one can use for the random command"""
+        dists = ', '.join(_available_distributions)
+        await self.bot.say("Available random distributions```\n{dists}```")
 
     @random.command(aliases=['dice'], enabled=False)
     async def diceroll(self, amt):
@@ -111,7 +152,7 @@ class RNG:
         await self.bot.say(self._build_str(points, True))
 
     def _class(self):
-        return random.choice(self.bot.get_cog("WRA").all_tanks())
+        return random.choice(self.bot.get_cog("WRA").all_tanks() or _back_up_tanks)
 
     @random.command(name="class")
     async def class_(self):
@@ -140,6 +181,9 @@ class RNG:
                        .add_field(name="RGB", value=str_join(', ', (r, g, b)))
                        .add_field(name="HSV", value=str_join(', ', hsv))
                        )
+        if webcolors:
+            actual_name, closest_name = get_colour_name((r, g, b))
+            colour_embed.description = actual_name or closest_name
         await self.bot.say(embed=colour_embed)
 
     @commands.cooldown(rate=10, per=5, type=commands.BucketType.server)
@@ -170,7 +214,6 @@ class RNG:
             symbol_deletion = dict.fromkeys(map(ord, string.punctuation), None)
             letters = letters.translate(symbol_deletion)
         password = _password(n, letters)
-        print(password)
         await self.bot.say(password)
 
     @random.command(pass_context=True)
@@ -182,6 +225,5 @@ class RNG:
         except discord.HTTPException:
             await self.bot.say(f"The maze you've generated (**{w}** by **{h}**) is too large")
 
-
 def setup(bot):
-    bot.add_cog(RNG(bot))
+    bot.add_cog(RNG(bot), "Random")

@@ -215,4 +215,4 @@ class PartyLinks:
         await self.bot.say(f"Sandbox link deletion {'deins'[mode::2]}abled, I think")
 
 def setup(bot):
-    bot.add_cog(PartyLinks(bot))
+    bot.add_cog(PartyLinks(bot), hidden=True)

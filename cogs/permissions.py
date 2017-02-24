@@ -5,10 +5,9 @@ from collections import defaultdict
 from discord.ext import commands
 from itertools import chain
 
-from .utils import checks
+from .utils import checks, errors
 from .utils.converter import BotCogConverter, BotCommandsConverter
 from .utils.database import Database
-from .utils.errors import InvalidUserArgument, ResultsNotFound
 from .utils.misc import str_join, usage
 
 _sign = lambda x: (x > 0) - (x < 0)
@@ -120,7 +119,7 @@ class PermLevel(enum.Enum):
         except KeyError:
             raise commands.BadArgument(f"Unrecognized level: {level}")
 
-def _cmd_names(cmd):
+def _all_cmd_names(cmd):
     return [cmd.qualified_name.split()[0], *cmd.aliases]
 
 class Permissions:
@@ -130,11 +129,10 @@ class Permissions:
         self.bot = bot
         self.permissions = Database.from_json('permissions2.json', default_factory=_default_perm.copy)
 
-    @property
     def _restricted_commands(self):
-        cmds = (_cmd_names(cmd) for cmd in self.bot.commands.values()
-                if cmd.cog_name in self._restricted_cogs)
-        return set(chain.from_iterable(cmds)) | {'help'}
+        b = self.bot
+        commands = chain.from_iterable(b.cog_command_namespace[k]['commands'] for k in self._restricted_cogs)
+        return set(chain.from_iterable(map(_all_cmd_names, commands))) | {'help'}
 
     @property
     def _restricted_cogs(self):
@@ -142,10 +140,10 @@ class Permissions:
 
     def _assert_is_valid(self, cmds):
         cmd = cmds if isinstance(cmds, str) else cmds[0]
-        if cmd in self._restricted_commands:
-            raise InvalidUserArgument(f"This command ({cmd}) cannot have its permissions modified")
+        if cmd in self._restricted_commands():
+            raise errors.InvalidUserArgument(f"This command ({cmd}) cannot have its permissions modified")
         elif cmd in self._restricted_cogs:
-            raise InvalidUserArgument(f"Module ({cmd}) cannot be disabled")
+            raise errors.InvalidUserArgument(f"Module ({cmd}) cannot be disabled")
 
     def _get_cmddbs(self, cmds):
         self._assert_is_valid(cmds)
@@ -185,7 +183,7 @@ class Permissions:
     def _perm_iterator(self, ctx, cmd):
         cmddb = self.permissions[cmd]
         return ((level.getter(cmddb[str(level)], ctx), level) for level in reversed(PermLevel))
-        
+
     def __check(self, ctx):
         #if checks.is_owner_predicate(ctx):
             #return True
@@ -193,7 +191,7 @@ class Permissions:
         name = cmd.qualified_name.split(' ')[0]
         try:
             self._assert_is_valid(name)
-        except InvalidUserArgument:
+        except errors.InvalidUserArgument:
             return True
 
         for result, _ in self._perm_iterator(ctx, name):
@@ -205,45 +203,45 @@ class Permissions:
             if result is not None:
                 return result
         return True
-    
+
     def _perms(self, ctx, name):
         perm_mapper = {True: '+', None: ' ', False: '-'}
         return [f"{perm_mapper[res]} {level}" for res, level in self._perm_iterator(ctx, name)]
-        
+
     def _perm_str(self, ctx, name):
         perms = '\n'.join(self._perms(ctx, name))
         return f'There are the perms for **{name}**```diff\n{perms}```'
-     
-    @commands.command(name='permcmd', pass_context=True, no_pm=True)
-    async def perm_command(self, ctx, cmd):
-        """Returns the permissions for each level for a given command"""
-        cmd = self.bot.get_command(cmd)
-        if cmd is None:
-            raise ResultsNotFound(f"I don't recognise command \"{cmd}\"")
-        await self.bot.say(self._perm_str(ctx, cmd.qualified_name.split()[0]))
-        
-    @commands.command(name='permmod', pass_context=True, no_pm=True)
-    async def perm_module(self, ctx, cmd: BotCogConverter):
-        """Returns the permissions for each level for a given module"""
-        await self.bot.say(self._perm_str(ctx, cmd))
 
-    @usage("psc channel lock cp #general", "psc server allow salt")
+    @commands.command(name='permcmd', pass_context=True, no_pm=True, aliases=['pcmd'])
+    async def perm_command(self, ctx, cmd_name):
+        """Returns the permissions for each level for a given command"""
+        cmd = self.bot.get_command(cmd_name)
+        if cmd is None:
+            raise ResultsNotFound(f"I don't recognise command \"{cmd_name}\"")
+        await self.bot.say(self._perm_str(ctx, cmd.qualified_name.split()[0]))
+
+    @commands.command(name='permmod', pass_context=True, no_pm=True, aliases=['permcog', 'pmod'])
+    async def perm_module(self, ctx, module: BotCogConverter):
+        """Returns the permissions for each level for a given module"""
+        await self.bot.say(self._perm_str(ctx, module.name))
+
     @commands.command(name='psetcommand', pass_context=True, no_pm=True, aliases=['psc'])
     @checks.is_admin()
     @_explain_levels("command")
+    @usage("psc channel lock cp #general", "psc server allow salt")
     async def perm_set_command(self, ctx, level: PermLevel.convert, mode: PermAction.convert,
-                            cmd: BotCommandsConverter, *idables):
+                               cmd: BotCommandsConverter, *idables):
         """Sets a command's permissions. For convenience (and to prevent loopholes),
         this will also lock its aliases as well.
         """
         # There is however, no easy way to lock just a particular subcommand...
         idables = level.arg_parser(ctx, *idables)
-        await self._perm_set(ctx, level, mode, cmd, *idables)
+        await self._perm_set(ctx, level, mode, cmd.name, *idables)
 
-    @usage("psm user lock trivia @SomeGuy @SomeGirl @SomeThing", "psc server allow NSFW")
     @commands.command(name='psetmodule', pass_context=True, no_pm=True, aliases=['psm'])
     @checks.is_admin()
     @_explain_levels("module")
+    @usage("psm user lock trivia @SomeGuy @SomeGirl @SomeThing", "psc server allow NSFW")
     async def perm_set_module(self, ctx, level: PermLevel.convert, mode: PermAction.convert,
                            cog: BotCogConverter, *idables):
         """Sets a module's permissions. The module is case insensitive."""
