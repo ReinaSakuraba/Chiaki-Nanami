@@ -1,4 +1,7 @@
+discord.py[voice]
 youtube_dl
 beautifulsoup4
 mpmath
 sympy
+colorthief
+webcolors
