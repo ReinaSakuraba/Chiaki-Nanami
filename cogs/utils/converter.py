@@ -130,5 +130,5 @@ def dict_getter(d, *, key=lambda k: k, error_msg="Couldn't find key \"{key}\""):
         try:
             return d[key(k)]
         except KeyError:
-            raise commands.BadArgument(error_msg.format(key=key))
-    return dict_getter
+            raise commands.BadArgument(error_msg.format(key=k))
+    return dictgetter

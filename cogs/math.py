@@ -374,15 +374,17 @@ for k, v in _reverse_units.items():
 del _length, _mass, _bit, _femto, _nano
 
 def _parse_unit(unit_type):
-    unit = dict_getter(_units, key=str.upper, error_msg="I don't recognized **{key}** as a unit.")(unit_type)
+    unit = dict_getter(_units, key=str.lower, error_msg="I don't recognized **{key}** as a unit.")(unit_type)
     if unit.type == 'Data':
         return _units.get(unit_type, unit)
+    return unit
 
 def handle_temperature(u1, u2, value):
     kelvin = (value + u1.intercept) * u1.ratio
     return kelvin / u2.ratio - u2.intercept
 
 def convert_unit(from_unit_type, to_unit_type, value):
+    from_unit, to_unit = _parse_unit(from_unit_type), _parse_unit(to_unit_type)
     # To avoid namespace conflicts when using abbreviations
     if from_unit.type != to_unit.type:
         raise IncompatibleUnits(f"{from_unit_type} ({from_unit.type}), {to_unit_type} ({to_unit.type})")
@@ -501,7 +503,7 @@ class Math:
         await ctx.send(f"Available misc vector functions: \n```\n{', '.join(ops)}```")
 
     @commands.command()
-    async def convert(self, ctx, value: float, from_unit: _parse_unit, to_unit: _parse_unit):
+    async def convert(self, ctx, value: float, from_unit, to_unit):
         """Converts a value from one unit to another"""
         try:
             result = convert_unit(from_unit, to_unit, value)
