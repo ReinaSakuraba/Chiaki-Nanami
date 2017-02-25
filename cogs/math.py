@@ -419,7 +419,7 @@ class Math:
         return output
 
     async def _async_calculate(self, fn_str, sanitizer):
-        await self.bot.loop.run_in_executor(None, self._calculate, fn_str, sanitizer)
+        return await self.bot.loop.run_in_executor(None, self._calculate, fn_str, sanitizer)
 
     @commands.command()
     async def isprime(self, num: int, accuracy: int=40):
