@@ -83,7 +83,7 @@ class BotCommandsConverter(commands.Converter):
         if cmd is None:
             raise commands.BadArgument(f"I don't recognized the {self.argument} command")
         return NamePair([cmd.qualified_name.split()[0], *cmd.aliases], cmd)
-        
+
 class RecursiveBotCommandConverter(commands.Converter):
     def convert(self):
         cmd_path = self.argument
@@ -106,7 +106,7 @@ def positive(num):
     if num >= 0:
         return num
     raise commands.BadArgument(f'Number must be positive')
-    
+
 def attr_converter(obj, msg="Cannot find attribute {attr}."):
     def attrgetter(attr):
         if attr.startswith('_'):
@@ -124,4 +124,11 @@ def number(s):
         except ValueError:
             continue
     raise commands.BadArgument(f"{s} is not a number.")
-    
+
+def dict_getter(d, *, key=lambda k: k, error_msg="Couldn't find key \"{key}\""):
+    def dictgetter(k):
+        try:
+            return d[key(k)]
+        except KeyError:
+            raise commands.BadArgument(error_msg.format(key=key))
+    return dict_getter

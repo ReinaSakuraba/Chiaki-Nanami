@@ -14,8 +14,8 @@ from discord.ext import commands
 from operator import itemgetter
 from random import randrange
 
+from .utils.converter import dict_getter
 from .utils.errors import InvalidUserArgument
-from .utils.misc import usage
 
 try:
     import sympy
@@ -98,22 +98,26 @@ class Vector(tuple):
     def __add__(self, other):
         if not isinstance(other, Sequence):
             return NotImplemented
-        return self._apply_operation(operator.add, type(self), other)
+        self._check_compatibility(other)
+        return type(self)(map(operator.add, self, other))
 
     def __radd__(self, other):
         if not isinstance(other, Sequence):
             return NotImplemented
-        return other._apply_operation(operator.add, type(self), self)
+        self._check_compatibility(other)
+        return type(self)(map(operator.add, other, self))
 
     def __sub__(self, other):
         if not isinstance(other, Sequence):
             return NotImplemented
-        return self._apply_operation(operator.sub, type(self), other)
+        self._check_compatibility(other)
+        return type(self)(map(operator.sub, self, other))
 
     def __rsub__(self, other):
         if not isinstance(other, Sequence):
             return NotImplemented
-        return other._apply_operation(operator.sub, type(self), self)
+        self._check_compatibility(other)
+        return type(self)(map(operator.sub, other, self))
 
     def __mul__(self, s):
         return type(self)(v * s for v in self)
@@ -144,7 +148,8 @@ class Vector(tuple):
 
     def dot(self, other):
         """Return the dot product with the other vector."""
-        return _apply_operation(operator.mul, sum, self, other)
+        self._check_compatibility(other)
+        return sum(map(operator.mul, other, self))
 
     def cross(self, other):
         """Return the cross product with another vector. For two-dimensional
@@ -369,20 +374,16 @@ for k, v in _reverse_units.items():
 del _length, _mass, _bit, _femto, _nano
 
 def _parse_unit(unit_type):
-    try:
-        return _units[unit_type.lower()]
-    except KeyError:
-        raise commands.BadArgument(f"I don't recognized **{unit_type}** as a unit.")
+    unit = dict_getter(_units, key=str.upper, error_msg="I don't recognized **{key}** as a unit.")(unit_type)
+    if unit.type == 'Data':
+        return _units.get(unit_type, unit)
 
 def handle_temperature(u1, u2, value):
     kelvin = (value + u1.intercept) * u1.ratio
     return kelvin / u2.ratio - u2.intercept
 
-def convert_unit(from_unit, to_unit, value):
+def convert_unit(from_unit_type, to_unit_type, value):
     # To avoid namespace conflicts when using abbreviations
-    if 'data' in (from_unit.type, to_unit.type):
-        with contextlib.suppress(KeyError):
-            from_unit, to_unit = _units[from_unit_type], _units[to_unit_type]
     if from_unit.type != to_unit.type:
         raise IncompatibleUnits(f"{from_unit_type} ({from_unit.type}), {to_unit_type} ({to_unit.type})")
 
@@ -399,11 +400,11 @@ class Math:
     def __init__(self, bot):
         self.bot = bot
 
-    async def _result_say(self, input, output):
+    async def _result_say(self, ctx, input, output):
         try:
-            return await self.bot.say(f"```css\nInput: \n{input}\n\nOutput:\n{output}```")
+            return await ctx.send(f"```css\nInput: \n{input}\n\nOutput:\n{output}```")
         except discord.HTTPException:
-            return await self.bot.say(f"Resulting message is too big for viewing.")
+            return await ctx.send(f"Resulting message is too big for viewing.")
 
     def _calculate(self, fn_str, sanitizer):
         try:
@@ -418,10 +419,10 @@ class Math:
         return output
 
     async def _async_calculate(self, fn_str, sanitizer):
-        await self.bot.loop.run_in_executor(None, self._calculate, fn_str, sanitizer)
+        return await self.bot.loop.run_in_executor(None, self._calculate, fn_str, sanitizer)
 
     @commands.command()
-    async def isprime(self, num: int, accuracy: int=40):
+    async def isprime(self, ctx, num: int, accuracy: int=40):
         """Determines if a number is probably prime.
 
         This command uses the Miller-Rabin primality test.
@@ -431,30 +432,30 @@ class Math:
         """
         result = _probably_prime(num, accuracy)
         prime_or_not = "not " * (not result)
-        await self.bot.say(f"**{num}** is {prime_or_not}prime, probably.")
+        await ctx.send(f"**{num}** is {prime_or_not}prime, probably.")
 
     @commands.command(aliases=['calcfuncs'])
-    async def calcops(self):
+    async def calcops(self, ctx):
         """Lists all the math functions that can be used"""
         ops = [key for key, val in MATH_CONTEXT.items() if callable(val)]
-        await self.bot.say(f"Available functions: \n```\n{', '.join(ops)}```")
+        await ctx.send(f"Available functions: \n```\n{', '.join(ops)}```")
 
     @commands.command(aliases=['calc'])
-    async def calculate(self, *, expr: str):
+    async def calculate(self, ctx, *, expr: str):
         """Calculates a mathematical expression"""
         output = str(await self._async_calculate(expr, _sanitize))
         if '^' in expr:
             output += "\nNote: '^' is the XOR operator. Use '**' for exponentation."
-        await self._result_say(expr, output)
+        await self._result_say(ctx, expr, output)
 
     @commands.command(aliases=['leval'])
-    async def literaleval(self, *, expr: str):
+    async def literaleval(self, ctx, *, expr: str):
         """Basically a "safe" eval"""
         output = await self._async_calculate(expr, lambda s: lambda: ast.literal_eval(s))
-        await self._result_say(expr, output)
+        await self._result_say(ctx, expr, output)
 
     @commands.command(aliases=['vectorcalculate'])
-    async def vectorcalc(self, *, expr: str):
+    async def vectorcalc(self, ctx, *, expr: str):
         """Calculator for vector calculations
 
         Because who doesn't want that? \U0001F61B
@@ -464,10 +465,10 @@ class Math:
         vector_repr_func = lambda s: repr(Vector(ast.literal_eval(s.group(1))))
         vector_expr_string = re.sub(r'(\[[^"]*?\])', vector_repr_func, expr)
         output = await self._async_calculate(vector_expr_string, _vector_sanitize)
-        await self._result_say(expr, output)
+        await self._result_say(ctx, expr, output)
 
     @commands.command(aliases=['vectorfuncs'])
-    async def vectorops(self):
+    async def vectorops(self, ctx):
         """Lists all the functions available for vectors
 
         These can be called in one of two ways, for a function 'func' and a vector 'vec':
@@ -477,19 +478,19 @@ class Math:
         def is_vector_func(val):
             return callable(val) and not inspect.isclass(val) and val in vector_funcs
         ops = [key for key, val in VECTOR_CONTEXT.items() if is_vector_func(val)]
-        await self.bot.say(f"Available vector functions: \n```\n{', '.join(ops)}```")
+        await ctx.send(f"Available vector functions: \n```\n{', '.join(ops)}```")
 
     @commands.command()
-    async def vectorprops(self):
+    async def vectorprops(self, ctx):
         """Lists all the properties available for vectors
 
         These can only be called as vec.func
         """
         ops = [key for key, val in VECTOR_CONTEXT.items() if isinstance(val, property)]
-        await self.bot.say(f"Available vector properties: \n```\n{', '.join(ops)}```")
+        await ctx.send(f"Available vector properties: \n```\n{', '.join(ops)}```")
 
     @commands.command()
-    async def vectormisc(self):
+    async def vectormisc(self, ctx):
         """Lists all the functions available for vectors that aren't in the vector class
 
         These can only be called as func(vec)
@@ -497,10 +498,10 @@ class Math:
 
         vector_funcs = vars(Vector).values()
         ops = [key for key, val in VECTOR_CONTEXT.items() if val not in vector_funcs]
-        await self.bot.say(f"Available misc vector functions: \n```\n{', '.join(ops)}```")
+        await ctx.send(f"Available misc vector functions: \n```\n{', '.join(ops)}```")
 
     @commands.command()
-    async def convert(self, value: float, from_unit: _parse_unit, to_unit: _parse_unit):
+    async def convert(self, ctx, value: float, from_unit: _parse_unit, to_unit: _parse_unit):
         """Converts a value from one unit to another"""
         try:
             result = convert_unit(from_unit, to_unit, value)
@@ -508,21 +509,21 @@ class Math:
             result = f'{type(e).__name__}: {e}'
         except KeyError:
             result = f'Either {from_unit} or {to_unit} is not a recognized unit of measurement.'
-        await self._result_say(f'{value} {from_unit} -> {to_unit}', result)
+        await self._result_say(ctx, f'{value} {from_unit} -> {to_unit}', result)
 
     @commands.command()
-    async def conversions(self):
+    async def conversions(self, ctx):
         """Lists all the available units"""
         conversions_embed = discord.Embed(title="__List of available units for conversion__", colour=self.bot.colour)
         for k, v in itertools.groupby(_reverse_units.items(), lambda t: t[0].type):
             conversions_embed.add_field(name=k, value='\n'.join([t[1] for t in v]))
-        await self.bot.say(embed=conversions_embed)
+        await ctx.send(embed=conversions_embed)
 
     if sympy:
         # SymPy related commands
         # Use oo for infinity
         @commands.command(aliases=['derivative'])
-        async def differentiate(self, expr: str, n: int=1):
+        async def differentiate(self, ctx, expr: str, n: int=1):
             """Finds the derivative of an equation
 
             n is the nth derivative you wish to calcuate.
@@ -533,10 +534,10 @@ class Math:
             if len(symbols) > 1:
                 raise InvalidArgument("You have too many symbols in your equation")
             result = sympy.pretty(sympy.diff(equation, *(symbols * n)))
-            await self._result_say(equation, result)
+            await self._result_say(ctx, equation, result)
 
         @commands.command()
-        async def limit(self, expr: str, var: sympy.Symbol, to, dir='+'):
+        async def limit(self, ctx, expr: str, var: sympy.Symbol, to, dir='+'):
             """Finds the limit of an equation.
 
             to is where the var will approach
@@ -546,10 +547,10 @@ class Math:
             """
             equation = parse_expr(expr, evaluate=False, transformations=default_transformations)
             result = sympy.pretty(sympy.limit(expr, var, to, dir))
-            await self._result_say(equation, result)
+            await self._result_say(ctx, equation, result)
 
         @commands.command(aliases=['integral'])
-        async def integrate(self, *, expr: str):
+        async def integrate(self, ctx, *, expr: str):
             """Finds the indefinite integral (aka antiderivative of an equation)
 
             Unlike derivative, the expression does not require quotes
@@ -559,7 +560,7 @@ class Math:
             if len(symbols) > 1:
                 raise InvalidArgument("You have too many symbols in your equation")
             result = sympy.pretty(sympy.integrate(equation, symbols[0]))
-            await self._result_say(equation, result)
+            await self._result_say(ctx, equation, result)
 
 def setup(bot):
     bot.add_cog(Math(bot))
