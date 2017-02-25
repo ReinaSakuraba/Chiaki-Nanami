@@ -91,29 +91,29 @@ class Vector(tuple):
     def _dimension_error(self, name):
         return ValueError(f'.{name}() is not implemented for {len(self)}-dimensional vectors.')
 
-    def _apply_operation(self, op, typ, other):
-        self._check_compatibility(other)
-        return typ(map(op, self, other))
-
     def __add__(self, other):
         if not isinstance(other, Sequence):
             return NotImplemented
-        return self._apply_operation(operator.add, type(self), other)
+        self._check_compatibility(other)
+        return type(self)(map(operator.add, self, other))
 
     def __radd__(self, other):
         if not isinstance(other, Sequence):
             return NotImplemented
-        return other._apply_operation(operator.add, type(self), self)
+        self._check_compatibility(other)
+        return type(self)(map(operator.add, other, self))
 
     def __sub__(self, other):
         if not isinstance(other, Sequence):
             return NotImplemented
-        return self._apply_operation(operator.sub, type(self), other)
+        self._check_compatibility(other)
+        return type(self)(map(operator.sub, self, other))
 
     def __rsub__(self, other):
         if not isinstance(other, Sequence):
             return NotImplemented
-        return other._apply_operation(operator.sub, type(self), self)
+        self._check_compatibility(other)
+        return type(self)(map(operator.sub, other, self))
 
     def __mul__(self, s):
         return type(self)(v * s for v in self)
@@ -144,7 +144,8 @@ class Vector(tuple):
 
     def dot(self, other):
         """Return the dot product with the other vector."""
-        return _apply_operation(operator.mul, sum, self, other)
+        self._check_compatibility(other)
+        return sum(map(operator.mul, other, self))
 
     def cross(self, other):
         """Return the cross product with another vector. For two-dimensional
