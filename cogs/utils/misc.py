@@ -1,3 +1,4 @@
+import contextlib
 import inspect
 import random
 import re
@@ -56,35 +57,18 @@ def duration_units(secs):
 
 def ordinal(num):
     # pay no attention to this ugliness
-    return "%d%s" % (num,"tsnrhtdd"[(num//10%10!=1)*(num%10<4)*num%10::4])
+    return "%d%s" % (num, "tsnrhtdd"[(num//10%10!=1)*(num%10<4)*num%10::4])
 
-def usage(*usages):
-    def wrapper(cmd):
-        # @usage could've been put above or below @commands.command
-        func = cmd.callback if isinstance(cmd, commands.Command) else cmd
-        func.__usage__ = usages
-        return cmd
-    return wrapper
-
-AlternateException = namedtuple('AlternateException', ['type', 'message', 'successful', 'original'])
-def try_call(func, on_success=None, exception_alts=()):
-    """Attempts an action.
-
-    The original return value of a function can be accessed by the attribute "result".
-    """
-    exception_alts = dict(exception_alts)
+@contextlib.contextmanager
+def temp_attr(obj, attr, value):
+    """Temporarily sets an object's attribute to a value"""
+    already_has_attr = hasattr(obj, attr)
+    old_value = getattr(obj, attr, None)
+    setattr(obj, attr, value)
     try:
-        result = func()
-    except BaseException as e:
-        try:
-            msg = exception_alts[type(e)]
-        except KeyError:
-            raise
-        return AlternateException(type(e), msg.format(exc=e), False, e)
-    else:
-        return AlternateException(None, on_success, True, result)
-
-async def try_async_call(func, *args, on_success=None, exception_alts=(), **kwargs):
-    result = try_call(func, *args, on_success=on_success, exception_alts=exception_alts, **kwargs)
-    return (result._replace(type=result.type, message=result.message, successful=result.successful,
-            original=await result.original) if inspect.isawaitable(result.original) else result)
+        yield
+    finally:
+        if already_has_attr:
+            setattr(obj, attr, old_value)
+        else:
+            delattr(obj, attr)
