@@ -1,5 +1,6 @@
 import asyncio
 import colorsys
+import contextlib
 import discord
 import random
 import secrets
@@ -35,9 +36,9 @@ else:
             actual_name = None
         return actual_name, closest_name
 
-with open(r'data\tanks.txt') as f:
-    _back_up_tanks = f.read().splitlines()
-
+with contextlib.suppress(FileNotFoundError):
+    with open(r'data\tanks.txt') as f:
+        _back_up_tanks = f.read().splitlines()
 
 SMASHERS = ("Auto Smasher", "Landmine", "Smasher", "Spike",)
 BALL_ANSWERS = ("Yes", "No", "Maybe so", "Definitely", "I think so",
@@ -68,7 +69,7 @@ def _make_maze(w=16, h=8):
 
     walk(randrange(w), randrange(h))
     return(''.join(a + ['\n'] + b) for (a, b) in zip(hor, ver))
-    
+
 _available_distributions = {
     'uniform': random.uniform,
     'int': random.randint,
@@ -80,22 +81,32 @@ class RNG:
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(name="8ball", pass_context=True, aliases=['8'])
+    @commands.command(name="8ball", aliases=['8'])
     async def ball(self, ctx, *, question: str):
         """...it's a 8-ball"""
         if not question.endswith('?'):
-            return await self.bot.reply(f"That's not a question, I think.")
-        msg = await self.bot.reply(f"\n:question:: **{question}**\n")
+            return await (f"{ctx.author.mention}, that's not a question, I think.")
+
+        msg = await ctx.send(f"{ctx.author.mention}\n:question:: **{question}**\n")
         await asyncio.sleep(random.uniform(0.5, 1.5))
         afmt =  "{}\n:8ball:: {}"
-        for i in range(4):
-            await self.bot.edit_message(msg, afmt.format(msg.content, "." * i))
-            await asyncio.sleep(random.uniform(0.75, 1.25))
+        with ctx.typing():
+            await msg.edit(afmt.format(msg.content, '... :thinking:'))
+            await asyncio.sleep(random.uniform(0.75, 1.25) * 2)
+
         answer = random.choice(BALL_ANSWERS)
-        await self.bot.edit_message(msg, afmt.format(msg.content, f"***__{answer}.__***"))
+        await msg.edit(afmt.format(msg.content, f"***__{answer}.__***"))
+
+    @commands.command(usage='Nadeko;Salt;PvPCraft;mee6;Chiaki Nanami')
+    async def choose(self, ctx, *, choices: str):
+        """Chooses between a list of choices separated by semicolons"""
+        with ctx.channel.typing():
+            msg = await ctx.send(':thinking:')
+            await asyncio.sleep(random.uniform(0.25, 1))
+            await msg.edit(content=random.choice(choices.split(';')))
 
     @commands.group(aliases=['rand'], invoke_without_command=True)
-    async def random(self, lo: number, hi: number=None, dist='range'):
+    async def random(self, ctx, lo: number, hi: number=None, dist='range'):
         """Super-command for all the random commands. Or generates a value between lo and hi given"""
         distribution = _available_distributions.get(dist)
         if distribution is None:
@@ -103,22 +114,21 @@ class RNG:
         if hi is None:
             lo, hi = 0, lo
         result = distribution(lo, hi)
-        answer = f"Your random {distribution.__name__} number between is..."
-        msg = await self.bot.say(answer)
+        msg = await ctx.send(f"Your random {distribution.__name__} number between is...")
         await asyncio.sleep(random.uniform(0, 1))
-        await self.bot.edit_message(msg, answer + f'**{result}!!**')
-        
+        await msg.edit(msg.content + f'**{result}!!**')
+
     @random.command(aliases=['dists'])
-    async def distributions(self):
+    async def distributions(self, ctx):
         """Shows all the distributions one can use for the random command"""
         dists = ', '.join(_available_distributions)
-        await self.bot.say("Available random distributions```\n{dists}```")
+        await ctx.send(f"Available random distributions```\n{dists}```")
 
     @random.command(aliases=['dice'], enabled=False)
-    async def diceroll(self, amt):
+    async def diceroll(self, ctx, amt):
         """Rolls a certain number of dice"""
         fmt = "{} " * amt
-        await self.bot.say(fmt.format(*[random.randint(1, 6) for _ in range(amt)]))
+        await ctx.send(fmt.format(*[random.randint(1, 6) for _ in range(amt)]))
 
     # diep.io related commands
 
@@ -138,38 +148,38 @@ class RNG:
         raise InvalidUserArgument(f"You have too many points ({points})")
 
     @random.command()
-    async def build(self, points : int=33):
+    async def build(self, ctx, points : int=33):
         """Gives you a random build to try out
 
         If points is not provided, it defaults to a max-level build (33)"""
-        await self.bot.say(self._build_str(points))
+        await ctx.send(self._build_str(points))
 
     @random.command()
-    async def smasher(self, points : int=33):
+    async def smasher(self, ctx, points : int=33):
         """Gives you a random build for the Smasher branch to try out
 
         If points is not provided, it defaults to a max-level build (33)"""
-        await self.bot.say(self._build_str(points, True))
+        await ctx.send(self._build_str(points, True))
 
     def _class(self):
         return random.choice(self.bot.get_cog("WRA").all_tanks() or _back_up_tanks)
 
     @random.command(name="class")
-    async def class_(self):
+    async def class_(self, ctx):
         """Gives you a random class to play"""
-        await self.bot.say(self._class())
+        await ctx.send(self._class())
 
     @random.command()
-    async def tank(self, points : int=33):
+    async def tank(self, ctx, points : int=33):
         """Gives you a random build AND class to play
 
         If points is not provided, it defaults to a max-level build (33)"""
         cwass = self._class()
         build = self._build_str(points, cwass in SMASHERS)
-        await self.bot.say(f'{build} {cwass}')
+        await ctx.send(f'{build} {cwass}')
 
     @random.command(aliases=['color'])
-    async def colour(self):
+    async def colour(self, ctx):
         """Generates a random colo(u)r."""
         colour_long = random.randrange(255 ** 3)
         colour = discord.Colour(colour_long)
@@ -184,18 +194,18 @@ class RNG:
         if webcolors:
             actual_name, closest_name = get_colour_name((r, g, b))
             colour_embed.description = actual_name or closest_name
-        await self.bot.say(embed=colour_embed)
+        await ctx.send(embed=colour_embed)
 
-    @commands.cooldown(rate=10, per=5, type=commands.BucketType.server)
+    @commands.cooldown(rate=10, per=5, type=commands.BucketType.guild)
     @random.command()
-    async def uuid(self):
+    async def uuid(self, ctx):
         """Generates a random uuid.
 
         Because of potential abuse, this commands has a 5 second cooldown
         """
-        await self.bot.say(uuid.uuid4())
+        await ctx.send(uuid.uuid4())
 
-    @random.command(pass_context=True, aliases=['pw'])
+    @random.command(aliases=['pw'])
     @private_message_only("Why are you asking for a password in public...?")
     async def password(self, ctx, n: int=8, *rest: str):
         """Generates a random password
@@ -214,16 +224,16 @@ class RNG:
             symbol_deletion = dict.fromkeys(map(ord, string.punctuation), None)
             letters = letters.translate(symbol_deletion)
         password = _password(n, letters)
-        await self.bot.say(password)
+        await ctx.send(password)
 
-    @random.command(pass_context=True)
+    @random.command()
     async def maze(self, ctx, w: int=5, h: int=5):
         """Generates a random maze"""
         maze = '\n'.join(_make_maze(w, h))
         try:
-            await self.bot.say(f"```\n{maze}```")
+            await ctx.send(f"```\n{maze}```")
         except discord.HTTPException:
-            await self.bot.say(f"The maze you've generated (**{w}** by **{h}**) is too large")
+            await ctx.send(f"The maze you've generated (**{w}** by **{h}**) is too large")
 
 def setup(bot):
     bot.add_cog(RNG(bot), "Random")
