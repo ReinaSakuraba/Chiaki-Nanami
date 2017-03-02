@@ -40,26 +40,23 @@ def chiaki_check(predicate, *, role=None, perms=None):
 def _nice_perms(**perms):
     return [f"{'Not' * (not v)} {k.replace('_', ' ').title()}" for k, v in perms.items()]
 
-def is_owner_predicate(ctx):
-    return ctx.message.author.id == '239110748180054017'
+def is_owner_predicate(msg):
+    return msg.author.id == 239110748180054017
 
 def is_owner():
-    return chiaki_check(is_owner_predicate, role="Bot Owner")
+    return chiaki_check(lambda ctx: is_owner_predicate(ctx.message), role="Bot Owner")
 
-def permissions_predicate(ctx, **perms):
-    if is_owner_predicate(ctx):
+def permissions_predicate(msg, **perms):
+    if is_owner_predicate(msg):
         return True
-    msg = ctx.message
-    ch = msg.channel
-    resolved = ch.permissions_for(msg.author)
+    resolved = msg.channel.permissions_for(msg.author)
     return all(getattr(resolved, perm, None) == value
                for perm, value in perms.items())
 
-def role_predicate(ctx, role):
-    if is_owner_predicate(ctx):
+def role_predicate(msg, role):
+    if is_owner_predicate(msg):
         return True
-    author = ctx.message.author
-    server = ctx.message.server
+    author, server = msg.author, msg.guild
     if not server:
         return False
     role_id = get_role(server, role)
@@ -67,17 +64,17 @@ def role_predicate(ctx, role):
     role_name = discord.utils.get(author.roles, name=DEFAULT)
     return role is not None or role_name is not None
 
-def role_or_perms_predicate(ctx, role, **perms):
-    return role_predicate(ctx, role) or permissions_predicate(ctx, **perms)
+def role_or_perms_predicate(msg, role, **perms):
+    return role_predicate(msg, role) or permissions_predicate(msg, **perms)
 
 def has_role(role):
-    return chiaki_check(lambda ctx: role_predicate(ctx, role), role=str(role))
+    return chiaki_check(lambda ctx: role_predicate(ctx.message, role), role=str(role))
 
 def has_perms(**perms):
-    return chiaki_check(lambda ctx: permissions_predicate(ctx, **perms), perms=_nice_perms(**perms))
+    return chiaki_check(lambda ctx: permissions_predicate(ctx.message, **perms), perms=_nice_perms(**perms))
 
 def has_role_or_perms(role, **perms):
-    return chiaki_check(lambda ctx: role_or_perms_predicate(ctx, role, **perms),
+    return chiaki_check(lambda ctx: role_or_perms_predicate(ctx.message, role, **perms),
                         role=str(role), perms=_nice_perms(**perms))
 
 def is_admin():
