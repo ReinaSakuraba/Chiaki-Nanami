@@ -27,7 +27,6 @@ def _icon_embed(idable, url, name):
 
 async def _mee6_stats(session, member):
     async with session.get(f"https://mee6.xyz/levels/{member.guild.id}?json=1&limit=-1") as r:
-        print(r.status)
         levels = await r.json()
     for idx, user_stats in enumerate(levels['players'], start=1):
         if user_stats.get("id") == member.id:
@@ -322,7 +321,7 @@ class Meta:
                if history else "You have not input any commands...")
         await ctx.send(msg)
 
-    async def on_command(self, cmd, ctx):
+    async def on_command(self, ctx):
         self.cmd_history[ctx.author].append(ctx.message.content)
 
     @commands.command(usage=['pow', 'os.system'], aliases=['pyh'])
