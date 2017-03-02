@@ -7,50 +7,29 @@ import textwrap
 from collections import namedtuple
 from datetime import datetime
 from discord.ext import commands
+from functools import partial
 
 from .utils import checks, errors
-from .utils.converter import BotCogConverter
+from .utils.converter import BotCogConverter, RecursiveBotCommandConverter
 from .utils.database import Database
 from .utils.misc import multi_replace, nice_time, truncate
-
-_mentions_transforms = {
-    '@everyone': '@\u200beveryone',
-    '@here': '@\u200bhere'
-}
-
-async def _default_help_command(ctx, *commands):
-    """Shows this message and stuff"""
-    await default_help(ctx, *commands)
+from .utils.paginator import iterable_limit_say
 
 def default_help_command(func=lambda s: s, **kwargs):
-    async def help_command(self, ctx, *commands):
-        await default_help(ctx, *commands, func=func)
-    return commands.command(pass_context=True, help=func("Shows this message and stuff"), **kwargs)(help_command)
+    async def help_command(self, ctx, *, command: RecursiveBotCommandConverter=None):
+        await default_help(ctx, command, func=func)
+    return commands.command(help=func("Shows this message and stuff"), **kwargs)(help_command)
 
-async def default_help(ctx, *commands_ : str, func=lambda s:s):
-    _mention_pattern = re.compile('|'.join(_mentions_transforms))
-
-    bot = command = ctx.bot
+async def default_help(ctx, command=None, func=lambda s:s):
+    command = ctx.bot if command is None else command.value
     destination = ctx.message.channel
 
-    def repl(obj):
-        return _mentions_transforms.get(obj.group(0), '')
-
-    for key in commands_:
-        try:
-            key = _mention_pattern.sub(repl, key)
-            command = command.commands.get(key)
-            if command is None:
-                raise errors.ResultsNotFound(func(bot.command_not_found.format(key)))
-        except AttributeError:
-            raise errors.InvalidUserArgument(func(bot.command_has_no_subcommands.format(command, key)))
-
-    page = bot.formatter.format_help_for(ctx, command, func)
+    page = await ctx.bot.formatter.format_help_for(ctx, command, func)
 
     if isinstance(page, discord.Embed):
-        await bot.send_message(destination, embed=page)
+        await destination.send(embed=page)
     else:
-        await bot.send_message(ctx.message.author, page)
+        await destination.send(page)
 
 
 _message_attrs = 'id author content channel server timestamp'.split()
@@ -71,7 +50,7 @@ class ProblemMessage:
     def embed(self):
         author = self.author
         description = f"Sent on {self.nice_timestamp}"
-        author_avatar = author.avatar_url or author.default_avatar_url
+        author_avatar = author.avatar_url_as(format=None)
         content = self.content.replace('->contact', '', 1)
         id_fmt = "{0}\n({0.id})"
         server_fmt = id_fmt.format(self.server) if self.server else "No server"
@@ -98,46 +77,44 @@ class ProblemEncoder(json.JSONEncoder):
                 }
         return super().default(o)
 
-def problem_hook(bot):
-    def hook(dct):
-        if '__problem__' in dct:
-            kwargs = {
-                'id': dct['id'],
-                'author': discord.utils.get(bot.get_all_members(), id=dct['author']),
-                'content': dct['content'],
-                'channel': bot.get_channel(dct['channel']),
-                'server': bot.get_server(dct['server']),
-                'timestamp': datetime.strptime(dct['timestamp'], '%Y-%m-%d %H:%M:%S.%f'),
-                }
-            return ProblemMessage(DummyMessage(**kwargs))
-        return dct
-    return hook
+def problem_hook(bot, dct):
+    if '__problem__' in dct:
+        kwargs = {
+            'id': dct['id'],
+            'author': discord.utils.get(bot.get_all_members(), id=dct['author']),
+            'content': dct['content'],
+            'channel': bot.get_channel(dct['channel']),
+            'server': bot.get_server(dct['server']),
+            'timestamp': datetime.strptime(dct['timestamp'], '%Y-%m-%d %H:%M:%S.%f'),
+            }
+        return ProblemMessage(DummyMessage(**kwargs))
+    return dct
 
-_bracket_swap = {'(': ')', ')': '(', 
-                 '[': ']', ']': '[',
-                 '<': '>', '>': '<',
+_bracket_repls = {'(': ')', ')': '(',
+                  '[': ']', ']': '[',
+                  '<': '>', '>': '<',
                  }
 
 class Help:
     def __init__(self, bot):
         self.bot = bot
-        #self.bot.command(name='help', pass_context=True, aliases='h')(_default_help_command)
+        #self.bot.command(name='help', , aliases='h')(_default_help_command)
 
     async def on_ready(self):
-        self.problems = Database.from_json('issues.json', encoder=ProblemEncoder,
-                                           object_hook=problem_hook(self.bot))
+        self.problems = Database.from_json('issues.json', encoder=ProblemEncoder, load_later=True,
+                                           object_hook=partial(problem_hook, self.bot))
         self.bot.add_database(self.problems)
-        
+
     help = default_help_command(name='help', aliases=['h'])
     halp = default_help_command(str.upper, name='halp', aliases=['HALP'])
-    pleh = default_help_command((lambda s: multi_replace(s[::-1], _bracket_swap)), name='pleh')
-    pleh = default_help_command((lambda s: multi_replace(s[::-1].upper(), _bracket_swap)), name='plah', aliases=['PLAH'])
+    pleh = default_help_command((lambda s: multi_replace(s[::-1], _bracket_repls)), name='pleh')
+    pleh = default_help_command((lambda s: multi_replace(s[::-1].upper(), _bracket_repls)), name='plah', aliases=['PLAH'])
     Halp = default_help_command(str.title, name='Halp')
-        
+
     @commands.command()
-    async def invite(self):
+    async def invite(self, ctx):
         """...it's an invite"""
-        await self.bot.say(textwrap.dedent(f"""\
+        await ctx.send(textwrap.dedent(f"""\
         I am not a not a public bot yet... but here's the invite link just in case:
         {self.bot.invite_url}
 
@@ -148,7 +125,7 @@ class Help:
         https://github.com/Ikusaba-san/Chiaki-Nanami
         """))
 
-    @commands.command(pass_context=True)
+    @commands.command()
     async def contact(self, ctx, *, problem: str):
         """Contacts the bot owner
 
@@ -166,25 +143,25 @@ class Help:
         await self.bot.send_message(owner, f"**{owner.mention} New message from {author}!**",
                                     embed=problem_message.embed)
 
-    @commands.command(pass_context=True)
+    @commands.command()
     @checks.is_owner()
     @errors.private_message_only()
     async def contactblock(self, ctx, *, user: discord.User):
         self.problems.setdefault('blocked', []).append(user.id)
-        await self.bot.say(f"Blocked user {user} successfully!")
+        await ctx.send(f"Blocked user {user} successfully!")
 
-    @commands.command(pass_context=True, hidden=True)
+    @commands.command(hidden=True)
     @checks.is_owner()
     @errors.private_message_only()
-    async def answer(self, ctx, id: str, *, response: str):
-        problem_message = self.problems.get(id)
+    async def answer(self, ctx, id: int, *, response: str):
+        problem_message = self.problems.pop(id, None)
         if problem_message is None:
             raise errors.ResultsNotFound(f"Message ID ***{id}*** doesn't exist, I think")
 
         appinfo = await self.bot.application_info()
         owner = appinfo.owner
         avatar = owner.avatar_url or owner.default_avatar_url
-        footer = f"Message sent on {nice_time(ctx.message.timestamp)}"
+        footer = f"Message sent on {ctx.message.timestamp}"
         response_embed = (discord.Embed(colour=0x00FF00)
                          .set_author(name=str(owner), icon_url=avatar)
                          .set_thumbnail(url=appinfo.icon_url)
@@ -192,35 +169,35 @@ class Help:
                          .set_footer(text=footer)
                          )
         msg = f"{problem_message.author.mention}, you have a response for message ***{id}***:"
-        await self.bot.send_message(problem_message.author, msg, embed=response_embed)
-        await self.bot.send_message(problem_message.channel, msg, embed=response_embed)
-        self.problems.pop(id)
-        await self.bot.say(f"Successfully responded to {id}! Response:", embed=response_embed)
+        await problem_message.author.send(msg, embed=response_embed)
+        await problem_message.channel.send(msg, embed=response_embed)
+        await ctx.send(f"Successfully responded to {id}! Response:", embed=response_embed)
 
-    @commands.command(pass_context=True, hidden=True)
+    @commands.command(hidden=True)
     @checks.is_owner()
     @errors.private_message_only()
     async def review(self, ctx, id: str):
         problem_message = self.problems.get(id)
         if problem_message:
-            await self.bot.say(f"**Saved Message from {problem_message.author}:**",
-                               embed=problem_message.embed)
+            await ctx.send(f"**Saved Message from {problem_message.author}:**", embed=problem_message.embed)
         raise errors.ResultsNotFound(f"ID {id} doesn't exist, I think")
 
     @commands.command(aliases=['cogs'])
-    async def modules(self):
+    async def modules(self, ctx):
         modules_embed = discord.Embed(title="List of my modules", colour=self.bot.colour)
-        for name, cog_dict in self.bot.cog_command_namespace.items():
-            if cog_dict['hidden']: continue
-            doc = cog_dict['cog'].__doc__ or 'No description... yet.'
+
+        visible_cogs =  ((name, cog) for name, cog in self.bot.cogs.items() if name and not cog.__hidden__)
+        for name, cog in sorted(visible_cogs, key=operator.itemgetter(0)):
+            doc = cog.__doc__ or 'No description... yet.'
             modules_embed.add_field(name=name, value=truncate(doc.splitlines()[0], 20, '...'))
+
         modules_embed.set_footer(text='Type "->commands {module_name}" for all the commands on a module')
-        await self.bot.say(embed=modules_embed)
-       
-    @commands.command(pass_context=True, aliases=['cmds'])
-    async def commands(self, ctx, cog_name: BotCogConverter):
-        commands_embed = self.bot.formatter.format_help_for(ctx, cog_name.name)
-        await self.bot.say(embed=commands_embed)
+        await ctx.send(embed=modules_embed)
+
+    @commands.command(aliases=['cmds'])
+    async def commands(self, ctx, cog: BotCogConverter):
+        commands_embed = await self.bot.formatter.format_help_for(ctx, cog)
+        await ctx.send(embed=commands_embed)
 
 def setup(bot):
     bot.add_cog(Help(bot))
