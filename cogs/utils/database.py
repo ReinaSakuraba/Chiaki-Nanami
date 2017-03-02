@@ -12,13 +12,6 @@ from .transformdict import IDAbleDict
 DATA_PATH = 'data/'
 DB_PATH = DATA_PATH + 'databases/'
 
-def _load_json(name, object_hook=None):
-    try:
-        with open(name, encoding='utf-8') as f:
-            return json.load(f, object_hook=object_hook)
-    except (FileNotFoundError, json.decoder.JSONDecodeError) as e:
-        return {}
-
 log = logging.getLogger(f"chiaki-{__name__}")
 try:
     handler = logging.FileHandler(filename='./logs/databases.log', encoding='utf-8', mode='w')
@@ -27,6 +20,19 @@ except FileNotFoundError:
     handler = logging.FileHandler(filename='./logs/databases.log', encoding='utf-8', mode='w')
 handler.setFormatter(logging.Formatter('%(asctime)s/%(levelname)s:%(name)s: %(message)s'))
 log.addHandler(handler)
+
+def _load_data_func(file_type, **kwargs):
+    def load_data(name, object_hook=None):
+        try:
+            with file_type(name, **kwargs) as f:
+                return json.load(f, object_hook=object_hook)
+        except (FileNotFoundError, json.decoder.JSONDecodeError) as e:
+            return {}
+    return load_data
+
+_load_json = _load_data_func(open, encoding='utf-8')
+_load_gzip = _load_data_func(gzip.GzipFile)
+del _load_data_func
 
 @contextlib.contextmanager
 def atomic_temp_file(name, path=DB_PATH, file_type=open, **kwargs):
@@ -55,13 +61,20 @@ class Database(IDAbleDict):
         super().__init__(default_factory, mapping)
 
         self.name = name
-        # Pay no attention to this copyness
         self.loop = kwargs.pop('loop', None) or asyncio.get_event_loop()
+        self._dumper, self._ext, self._loader = ((self._gzip_dump, '.gz', _load_gzip)
+                                                  if kwargs.get('use_gzip', False) else
+                                                 (self._json_dump, '.json', _load_json))
+
+        # Pay no attention to this copyness
         self.object_hook = kwargs.pop('object_hook', None)
         self.encoder = kwargs.pop('encoder', None)
         self.lock = asyncio.Lock()
 
-        self._dumper = self._gzip_dump if kwargs.get('use_gzip', False) else self._json_dump
+        if kwargs.get('load_later', False):
+            self.loop.create_task(self.load_later())
+        else:
+            self.update(self._loader(self.file_name, self.object_hook))
 
     def __repr__(self):
         return ("Database(name='{0.name}', default_factory={1}, "
@@ -69,11 +82,11 @@ class Database(IDAbleDict):
                 ).format(self, getattr(self.default_factory, "__name__", None))
 
     def _json_dump(self):
-        with atomic_temp_file(self.json_name, encoding='utf-8', mode='w') as f:
+        with atomic_temp_file(self.file_name, encoding='utf-8', mode='w') as f:
             json.dump(self, f, indent=4, sort_keys=True, separators=(',', ' : '), cls=self.encoder)
 
     def _gzip_dump(self):
-        with atomic_temp_file(self.json_name, gzip.GzipFile, mode='w') as out:
+        with atomic_temp_file(self.file_name, gzip.GzipFile, mode='w') as out:
             out.write(json.dumps(self) + '\n')
 
     async def dump(self):
@@ -81,20 +94,22 @@ class Database(IDAbleDict):
             await self.loop.run_in_executor(None, self._dumper)
         log.info(f"database {self.name} successfully dumped")
 
+    async def load_later(self):
+        with await self.lock:
+            await self.loop.run_in_executor(None, self._loader, self.file_name, self.object_hook)
+            log.info(f"database {self.name} successfully loaded later")
+
     @property
-    def json_name(self):
-        return self.name + (".json" * (not self.name.endswith(".json")))
+    def file_name(self):
+        return self.name + (self._ext * (not self.name.endswith(self._ext)))
 
     @classmethod
     def from_json(cls, filename, path=DB_PATH, default_factory=None, **kwargs):
-        data = _load_json(path + filename, kwargs.get('object_hook'))
-        return cls(filename, default_factory, mapping=data, **kwargs)
+        return cls(path + filename, default_factory, **kwargs)
 
     @classmethod
     def from_gzip(cls, filename, path=DB_PATH, default_factory=None, **kwargs):
-        with gzip.GzipFile(path + filename, 'r') as infile:
-            data = json.load(infile)
-        return cls(filename, default_factory, mapping=data, use_gzip=True, **kwargs)
+        return cls(path + filename, default_factory, use_gzip=True, **kwargs)
 
 def check_dir(dir_):
     os.makedirs(dir_, exist_ok=True)
