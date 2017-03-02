@@ -1,3 +1,4 @@
+import itertools
 from discord.ext import commands
 
 class DelimPaginator(commands.Paginator):
@@ -35,15 +36,15 @@ class DelimPaginator(commands.Paginator):
     def total_size(self):
         return sum(map(len, self))
 
-async def iterable_say(delim, iterable, bot, **kwargs):
+async def iterable_say(iterable, delim='\n', *, ctx, **kwargs):
     for page in DelimPaginator.from_iterable(map(str, iterable), join_delim=delim, **kwargs):
-        await bot.say(page)
+        await ctx.send(page)
 
-async def iterable_limit_say(iterable, delim='\n', *, bot, ctx, limit=1000, **kwargs):
+async def iterable_limit_say(iterable, delim='\n', *, ctx, limit=1000, limit_pages=3, **kwargs):
     paginator = DelimPaginator.from_iterable(map(str, iterable), join_delim=delim, **kwargs)
-    destination = ctx.message.channel
+    destination = ctx.channel
     if paginator.total_size >= limit:
-        await bot.reply("The message has been DMed to you because of the length")
-        destination = ctx.message.author
-    for page in paginator:
-        await bot.send_message(destination, page)
+        await destination.send(f"{ctx.author.mention}, the message has been DMed to you because of the length")
+        destination = ctx.author
+    for _, page in itertools.takewhile(lambda pair: pair[0] != limit_pages, enumerate(paginator)):
+        await destination.send(page)

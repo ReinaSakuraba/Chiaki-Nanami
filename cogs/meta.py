@@ -5,7 +5,9 @@ import json
 import sys
 
 from collections import defaultdict, deque
+from contextlib import redirect_stdout
 from discord.ext import commands
+from io import StringIO
 from operator import attrgetter, itemgetter
 
 from .utils import converter
@@ -24,7 +26,8 @@ def _icon_embed(idable, url, name):
     return embed.set_image(url=url) if url else embed
 
 async def _mee6_stats(session, member):
-    async with session.get(f"https://mee6.xyz/levels/{member.server.id}?json=1&limit=-1") as r:
+    async with session.get(f"https://mee6.xyz/levels/{member.guild.id}?json=1&limit=-1") as r:
+        print(r.status)
         levels = await r.json()
     for idx, user_stats in enumerate(levels['players'], start=1):
         if user_stats.get("id") == member.id:
@@ -33,10 +36,10 @@ async def _mee6_stats(session, member):
     raise ResultsNotFound(f"{member} does not have a mee6 level. :frowning:")
 
 async def _user_embed(member):
-    avatar_url = member.avatar_url or member.default_avatar_url
+    avatar_url = member.avatar_url_as(format=None)
     playing = f"Playing **{member.game}**"
     roles = sorted(member.roles[1:], reverse=True)
-    server = member.server
+    server = member.guild
     colour = await user_color(member)
     return  (discord.Embed(colour=colour, description=playing)
             .set_thumbnail(url=avatar_url)
@@ -64,11 +67,11 @@ class Meta:
         # Pray it closes
         self.bot.loop.create_task(self.session.close())
 
-    @commands.command(pass_context=True, no_pm=True)
+    @commands.command(no_pm=True)
     async def uinfo(self, ctx, *, user : discord.Member=None):
         """Gets some basic userful info because why not"""
         if user is None:
-            user = ctx.message.author
+            user = ctx.author
         fmt = ("    Name: {0.name}\n"
                "      ID: {0.id}\n"
                " Hashtag: {0.discriminator}\n"
@@ -79,38 +82,39 @@ class Meta:
                "  Status: {0.status}\n"
                )
         roles = str_join(', ', reversed(user.roles[1:]))
-        await self.bot.say("```\n{}\n```".format(fmt.format(user, roles)))
+        await ctx.send("```\n{}\n```".format(fmt.format(user, roles)))
 
-    @commands.group(pass_context=True)
+    @commands.group()
     async def info(self, ctx):
         """Super-command for all info-related commands"""
         if ctx.invoked_subcommand is None:
             subcommands = '\n'.join(ctx.command.commands.keys())
-            await self.bot.say(f"```\nAvailable info commands:\n{subcommands}```")
+            await ctx.send(f"```\nAvailable info commands:\n{subcommands}```")
 
-    @info.command(pass_context=True, no_pm=True)
+    @info.command(no_pm=True)
     async def user(self, ctx, *, member: converter.ApproximateUser=None):
         """Gets some userful info because why not"""
         await ctx.invoke(self.userinfo, member=member)
 
-    @info.command(pass_context=True, no_pm=True)
+    @info.command(no_pm=True)
     async def mee6(self, ctx, *, member: converter.ApproximateUser=None):
         await ctx.invoke(self.rank, member=member)
 
-    @commands.command(pass_context=True, no_pm=True)
+    @commands.command(no_pm=True)
     async def rank(self, ctx, *, member: converter.ApproximateUser=None):
         """Gets mee6 info... if it exists"""
-        message = await self.bot.say("Fetching data, please wait...")
+        message = await ctx.send("Fetching data, please wait...")
         if member is None:
-            member = ctx.message.author
-        avatar_url = member.avatar_url or member.default_avatar_url
+            member = ctx.author
+        avatar_url = member.avatar_url_as(format=None)
 
-        try:
-            stats = await _mee6_stats(self.session, member)
-        except json.JSONDecodeError:
-            raise ResultsNotFound("No stats found. You don't have mee6 in this server... I think.")
-        finally:
-            await self.bot.delete_message(message)
+        with ctx.typing():
+            try:
+                stats = await _mee6_stats(self.session, member)
+            except json.JSONDecodeError:
+                return await ctx.send("No stats found. You don't have mee6 in this server... I think.")
+            finally:
+                await message.delete()
 
         description = f"Currently sitting at {stats['rank']}!"
         xp_progress = "{xp}/{lvl_xp} ({xp_percent}%)".format(**stats)
@@ -127,11 +131,11 @@ class Meta:
                      .set_footer(text=f"ID: {member.id}")
                      )
 
-        await self.bot.say(embed=mee6_embed)
+        await ctx.send(embed=mee6_embed)
 
-    @info.command(pass_context=True)
+    @info.command()
     async def role(self, ctx, *, role: converter.ApproximateRole):
-        server = ctx.message.server
+        server = ctx.guild
         bool_as_answer = lambda b: "YNeos"[not b::2]
         prefix = self.bot.str_prefix(self, server)
 
@@ -164,9 +168,9 @@ class Meta:
                      .set_footer(text=footer)
                      )
 
-        await self.bot.say(embed=role_embed)
+        await ctx.send(embed=role_embed)
 
-    async def _default_server_info(self, server):
+    async def _default_server_info(self, ctx, server):
         channel_count = len(server.channels)
         member_count = len(server.members)
         is_large = "(Very large!)" * bool(server.large)
@@ -194,42 +198,42 @@ class Meta:
         if icon:
             server_embed.set_thumbnail(url=icon)
             server_embed.colour = await url_color(icon)
-        await self.bot.say(embed=server_embed)
+        await ctx.send(embed=server_embed)
 
-    @info.group(pass_context=True, no_pm=True)
+    @info.group(no_pm=True, aliases=['guild'], invoke_without_command=True)
     async def server(self, ctx):
-        if ctx.subcommand_passed == "server":
-            await self._default_server_info(ctx.message.server)
+        if ctx.subcommand_passed in ['server', 'guild']:
+            await self._default_server_info(ctx, ctx.guild)
         elif ctx.invoked_subcommand is None:
             subcommands = '\n'.join(ctx.command.commands)
-            await self.bot.say(f"```\nAvailable server commands:\n{subcommands}```")
+            await ctx.send(f"```\nAvailable server commands:\n{subcommands}```")
 
-    @server.command(pass_context=True)
+    @server.command()
     async def channels(self, ctx):
-        await iterable_say(', ', ctx.message.server.channels, self.bot)
+        await iterable_say(ctx.guild.channels, ', ', ctx=ctx)
 
-    @server.command(pass_context=True)
+    @server.command()
     async def members(self, ctx):
-        members = sorted(ctx.message.server.members, key=attrgetter("top_role"), reverse=True)
-        await iterable_say(', ', members, self.bot, prefix='```css\n')
+        members = sorted(ctx.guild.members, key=attrgetter("top_role"), reverse=True)
+        await iterable_say(members, ', ', ctx=ctx, prefix='```css\n')
 
-    @server.command(pass_context=True)
+    @server.command()
     async def icon(self, ctx):
-        server = ctx.message.server
-        await self.bot.say(embed=_icon_embed(server, server.icon_url, "icon"))
+        server = ctx.guild
+        await ctx.send(embed=_icon_embed(server, server.icon_url, "icon"))
 
-    @server.command(pass_context=True)
+    @server.command()
     async def roles(self, ctx):
-        await iterable_say(', ', ctx.message.server.role_hierarchy, self.bot)
+        await iterable_say(ctx.guild.role_hierarchy, ', ', ctx=ctx)
 
-    @commands.command(pass_context=True, no_pm=True)
+    @commands.command(no_pm=True)
     async def userinfo(self, ctx, *, member : discord.Member=None):
         """Gets some userful info because why not"""
         if member is None:
-            member = ctx.message.author
-        await self.bot.say(embed=await _user_embed(member))
+            member = ctx.author
+        await ctx.send(embed=await _user_embed(member))
 
-    @commands.command(name="you", pass_context=True)
+    @commands.command(name="you", )
     async def botinfo(self, ctx):
         bot = self.bot
         user = bot.user
@@ -254,19 +258,19 @@ class Meta:
             bot_embed.set_thumbnail(url=app_icon_url)
         for name, value in sorted(bot.counter.items()):
             bot_embed.add_field(name=name, value=value)
-        await self.bot.say(embed=bot_embed)
+        await ctx.send(embed=bot_embed)
 
     async def _source(self, ctx, thing):
         lines = inspect.getsourcelines(thing)[0]
-        await iterable_limit_say(lines, '', bot=self.bot, ctx=ctx, prefix='```py\n', escape_code=True)
+        await iterable_limit_say(lines, '', ctx=ctx, prefix='```py\n', escape_code=True)
 
-    @commands.command(pass_context=True)
+    @commands.command()
     async def source(self, ctx, *, cmd: RecursiveBotCommandConverter):
         """Displays the source code for a particular command"""
         # TODO: use GitHub
         await self._source(ctx, cmd[1].callback)
 
-    @commands.command(pass_context=True)
+    @commands.command()
     async def inrole(self, ctx, *roles : discord.Role):
         """
         Checks which members have a particular role(s)
@@ -275,12 +279,12 @@ class Meta:
         If you don't want to mention a role, please put it in quotes,
         especially if there's a space in the role name
         """
-        has_roles = [mem for mem in ctx.message.server.members
+        has_roles = [mem for mem in ctx.guild.members
                      if any(role in mem.roles for role in roles)]
         fmt = f"Here are the members who have the {str_join(', ', roles)} roles"
-        await self.bot.say(fmt + f"```css\n{str_join(', ', has_roles)}```")
+        await ctx.send(fmt + f"```css\n{str_join(', ', has_roles)}```")
 
-    @commands.command(pass_context=True)
+    @commands.command()
     async def permroles(self, ctx, *, perm: str):
         """
         Checks which roles have a particular permission
@@ -288,16 +292,16 @@ class Meta:
         The permission is case insensitive.
         """
         perm_attr = perm.replace(' ', '_').lower()
-        roles_that_have_perms = [role for role in ctx.message.server.roles
+        roles_that_have_perms = [role for role in ctx.guild.roles
                                  if getattr(role.permissions, perm_attr)]
         fmt = f"Here are the roles who have the {perm.title()} perm."
-        await self.bot.say(fmt + f"```css\n{str_join(', ', roles_that_have_perms)}```")
+        await ctx.send(fmt + f"```css\n{str_join(', ', roles_that_have_perms)}```")
 
-    @commands.command(pass_context=True, aliases=['av'])
+    @commands.command(aliases=['av'])
     async def avatar(self, ctx, *, user: converter.ApproximateUser=None):
         if user is None:
-            user = ctx.message.author
-        avatar_url = user.avatar_url or user.default_avatar_url
+            user = ctx.author
+        avatar_url = user.avatar_url_as(format=None)
         colour = await user_color(user)
         nick = getattr(user, 'nick', None)
         description = f"*(Also known as \"{nick}\")*" * bool(nick)
@@ -308,18 +312,30 @@ class Meta:
                    .set_image(url=avatar_url)
                    .set_footer(text=f"ID: {user.id}")
                    )
-        await self.bot.say(embed=av_embed)
+        await ctx.send(embed=av_embed)
 
-    @commands.command(pass_context=True)
+    @commands.command()
     async def cmdhistory(self, ctx):
         """Displays up to the last 50 commands you've input"""
-        history = self.cmd_history[ctx.message.author]
+        history = self.cmd_history[ctx.author]
         msg = (f"Your last {len(history)} commands:\n```\n{', '.join(history)}```"
                if history else "You have not input any commands...")
-        await self.bot.say(msg)
+        await ctx.send(msg)
 
     async def on_command(self, cmd, ctx):
-        self.cmd_history[ctx.message.author].append(ctx.message.content)
+        self.cmd_history[ctx.author].append(ctx.message.content)
+
+    @commands.command(usage=['pow', 'os.system'], aliases=['pyh'])
+    async def pyhelp(self, ctx, thing):
+        """Gives you the help string for a builtin python function.
+        (or any sort of function, for that matter)
+        """
+        # Someone told me a "lib" already does this. Is that true? If so, what lib is it?
+        with StringIO() as output:
+            with redirect_stdout(output):
+                help(thing)
+            help_lines = output.getvalue().splitlines()
+            await iterable_limit_say(help_lines, ctx=ctx)
 
 def setup(bot):
     bot.add_cog(Meta(bot))
