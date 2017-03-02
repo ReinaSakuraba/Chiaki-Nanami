@@ -7,7 +7,7 @@ import traceback
 from discord.ext import commands
 
 from .utils import checks
-from .utils.misc import code_msg
+from .utils.misc import code_msg, temp_attr
 
 class Owner:
     """Owner-only commands"""
@@ -15,31 +15,32 @@ class Owner:
     def __init__(self, bot):
         self.bot = bot
 
-    async def _load(self, ext):
+    def __local_check(self, ctx):
+        return checks.is_owner_predicate(ctx.message)
+
+    async def _load(self, ctx, ext):
         try:
             self.bot.load_extension(ext)
         except Exception as e:
             print(f'Failed to load extension {ext}\n')
             traceback.print_exc()
-            await self.bot.say(code_msg(traceback.format_exc(), 'py'))
+            await ctx.send(code_msg(traceback.format_exc(), 'py'))
         else:
-            await self.bot.say(code_msg(f'load {ext} successful'))
+            await ctx.send(code_msg(f'load {ext} successful'))
 
-    @commands.command(pass_context=True, hidden=True)
-    @checks.is_owner()
+    @commands.command(hidden=True)
     async def debug(self, ctx, *, code: str):
         """Evaluates code."""
         code = code.strip('` ')
-        python = '```py\n{}\n```'
-        result = None
 
         env = {
             'bot': self.bot,
             'ctx': ctx,
             'message': ctx.message,
-            'server': ctx.message.server,
-            'channel': ctx.message.channel,
-            'author': ctx.message.author,
+            'guild': ctx.guild,
+            'server': ctx.guild,
+            'channel': ctx.channel,
+            'author': ctx.author,
             **globals()
         }
 
@@ -49,68 +50,76 @@ class Owner:
                 result = await result
         except Exception as e:
             exc_fmt = "{0.__class__.__name__}: {0}"
-            return await self.bot.say(python.format(traceback.format_exc()))
+            await ctx.send(code_msg(traceback.format_exc(), 'py'))
+        else:
+            await ctx.send(code_msg(result, 'py'))
 
-        await self.bot.say(python.format(result))
-
-    @commands.command(hidden=True)
-    @checks.is_owner()
-    async def editbot(self, *args: str):
+    @commands.command(hidden=True, enabled=False)
+    async def editbot(self, ctx, *args: str):
+        """Edits the bot's profile"""
         parser = argparse.ArgumentParser(description="Edit me in cool ways")
-        bot = self.bot
-        args = parser.parse_args(args)
+        bot_user = self.bot.user
+        parser.add_argument('--avatar', '--av', nargs='?', default=)
+        parser.add_argument('--name', '-n', nargs='?', default=bot.user.name)
+        try:
+            namespace = parser.parse_args(args)
+        except (Exception, SystemExit) as e:
+            return await ctx.send(f"Failed to parse args. Exception:\n```py\n{type(e).__name__}: {e}```")
+
+        if args.avatar:
+            with open(args.avatar, 'rb') as f:
+                namespace['avatar'] = f.read()
+        else:
+            namespace['avatar'] = bot_user.avatar
+
+        user_edit_namespace = {k: namespace[k] for k in ['avatar', 'name']}
+        try:
+            await bot.user.edit(**user_edit_namespace)
+        except Exception as e:
+            pass
+        else:
+            await ctx.send(":ok_hand:")
 
     @commands.command(hidden=True)
-    @checks.is_owner()
-    async def botav(self, *, new_avatar: str):
-        with open(new_avatar, 'rb') as f:
-            await self.bot.edit_profile(avatar=f.read())
-
-    @commands.command(hidden=True)
-    @checks.is_owner()
-    async def reload(self, cog: str):
+    async def reload(self, ctx, cog: str):
         self.bot.unload_extension(cog)
-        await self._load(cog)
+        await self._load(ctx, cog)
 
     @commands.command(hidden=True)
-    @checks.is_owner()
-    async def load(self, cog: str):
-        await self._load(cog)
+    async def load(self, ctx, cog: str):
+        await self._load(ctx, cog)
 
     @commands.command(hidden=True)
-    @checks.is_owner()
-    async def unload(self, cog: str):
+    async def unload(self, ctx, cog: str):
         self.bot.unload_extension(cog)
+        await ctx.send(f'```Unloaded {cog}```')
 
-    @commands.command(hidden=True, aliases=['kys'])
-    @checks.is_owner()
+    @commands.command(pass_context=False,hidden=True, aliases=['kys'])
     async def die(self):
         raise KeyboardInterrupt("Chiaki shut down from command")
 
     @commands.command(hidden=True)
-    @checks.is_owner()
-    async def say(self, *, msg):
+    async def say(self, ctx, *, msg):
         # make sure commands for other bots (or even from itself) can't be executed
-        await self.bot.say(f"\u200b{msg}")
+        await ctx.send(f"\u200b{msg}")
 
     @commands.command(hidden=True)
-    @checks.is_owner()
     async def announce(self, *, msg):
         owner = (await self.bot.application_info()).owner
-        for server in bot.servers:
-            await self.bot.send_message(server, f"@everyone **Announcement from {owner}\n\"{msg}\"")
-            
-    @commands.command(name="sendmessage", hidden=True)
-    @checks.is_owner()
-    async def send_message(self, channel: discord.Channel, *, msg):
-        owner = (await self.bot.application_info()).owner
-        await self.bot.send_message(channel, f"Message from {owner}:\n{msg}")
-        await self.bot.say(f"Successfully sent message in {channel}: {msg}")
-        
-    @commands.command(name='testcommands', pass_context=True, aliases=['tcmd'])
-    async def test_commands(self, ctx):
-        message = copy.copy(ctx.message)
+        for guild in bot.guilds:
+            await guild.default_channel.send(server, f"@everyone **Announcement from {owner}\n\"{msg}\"")
 
+    @commands.command(name="sendmessage", hidden=True)
+    async def send_message(self, channel: discord.TextChannel, *, msg):
+        owner = (await self.bot.application_info()).owner
+        await channel.send(f"Message from {owner}:\n{msg}")
+        await ctx.send(f"Successfully sent message in {channel}: {msg}")
+
+    @commands.command(hidden=True)
+    async def do(self, ctx, num: int, *, command):
+        with temp_attr(ctx.message, 'content', command):
+            for i in range(num):
+                await self.bot.process_commands(ctx.message)
 
 def setup(bot):
     bot.add_cog(Owner(bot), hidden=True)
