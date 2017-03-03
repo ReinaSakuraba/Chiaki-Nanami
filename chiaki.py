@@ -1,5 +1,4 @@
 import asyncio
-import datetime
 import discord
 import json
 import logging
@@ -9,74 +8,56 @@ import sys
 import traceback
 
 from chiakibot import chiaki_bot
-from cogs.utils import checks, converter, errors
-from cogs.utils.aitertools import aiterable, acount
-from cogs.utils.compat import user_colour
-from cogs.utils.misc import nice_time
 from discord.ext import commands
 
 logger = logging.getLogger('discord')
 logger.setLevel(logging.INFO)
+logging.basicConfig(level=logging.INFO)
+
 try:
     handler = logging.FileHandler(filename='./logs/discord.log', encoding='utf-8', mode='w')
 except FileNotFoundError:
     os.makedirs("logs", exist_ok=True)
     handler = logging.FileHandler(filename='./logs/discord.log', encoding='utf-8', mode='w')
-
-
 handler.setFormatter(logging.Formatter('%(asctime)s/%(levelname)s:%(name)s: %(message)s'))
 logger.addHandler(handler)
-logging.basicConfig(level=logging.INFO)
 
-bot = chiaki_bot()
+try:
+    with open('data/config.json') as f:
+        config = json.load(f)
+except FileNotFoundError:
+    raise RuntimeError("You MUST have a config JSON file!")
+
+bot = chiaki_bot(config)
 
 initial_extensions = (
-    'cogs.admin',
-    'cogs.afk',
-#    'cogs.cleverbot',
-    'cogs.customcommands',
+#   'cogs.admin',
+#   'cogs.afk',
+#   'cogs.cleverbot',
+#   'cogs.customcommands',
     'cogs.halp',
     'cogs.math',
-    'cogs.meta',
-    'cogs.moderator',
-    'cogs.music',
+#   'cogs.meta',
+#   'cogs.moderator',
+#   'cogs.music',
 #   'cogs.newpoints',
-#    'cogs.otherstuff',
+#   'cogs.otherstuff',
     'cogs.owner',
-    'cogs.permissions',
-    'cogs.quotes',
+#   'cogs.permissions',
+#   'cogs.quotes',
     'cogs.rng',
-    'cogs.searches',
-    'cogs.diepio.partylink',
+#   'cogs.searches',
+#   'cogs.diepio.partylink',
     'cogs.diepio.wr',
 #   'cogs.games.eventhost',
 #   'cogs.games.fizzbuzz',
 #   'cogs.games.hangman',
-    'cogs.games.math',
-    'cogs.games.rps',
-    'cogs.games.tictactoe',
-    'cogs.games.trivia',
-#    'cogs.games.unscramble',
+#   'cogs.games.math',
+#   'cogs.games.rps',
+#   'cogs.games.tictactoe',
+#   'cogs.games.trivia',
+#   'cogs.games.unscramble',
 )
-def log_embed(msg):
-    author, channel, server = msg.author, msg.channel, msg.server
-    user_name = "{0} | {0.id}".format(author)
-    avatar = author.avatar_url or author.default_avatar_url
-    id_fmt = '{0}\n({0.id})'
-    return (discord.Embed(timestamp=msg.timestamp)
-            .set_author(name=user_name, icon_url=avatar)
-            .set_thumbnail(url=avatar)
-            .add_field(name="Channel", value=id_fmt.format(channel))
-            .add_field(name="Server", value=id_fmt.format(server))
-            .add_field(name="Input", value=msg.content, inline=False)
-            )
-
-async def log(msg):
-    if not config["log"]: return
-    embed = log_embed(msg)
-    embed.colour = await user_colour(msg.author)
-    async for log_channel in aiterable(config["logging_channels"]):
-        await bot.send_message(bot.get_channel(log_channel), embed=embed)
 
 #------------------EVENTS----------------
 @bot.event
@@ -85,68 +66,44 @@ async def on_ready():
     print(bot.user.name)
     print(bot.user.id)
     print('------')
+    if bot.official_guild is None:
+        warnings.warn("Your bot is not in the server you've set for 'official_guild' in config.json. "
+                      "Either your ID is isn't an integer, or you haven't invited your bot to that server. "
+                     f"Use this link to invite it: {self.oauth_url}")
     bot.loop.create_task(bot.change_game())
-    bot.loop.create_task(bot.dump_db_cycle())
-    bot.loop.create_task(bot.update_official_invite(config['official_server']))
-    if not hasattr(bot, 'start_time'):
-        bot.start_time = datetime.datetime.utcnow()
-
-@bot.event
-async def on_command(cmd, ctx):
-    message = ctx.message
-    owner = (await bot.application_info()).owner
-    if message.author == owner:
-        return
-    bot.counter["Commands Executed"] += 1
-    if cmd.hidden:
-        return
-    if message.channel.is_private:
-        bot.counter["Private Commands"] += 1
-        return
-    await log(message)
-
-@bot.event
-async def on_command_completion(cmd, ctx):
-    bot.counter["Commands Successful"] += 1
+    bot.loop.create_task(bot.update_official_invite())
 
 @bot.event
 async def on_command_error(error, ctx):
-    bot.counter["Commands Failed"] += 1
     if isinstance(error, commands.NoPrivateMessage):
-        await bot.send_message(ctx.message.author, 'This command cannot be used in private messages.')
+        await ctx.send('This command cannot be used in private messages.')
     elif isinstance(error, commands.CommandInvokeError):
         print(f'In {ctx.command.qualified_name}:', file=sys.stderr)
         traceback.print_tb(error.original.__traceback__)
         print('{0.__class__.__name__}: {0}'.format(error), file=sys.stderr)
     elif isinstance(error, commands.MissingRequiredArgument):
-        await bot.send_message(ctx.message.channel,
-                                    f'This command ({ctx.command.name}) needs another Parameter\n')
-    elif isinstance(error, (commands.UserInputError, errors.PrivateMessagesOnly)):
-        await bot.send_message(ctx.message.channel, error)
-        if error.__cause__:
-            traceback.print_tb(error.__cause__.__traceback__)
-        print(error.__cause__, "\n--------------")
-
+        await ctx.send(f'This command ({ctx.command}) needs another Parameter\n')
     traceback.print_tb(error.__traceback__)
+    print(f'{type(error).__name__}: {error}')
+    cause =  error.__cause__
+    if cause:
+        traceback.print_tb(cause.__traceback__)
+        print(f'{type(cause).__name__}: {cause}')
 
-@bot.event
-async def on_message(message):
-    bot.counter["Messages seen"] += 1
-    await bot.process_commands(message)
 
 #-----------------MISC COMMANDS--------------
 
 @bot.command(aliases=['longurl'])
-async def urlex(*, url: str):
+async def urlex(ctx, *, url: str):
     """Expands a shortened url into it's final form"""
     async with bot.http.session.head(url, allow_redirects=True) as resp:
-        await bot.say(resp.url)
+        await ctx.send(resp.url)
 
-@bot.command(pass_context=True)
-async def slap(ctx, target: converter.ApproximateUser=None):
+@bot.command()
+async def slap(ctx, target: discord.User=None):
     """Slaps a user"""
     # This can be refactored somehow...
-    slapper = ctx.message.author
+    slapper = ctx.author
     if target is None:
         msg1 = f"{slapper.mention} is just flailing their arms around, I think."
         slaps = ["http://media.tumblr.com/tumblr_lw6rfoOq481qln7el.gif",
@@ -171,18 +128,13 @@ async def slap(ctx, target: converter.ApproximateUser=None):
         msg2 = f"I wonder what {target} did to deserve such violence..."
 
     slap_image = random.choice(slaps)
-    await bot.say(msg1 + f"\n{slap_image}")
+    await ctx.send(msg1 + f"\n{slap_image}")
     await asyncio.sleep(random.uniform(0.5, 2.3))
-    await bot.say(msg2)
+    await ctx.send(msg2)
 
 #--------------MAIN---------------
 
-def load_config():
-    with open('data/config.json') as f:
-        return json.load(f)
-
 def main():
-    global config
     for ext in initial_extensions:
         try:
             bot.load_extension(ext)
@@ -190,10 +142,14 @@ def main():
             print(f'Failed to load extension {ext}\n')
             traceback.print_exc()
 
-    config = load_config()
-    token = config.get("token") or sys.argv[1]
+    try:
+        token = config.pop('token') or sys.argv[1]
+    except IndexError:
+        raise RuntimeError("A token is required")
+
     bot.run(token)
-    
+    return bot._config['restart_code'] * bot.reset_requested
+
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

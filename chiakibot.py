@@ -10,7 +10,6 @@ import re
 from collections.abc import Sequence
 from datetime import datetime
 from discord.ext import commands
-from operator import itemgetter
 
 from cogs.utils.database import Database
 from cogs.utils.misc import cycle_shuffle, duration_units, temp_attr, truncate
@@ -24,27 +23,28 @@ except FileNotFoundError:
 handler.setFormatter(logging.Formatter('%(asctime)s/%(levelname)s:%(name)s: %(message)s'))
 log.addHandler(handler)
 
-# You are free to change this if you want.
-DEFAULT_CMD_PREFIX = '->'
-description = '''The gamer, for gamers (probably not a ripoff of Nadeko)
-
-Hey hey, it's Chiaki Nanami... I think.'''
-MAX_FORMATTER_WIDTH = 90
 default_bot_help = """\
 *{0.description}*
 
 To invite me to your server, use `->invite`, or just use this link:
 {0.invite_url}
 
-If you need help with something, or there's some weird issue with me, which will usually happen
-(since the owners don't tend to test me a lot), use this link to join the **Official** Chiaki Nanami Server:
-{0.official_server_invite}
-
 *Use `->modules` for all the modules with commands.
 Or `->commands "module"` for a list of commands for a particular module.*
 """
-EXIT_CODE = 69
 
+_default_config = {
+    'colour': "0xFFDDDD",
+
+    'default_command_prefix': '->',
+    'default_help': default_bot_help,
+
+    'restart_code': 69,
+    'log': False,
+}
+del default_bot_help
+
+MAX_FORMATTER_WIDTH = 90
 # small hack to make command display all their possible names
 commands.Command.all_names = property(lambda self: [self.name, *self.aliases])
 
@@ -86,8 +86,8 @@ class ChiakiFormatter(commands.HelpFormatter):
 
     async def bot_help(self):
         bot, func = self.context.bot, self.apply_function
-        result = (await discord.utils.maybe_coroutine(default_bot_help, bot) if callable(default_bot_help)
-                  else default_bot_help.format(bot))
+        default_help = bot._config['default_help']
+        result = default_help.format(bot, bot=bot))
         return func(result)
 
     async def cog_embed(self):
@@ -159,6 +159,11 @@ class ChiakiBot(commands.Bot):
         self.custom_prefixes = Database.from_json('customprefixes.json', default_factory=dict)
         self.databases = [self.persistent_counter, self.custom_prefixes, ]
         self.cog_aliases = {}
+        self._config = collections.ChainMap(options.get('config', {}), _default_config)
+
+        self.reset_requested = False
+        if self._config['restart_code'] == 0:
+            raise RuntimeError("restart_code cannot be zero")
 
     async def logout(self):
         self.counter.update(self.persistent_counter)
@@ -235,26 +240,10 @@ class ChiakiBot(commands.Bot):
 
     # Just some looping functions
     async def change_game(self):
-        GAME_CHOICES = cycle_shuffle([
-        'Preparing for the rewrite!',
-        # 'Gala Omega',
-        # 'Dangan Ronpa: Trigger Happy Havoc',
-        # 'Super Dangan Ronpa 2',
-        # 'NDRV3',
-        # 'with Hajime Hinata',
-        # 'with hope',
-        # 'hope',
-        # 'without despair',
-        # 'with Nadeko',
-        # 'with Usami',
-
-        # # Useful stuff
-        # '->help',
-        # '->invite',
-        ])
+        game_choices = cycle_shuffle(self._config['rotating_games'])
         await self.wait_until_ready()
         while not self.is_closed():
-            name = next(GAME_CHOICES)
+            name = next(game_choices)
             await self.change_presence(game=discord.Game(name=name))
             await asyncio.sleep(random.uniform(0.5, 10) * 60)
 
@@ -264,11 +253,10 @@ class ChiakiBot(commands.Bot):
             await self.dump_databases()
             print('all databases successfully dumped')
 
-    async def update_official_invite(self, official_guild_id):
-        official_guild = self.get_guild(official_guild_id)
+    async def update_official_invite(self):
         await self.wait_until_ready()
         while not self.is_closed():
-            self.invites_by_bot = [inv for inv in await official_guild.invites() if inv.inviter == self.user]
+            self.invites_by_bot = [inv for inv in await self.official_guild.invites() if inv.inviter == self.user]
             if not self.invites_by_bot:
                 self.invites_by_bot.append(await official_guild.create_invite())
 
@@ -278,7 +266,7 @@ class ChiakiBot(commands.Bot):
         cog = cmd.instance if isinstance(cmd, commands.Command) else cmd
         cog_name = type(cog).__name__ if cog else None
         cog_references = self.custom_prefixes.get(guild)
-        default_prefix = lambda cog: getattr(cog, '__prefix__', None) or DEFAULT_CMD_PREFIX
+        default_prefix = lambda cog: getattr(cog, '__prefix__', None) or self.default_prefix
         if cog_references:
             if cog_references.get("use_default"):
                 return cog_references.get("default", default_prefix(cog))
@@ -289,9 +277,41 @@ class ChiakiBot(commands.Bot):
         prefix = self.cog_prefix(cmd, guild)
         return prefix if isinstance(prefix, str) else ', '.join(prefix)
 
+    # ------ Config-related properties ------
+
     @discord.utils.cached_property
     def colour(self):
-        return discord.Colour(0xFFDDDD)
+        colour_converter = commands.ColourConverter()
+        colour_converter.prepare(None, self._config['colour'])
+        return colour_converter.convert()
+
+    @discord.utils.cached_property
+    def permissions(self):
+        permissions_dict = self._config['permissions']
+        chiaki_permissions = discord.Permissions.none()
+        chiaki_permissions.update(**permissions_dict)
+        return chiaki_permissions
+
+    @discord.utils.cached_property
+    def oauth_url(self):
+        return discord.utils.oauth_url(self.user.id, self.permissions)
+
+    @property
+    def default_prefix(self):
+        return self._config['default_command_prefix']
+
+    @property
+    def official_guild(self):
+        id = self._config.get('official_guild') or self._config['official_server']
+        return self.get_guild(id)
+    official_server = official_guild
+
+    @property
+    def official_guild_invite(self):
+        return random.choice(self.invites_by_bot)
+    official_server_invite = official_guild_invite
+
+    # ------ misc. properties ------
 
     @property
     def uptime(self):
@@ -301,22 +321,9 @@ class ChiakiBot(commands.Bot):
     def str_uptime(self):
         return duration_units(self.uptime.total_seconds())
 
-    @discord.utils.cached_property
-    def invite_url(self):
-        chiaki_permissions = discord.Permissions(2146823295)
-        return discord.utils.oauth_url(self.user.id, chiaki_permissions)
-
-    @property
-    def official_server_invite(self):
-        return random.choice(self.invites_by_bot)
-
-    @property
-    def default_prefix(self):
-        return DEFAULT_CMD_PREFIX
-
 def _find_prefix_by_cog(bot, message):
     custom_prefixes = bot.custom_prefixes.get(message.guild, {})
-    default_prefix = custom_prefixes.get("default", DEFAULT_CMD_PREFIX)
+    default_prefix = custom_prefixes.get("default", bot.default_prefix)
 
     if not message.content:
         return default_prefix
@@ -337,9 +344,10 @@ def _find_prefix_by_cog(bot, message):
     return bot.cog_prefix(cmd, message.guild)
 
 # main bot
-def chiaki_bot():
+def chiaki_bot(config):
     return ChiakiBot(command_prefix=_find_prefix_by_cog,
                      formatter=ChiakiFormatter(width=MAX_FORMATTER_WIDTH, show_check_failure=True),
-                     description=description, pm_help=None,
-                     command_not_found="I don't have a command called {}, I think."
+                     description=config.pop('description'), pm_help=None,
+                     command_not_found="I don't have a command called {}, I think.",
+                     config=config
                     )
