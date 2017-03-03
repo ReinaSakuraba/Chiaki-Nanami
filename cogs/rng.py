@@ -89,13 +89,11 @@ class RNG:
 
         msg = await ctx.send(f"{ctx.author.mention}\n:question:: **{question}**\n")
         await asyncio.sleep(random.uniform(0.5, 1.5))
-        afmt =  "{}\n:8ball:: {}"
         with ctx.typing():
-            await msg.edit(afmt.format(msg.content, '... :thinking:'))
+            await msg.edit(content=f"{msg.content}\n:8ball:: ... :thinking:")
             await asyncio.sleep(random.uniform(0.75, 1.25) * 2)
-
-        answer = random.choice(BALL_ANSWERS)
-        await msg.edit(afmt.format(msg.content, f"***__{answer}.__***"))
+            answer = random.choice(BALL_ANSWERS)
+            await msg.edit(content=msg.content.replace(':thinking:', f'***__{answer}.__***'))
 
     @commands.command(usage='Nadeko;Salt;PvPCraft;mee6;Chiaki Nanami')
     async def choose(self, ctx, *, choices: str):
