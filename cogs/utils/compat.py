@@ -85,7 +85,9 @@ async def _dominant_color_from_url(url, tmp_file='tmp.jpg'):
 # Let's hope Danny makes an extension for this
 def _color_from_rgb(r, g, b):
     rgb = f"#{r:02x}{g:02x}{b:02x}"
-    return commands.ColourConverter(None, rgb).convert()
+    colour_converter = commands.ColourConverter()
+    colour_converter.prepare(None, rgb)
+    return colour_converter.convert()
 
 async def url_color(url):
     return _color_from_rgb(*(await _dominant_color_from_url(url)))
