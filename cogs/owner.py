@@ -59,7 +59,7 @@ class Owner:
         """Edits the bot's profile"""
         parser = argparse.ArgumentParser(description="Edit me in cool ways")
         bot_user = self.bot.user
-        parser.add_argument('--avatar', '--av', nargs='?', default=)
+        parser.add_argument('--avatar', '--av', nargs='?', default=None)
         parser.add_argument('--name', '-n', nargs='?', default=bot.user.name)
         try:
             namespace = parser.parse_args(args)
@@ -74,7 +74,7 @@ class Owner:
 
         user_edit_namespace = {k: namespace[k] for k in ['avatar', 'name']}
         try:
-            await bot.user.edit(**user_edit_namespace)
+            await bot_user.edit(**user_edit_namespace)
         except Exception as e:
             pass
         else:
@@ -94,9 +94,14 @@ class Owner:
         self.bot.unload_extension(cog)
         await ctx.send(f'```Unloaded {cog}```')
 
-    @commands.command(pass_context=False,hidden=True, aliases=['kys'])
+    @commands.command(hidden=True, aliases=['kys'])
     async def die(self):
         raise KeyboardInterrupt("Chiaki shut down from command")
+
+    @commands.command(hidden=True, aliases=['restart'])
+    async def reset(self):
+        self.bot.reset_requested = True
+        raise KeyboardInterrupt("Attempting to reset Chiaki...")
 
     @commands.command(hidden=True)
     async def say(self, ctx, *, msg):
