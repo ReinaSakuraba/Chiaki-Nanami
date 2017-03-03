@@ -82,7 +82,7 @@ class ChiakiFormatter(commands.HelpFormatter):
     def clean_prefix(self):
         ctx = self.context
         return (super().clean_prefix if self.is_bot() or self.is_cog() else
-                ctx.bot.str_prefix(self.command, ctx.guild))
+                ctx.bot.str_prefix(self.command, ctx.guild)
 
     async def bot_help(self):
         bot, func = self.context.bot, self.apply_function
