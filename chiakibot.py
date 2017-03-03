@@ -11,8 +11,9 @@ from collections.abc import Sequence
 from datetime import datetime
 from discord.ext import commands
 
+from cogs.utils.context_managers import temp_attr
 from cogs.utils.database import Database
-from cogs.utils.misc import cycle_shuffle, duration_units, temp_attr, truncate
+from cogs.utils.misc import cycle_shuffle, duration_units, truncate
 
 log = logging.getLogger(__name__)
 try:

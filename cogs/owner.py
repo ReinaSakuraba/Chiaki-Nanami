@@ -7,7 +7,8 @@ import traceback
 from discord.ext import commands
 
 from .utils import checks
-from .utils.misc import code_msg, temp_attr
+from .utils.context_managers import temp_attr
+from .utils.misc import code_msg
 
 class Owner:
     """Owner-only commands"""

@@ -58,17 +58,3 @@ def duration_units(secs):
 def ordinal(num):
     # pay no attention to this ugliness
     return "%d%s" % (num, "tsnrhtdd"[(num//10%10!=1)*(num%10<4)*num%10::4])
-
-@contextlib.contextmanager
-def temp_attr(obj, attr, value):
-    """Temporarily sets an object's attribute to a value"""
-    already_has_attr = hasattr(obj, attr)
-    old_value = getattr(obj, attr, None)
-    setattr(obj, attr, value)
-    try:
-        yield
-    finally:
-        if already_has_attr:
-            setattr(obj, attr, old_value)
-        else:
-            delattr(obj, attr)
