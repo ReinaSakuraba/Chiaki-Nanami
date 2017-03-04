@@ -85,7 +85,7 @@ class RNG:
     async def ball(self, ctx, *, question: str):
         """...it's a 8-ball"""
         if not question.endswith('?'):
-            return await (f"{ctx.author.mention}, that's not a question, I think.")
+            raise InvalidUserArgument(f"{ctx.author.mention}, that's not a question, I think.")
 
         msg = await ctx.send(f"{ctx.author.mention}\n:question:: **{question}**\n")
         await asyncio.sleep(random.uniform(0.5, 1.5))

@@ -4,10 +4,12 @@ import json
 import logging
 import os
 import random
+import re
 import sys
 import traceback
 
 from chiakibot import chiaki_bot
+from cogs.utils import errors
 from discord.ext import commands
 
 logger = logging.getLogger('discord')
@@ -22,11 +24,18 @@ except FileNotFoundError:
 handler.setFormatter(logging.Formatter('%(asctime)s/%(levelname)s:%(name)s: %(message)s'))
 logger.addHandler(handler)
 
-try:
+def _load_config():
+    def remove_comments(string):
+        pattern = r"(\".*?\"|\'.*?\')|(/\*.*?\*/|//[^\r\n]*$)"
+        regex = re.compile(pattern, re.MULTILINE | re.DOTALL)
+        return regex.sub(lambda match: match.group(1) if match.group(2) is None else "", string)
     with open('data/config.json') as f:
-        config = json.load(f)
+        return json.loads(remove_comments(f.read()))
+try:
+    config = _load_config()
 except FileNotFoundError:
     raise RuntimeError("You MUST have a config JSON file!")
+del _load_config
 
 bot = chiaki_bot(config)
 
@@ -75,7 +84,10 @@ async def on_ready():
 
 @bot.event
 async def on_command_error(error, ctx):
-    if isinstance(error, commands.NoPrivateMessage):
+    cause =  error.__cause__
+    if isinstance(error, (errors.OutputtableException, commands.BadArgument)):
+        await ctx.send(str(cause or error))
+    elif isinstance(error, commands.NoPrivateMessage):
         await ctx.send('This command cannot be used in private messages.')
     elif isinstance(error, commands.CommandInvokeError):
         print(f'In {ctx.command.qualified_name}:', file=sys.stderr)
@@ -85,7 +97,6 @@ async def on_command_error(error, ctx):
         await ctx.send(f'This command ({ctx.command}) needs another Parameter\n')
     traceback.print_tb(error.__traceback__)
     print(f'{type(error).__name__}: {error}')
-    cause =  error.__cause__
     if cause:
         traceback.print_tb(cause.__traceback__)
         print(f'{type(cause).__name__}: {cause}')
