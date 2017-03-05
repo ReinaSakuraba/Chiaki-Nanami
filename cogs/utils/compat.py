@@ -27,7 +27,7 @@ except ImportError:
             """Run func with the specified arguments and store the result
             in cache."""
             result = await func(*args, **kwargs)
-            cache[key_maker(args, kwargs, False)] = result
+            cache[key(args, kwargs, False)] = result
             if not boundless and len(cache) > real_max_size:
                 cache.popitem(False)
             return result
