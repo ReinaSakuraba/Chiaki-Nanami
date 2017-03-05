@@ -12,7 +12,7 @@ except ImportError:
     from collections import OrderedDict
     from functools import _make_key, wraps
 
-    def async_cache(maxsize=128):
+    def async_cache(maxsize=128, key=_make_key):
         # support use as decorator without calling, for this case maxsize will
         # not be an int
         try:
@@ -27,7 +27,7 @@ except ImportError:
             """Run func with the specified arguments and store the result
             in cache."""
             result = await func(*args, **kwargs)
-            cache[_make_key(args, kwargs, False)] = result
+            cache[key_maker(args, kwargs, False)] = result
             if not boundless and len(cache) > real_max_size:
                 cache.popitem(False)
             return result
@@ -35,20 +35,20 @@ except ImportError:
         def wrapper(func):
             @wraps(func)
             def decorator(*args, **kwargs):
-                key = _make_key(args, kwargs, False)
-                if key in cache:
+                key_ = key(args, kwargs, False)
+                if key_ in cache:
                     # Some protection against duplicating calls already in
                     # progress: when starting the call cache the future, and if
                     # the same thing is requested again return that future.
-                    if isinstance(cache[key], asyncio.Future):
-                        return cache[key]
+                    if isinstance(cache[key_], asyncio.Future):
+                        return cache[key_]
                     else:
                         f = asyncio.Future()
-                        f.set_result(cache[key])
+                        f.set_result(cache[key_])
                         return f
                 else:
                     task = asyncio.Task(run_and_cache(func, args, kwargs))
-                    cache[key] = task
+                    cache[key_] = task
                     return task
             return decorator
 
