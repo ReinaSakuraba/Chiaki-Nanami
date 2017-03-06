@@ -8,11 +8,11 @@ from collections import defaultdict, deque
 from contextlib import redirect_stdout
 from discord.ext import commands
 from io import StringIO
-from operator import attrgetter, itemgetter
+from operator import attrgetter
 
 from .utils import converter
 from .utils.compat import url_color, user_color
-from .utils.converter import BotCogConverter, RecursiveBotCommandConverter
+from .utils.converter import RecursiveBotCommandConverter
 from .utils.errors import ResultsNotFound
 from .utils.misc import str_join, nice_time, ordinal
 from .utils.paginator import iterable_limit_say, iterable_say
@@ -67,7 +67,7 @@ class Meta:
         self.bot.loop.create_task(self.session.close())
 
     @commands.command(no_pm=True)
-    async def uinfo(self, ctx, *, user : discord.Member=None):
+    async def uinfo(self, ctx, *, user: discord.Member=None):
         """Gets some basic userful info because why not"""
         if user is None:
             user = ctx.author
@@ -135,8 +135,10 @@ class Meta:
     @info.command()
     async def role(self, ctx, *, role: converter.ApproximateRole):
         server = ctx.guild
-        bool_as_answer = lambda b: "YNeos"[not b::2]
         prefix = self.bot.str_prefix(self, server)
+
+        def bool_as_answer(b):
+            return "YNeos"[not b::2]
 
         has_roles = [mem for mem in server.members if role in mem.roles]
         member_amount = len(has_roles)
@@ -226,7 +228,7 @@ class Meta:
         await iterable_say(ctx.guild.role_hierarchy, ', ', ctx=ctx)
 
     @commands.command(no_pm=True)
-    async def userinfo(self, ctx, *, member : discord.Member=None):
+    async def userinfo(self, ctx, *, member: discord.Member=None):
         """Gets some userful info because why not"""
         if member is None:
             member = ctx.author
@@ -267,10 +269,10 @@ class Meta:
     async def source(self, ctx, *, cmd: RecursiveBotCommandConverter):
         """Displays the source code for a particular command"""
         # TODO: use GitHub
-        await self._source(ctx, cmd[1].callback)
+        await self._source(ctx, cmd.value.callback)
 
     @commands.command()
-    async def inrole(self, ctx, *roles : discord.Role):
+    async def inrole(self, ctx, *roles: discord.Role):
         """
         Checks which members have a particular role(s)
 

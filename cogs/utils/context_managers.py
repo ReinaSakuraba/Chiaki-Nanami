@@ -17,7 +17,7 @@ def temp_attr(obj, attr, value):
 class temp_edit:
     def __init__(self, editable, **fields):
         self.editable = editable
-        self._old_fields = {k : getattr(editable, k) for k in fields}
+        self._old_fields = {k: getattr(editable, k) for k in fields}
         self._new_fields = fields
 
     async def __aenter__(self):

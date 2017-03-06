@@ -12,7 +12,7 @@ class ApproximateUser(commands.MemberConverter):
         channel, guild = self.ctx.channel, self.ctx.guild
         arg_lower = arg.lower()
 
-        if server:
+        if guild:
             def pred(elem):
                 return (elem.nick and arg_lower in elem.nick.lower()) or arg_lower in elem.name.lower()
 
@@ -32,7 +32,7 @@ class ApproximateRole(commands.RoleConverter):
         channel, guild = self.ctx.channel, self.ctx.guild
         arg_lowered = arg.lower()
 
-        if server:
+        if guild:
             role_filter = [role for role in guild.roles if arg_lowered in role.name.lower()]
             role_length = len(role_filter)
             if role_filter:

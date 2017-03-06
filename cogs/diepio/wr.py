@@ -193,20 +193,23 @@ class WRA:
         """
         desktop, mobile = self._wr_tank(tank)
         title = f"**__{tank}__**"
-        prefix = self.bot.str_prefix(self, ctx.message.server)
+        prefix = self.bot.str_prefix(self, ctx.guild)
 
         def embed_from_iterable(title, records):
-            embed = discord.Embed(title=title.title())
+            if not records:
+                return None
             url = _get_wiki_image(tank)
-            embed.set_thumbnail(url=url)
+            embed = (discord.Embed(title=title.title())
+                    .set_thumbnail(url=url)
+                    .set_footer(text=f'Type "{prefix}wr {title} <gamemode> {tank}" for the full WR info')
+                    )
             for record in records:
                 line = "{name}\n**{score}**".format(**record)
                 embed.add_field(name=record["gamemode"], value=line)
-            embed.set_footer(text=f'Type "{prefix}wr {title} <gamemode> {tank}" for the full WR info')
             return embed
 
         desktop_embed = embed_from_iterable("desktop", desktop)
-        mobile_embed = embed_from_iterable("mobile", mobile) if mobile else None
+        mobile_embed = embed_from_iterable("mobile", mobile)
 
         await ctx.send(title, embed=desktop_embed)
         if mobile_embed is not None:

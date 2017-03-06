@@ -1,7 +1,5 @@
 import discord
-import inspect
 from discord.ext import commands
-from functools import wraps
 
 class OutputtableException(commands.CommandError):
     """Blanket exception for all exceptions with messages that the bot will say"""
