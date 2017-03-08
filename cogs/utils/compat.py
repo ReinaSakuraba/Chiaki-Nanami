@@ -1,6 +1,6 @@
 """Compatibility incase some libraries weren't imported"""
 import aiohttp
-import os
+import tempfile
 
 from discord.ext import commands
 # someone make this standard plz
@@ -63,26 +63,24 @@ except ImportError:
     ColorThief = None
 
 _chunk_size = 1024
-async def _write_from_url(url, filename):
-    async with aiohttp.get(url) as resp:
-        with open(filename, 'wb') as fd:
+async def _write_from_url(url, file):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
             # TODO: Is there a way to make an async functools.partial?
             while True:
                 chunk = await resp.content.read(_chunk_size)
                 if not chunk:
                     break
-                fd.write(chunk)
+                file.write(chunk)
 
 @async_cache(maxsize=_chunk_size * 8)
-async def _dominant_color_from_url(url, tmp_file='tmp.jpg'):
+async def _dominant_color_from_url(url):
     '''Downloads ths image file and analyzes the dominant color'''
-    await _write_from_url(url, tmp_file)
-    color_thief = ColorThief(tmp_file)
-    dominant_color = color_thief.get_color(quality=1)
-    os.remove(tmp_file)
-    return dominant_color
+    with tempfile.NamedTemporaryFile() as f:
+        await _write_from_url(url, f)
+        color_thief = ColorThief(f)
+        return color_thief.get_color(quality=1)
 
-# Let's hope Danny makes an extension for this
 def _color_from_rgb(r, g, b):
     rgb = f"#{r:02x}{g:02x}{b:02x}"
     colour_converter = commands.ColourConverter()
@@ -91,6 +89,7 @@ def _color_from_rgb(r, g, b):
 
 async def url_color(url):
     return _color_from_rgb(*(await _dominant_color_from_url(url)))
+url_colour = url_color
 
 async def user_color(user):
     if ColorThief:
