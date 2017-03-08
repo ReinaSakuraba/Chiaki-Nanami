@@ -1,6 +1,7 @@
 """Compatibility incase some libraries weren't imported"""
 import aiohttp
 import os
+import uuid
 
 from discord.ext import commands
 # someone make this standard plz
@@ -64,18 +65,20 @@ except ImportError:
 
 _chunk_size = 1024
 async def _write_from_url(url, filename):
-    async with aiohttp.get(url) as resp:
-        with open(filename, 'wb') as fd:
-            # TODO: Is there a way to make an async functools.partial?
-            while True:
-                chunk = await resp.content.read(_chunk_size)
-                if not chunk:
-                    break
-                fd.write(chunk)
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            with open(filename, 'wb') as fd:
+                # TODO: Is there a way to make an async functools.partial?
+                while True:
+                    chunk = await resp.content.read(_chunk_size)
+                    if not chunk:
+                        break
+                    fd.write(chunk)
 
 @async_cache(maxsize=_chunk_size * 8)
 async def _dominant_color_from_url(url, tmp_file='tmp.jpg'):
     '''Downloads ths image file and analyzes the dominant color'''
+    tmp_file = f'{uuid.uuid4()}{tmp_file}'
     await _write_from_url(url, tmp_file)
     color_thief = ColorThief(tmp_file)
     dominant_color = color_thief.get_color(quality=1)
