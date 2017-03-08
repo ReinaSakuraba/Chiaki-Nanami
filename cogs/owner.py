@@ -17,7 +17,7 @@ class Owner:
         self.bot = bot
 
     def __local_check(self, ctx):
-        return checks.is_owner_predicate(ctx.message)
+        return checks.is_owner_predicate(ctx.author)
 
     async def _load(self, ctx, ext):
         try:

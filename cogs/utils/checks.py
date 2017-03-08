@@ -1,4 +1,4 @@
-import discord.utils
+import discord
 import enum
 
 from discord.ext import commands
@@ -40,11 +40,17 @@ def chiaki_check(predicate, *, role=None, perms=None):
 def _nice_perms(**perms):
     return [f"{'Not' * (not v)} {k.replace('_', ' ').title()}" for k, v in perms.items()]
 
-def is_owner_predicate(msg):
-    return msg.author.id == 239110748180054017
+def is_owner_predicate(author):
+    return author.id == 239110748180054017
 
 def is_owner():
-    return chiaki_check(lambda ctx: is_owner_predicate(ctx.message), role="Bot Owner")
+    return chiaki_check(lambda ctx: is_owner_predicate(ctx.author), role="Bot Owner")
+
+def server_owner_predicate(guild, author):
+    return author.id == guild.owner.id
+
+def is_server_owner():
+    return chiaki_check(lambda ctx: server_owner_predicate(ctx.guild, ctx.author), role="Server Owner")
 
 def permissions_predicate(msg, **perms):
     if is_owner_predicate(msg):
