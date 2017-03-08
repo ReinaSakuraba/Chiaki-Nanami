@@ -38,6 +38,7 @@ DummyMessage = namedtuple('DummyMessage', _message_attrs)
 # Seriously, fuck JSONs. They can't do namedtuples
 class ProblemMessage:
     __slots__ = tuple(_message_attrs)
+
     def __init__(self, msg):
         for attr in _message_attrs:
             setattr(self, attr, getattr(msg, attr))
@@ -153,10 +154,10 @@ class Help:
     @commands.command(hidden=True)
     @checks.is_owner()
     @errors.private_message_only()
-    async def answer(self, ctx, id: int, *, response: str):
-        problem_message = self.problems.pop(id, None)
+    async def answer(self, ctx, id_: int, *, response: str):
+        problem_message = self.problems.pop(id_, None)
         if problem_message is None:
-            raise errors.ResultsNotFound(f"Message ID ***{id}*** doesn't exist, I think")
+            raise errors.ResultsNotFound(f"Message ID ***{id_}*** doesn't exist, I think")
 
         appinfo = await self.bot.application_info()
         owner = appinfo.owner
@@ -168,19 +169,19 @@ class Help:
                          .add_field(name="Response:", value=response)
                          .set_footer(text=footer)
                          )
-        msg = f"{problem_message.author.mention}, you have a response for message ***{id}***:"
+        msg = f"{problem_message.author.mention}, you have a response for message ***{id_}***:"
         await problem_message.author.send(msg, embed=response_embed)
         await problem_message.channel.send(msg, embed=response_embed)
-        await ctx.send(f"Successfully responded to {id}! Response:", embed=response_embed)
+        await ctx.send(f"Successfully responded to {id_}! Response:", embed=response_embed)
 
     @commands.command(hidden=True)
     @checks.is_owner()
     @errors.private_message_only()
-    async def review(self, ctx, id: str):
-        problem_message = self.problems.get(id)
+    async def review(self, ctx, id_: str):
+        problem_message = self.problems.get(id_)
         if problem_message:
             await ctx.send(f"**Saved Message from {problem_message.author}:**", embed=problem_message.embed)
-        raise errors.ResultsNotFound(f"ID {id} doesn't exist, I think")
+        raise errors.ResultsNotFound(f"ID {id_} doesn't exist, I think")
 
     @commands.command(aliases=['cogs'])
     async def modules(self, ctx):

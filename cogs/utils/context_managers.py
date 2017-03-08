@@ -1,18 +1,19 @@
 import contextlib
 
+_sentinel = object()
+
 @contextlib.contextmanager
 def temp_attr(obj, attr, value):
     """Temporarily sets an object's attribute to a value"""
-    already_has_attr = hasattr(obj, attr)
-    old_value = getattr(obj, attr, None)
+    old_value = getattr(obj, attr, _sentinel)
     setattr(obj, attr, value)
     try:
         yield
     finally:
-        if already_has_attr:
-            setattr(obj, attr, old_value)
-        else:
+        if old_value is _sentinel:
             delattr(obj, attr)
+        else:
+            setattr(obj, attr, old_value)
 
 class temp_edit:
     def __init__(self, editable, **fields):
