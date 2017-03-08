@@ -112,7 +112,7 @@ class WRA:
 
     async def _load_tanks(self):
         tank_list = await _load_json(self.session, TANK_ID_URL)
-        return {d["tankname"] : d["id"] for d in tank_list if d["enabled"]}
+        return {d["tankname"].title() : d["id"] for d in tank_list if d["enabled"]}
 
     async def _load_gamemodes(self):
         gm_id_list = await _load_json(self.session, GAMEMODE_ID_URL)
@@ -200,7 +200,7 @@ class WRA:
 
         def embed_from_iterable(title, records):
             embed = discord.Embed(title=title.title())
-            url = _get_wiki_image(tank)
+            url = utils.get_tank_icon(tank)
             embed.set_thumbnail(url=url)
             for record in records:
                 line = "{name}\n**{score}**".format(**record)

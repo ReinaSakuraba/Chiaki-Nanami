@@ -349,9 +349,9 @@ class Admin:
         """
         self._check_role_position(ctx, role, "delete")
         await self._try_action(lambda: self.bot.delete_role(ctx.message.server, role),
-                               on_success=f"Successfully created **{args.name}**!",
+                               on_success=f"Successfully deleted **{role.name}**!",
                                on_forbidden="I need the **Manage Roles** perm to delete roles, I think.",
-                               on_http_exc=f"Creating role **{args.name}** failed, for some reason.")
+                               on_http_exc=f"Deleting role **{role.name}** failed, for some reason.")
 
     @commands.command(pass_context=True, no_pm=True)
     @checks.admin_or_permissions(manage_server=True)
