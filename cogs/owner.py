@@ -97,12 +97,12 @@ class Owner:
 
     @commands.command(hidden=True, aliases=['kys'])
     async def die(self):
-        raise KeyboardInterrupt("Chiaki shut down from command")
+        await self.bot.logout()
 
     @commands.command(hidden=True, aliases=['restart'])
     async def reset(self):
         self.bot.reset_requested = True
-        raise KeyboardInterrupt("Attempting to reset Chiaki...")
+        await self.bot.logout()
 
     @commands.command(hidden=True)
     async def say(self, ctx, *, msg):
