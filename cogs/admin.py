@@ -1,10 +1,9 @@
-import argparse
 import discord
 
 from discord.ext import commands
 
 from .utils import checks, errors
-from .utils.converter import bot_cog_default
+from .utils.converter import ArgumentParser, bot_cog_default
 from .utils.database import Database
 from .utils.misc import multi_replace, nice_time, ordinal, str_join
 
@@ -14,7 +13,7 @@ def _sanitize_prefix(prefix):
     return prefix
 
 def _check_role_position(ctx, role, action):
-    author, server = ctx.author, ctx.guild
+    author = ctx.author
     top_role = author.top_role
     if role >= top_role and not checks.is_owner_predicate(ctx):
         raise errors.InvalidUserArgument(f"You can't {action} a role higher than or equal "
@@ -70,12 +69,12 @@ class Admin:
         Only one role can be assigned as Moderator. Default role is Bot Admin.
         """
         await self._chiaki_role_command(ctx, checks.ChiakiRole.mod, role)
-        
+
     @commands.command(name='resetadminrole', no_pm=True, aliases=['rar'])
     async def reset_admin_role(self, ctx):
         """Resets the Admin role to the default role."""
         await self._set_chiaki_role(ctx, checks.ChiakiRole.admin, None, 'remove an Admin role from')
-        
+
     @commands.command(name='resetmodrole', no_pm=True, aliases=['rmr'])
     async def reset_mod_role(self, ctx):
         """Resets the Admin role to the default role."""
@@ -218,17 +217,14 @@ class Admin:
         """
         author, guild = ctx.author, ctx.guild
 
-        parser = argparse.ArgumentParser(description='Just a random role thing')
+        parser = ArgumentParser(description='Just a random role thing')
         parser.add_argument('name')
         parser.add_argument('-c', '--color', '--colour', nargs='?', default='#000000')
         parser.add_argument('--permissions', '--perms', nargs='+', type=int, default=0)
         parser.add_argument('--hoist', action='store_true')
         parser.add_argument('-m', '--mentionable', action='store_true')
 
-        try:
-            args = parser.parse_args(args)
-        except (Exception, SystemExit) as e:     # parse_args aborts the program on error (which sucks)
-            raise commands.BadArgument(f"Failed to parse args. Exception: ```\n{e}```")
+        args = parser.parse_args(args)
 
         colour_converter = commands.ColourConverter()
         colour_converter.prepare(ctx, args.color)
@@ -280,7 +276,7 @@ class Admin:
         The new position of the role. This cannot be zero.
         """
         author, server = ctx.author, ctx.guild
-        parser = argparse.ArgumentParser(description='Just a random role thing')
+        parser = ArgumentParser(description='Just a random role thing')
         parser.add_argument('-n', '--name', nargs='?', default=old_role.name)
         parser.add_argument('-c', '--color', '--colour', nargs='?', default=str(old_role.colour))
         parser.add_argument('--permissions', '--perms', nargs='+', type=int, default=old_role.permissions.value)
@@ -288,10 +284,7 @@ class Admin:
         parser.add_argument('-m', '--mentionable', action='store_true')
         parser.add_argument('--pos', '--position', nargs='?', type=int, default=old_role.position)
 
-        try:
-            args = parser.parse_args(args)
-        except (Exception, SystemExit) as e: # parse_args aborts the program on error (which sucks)
-            raise commands.BadArgument(f"Failed to parse args. Exception: ```\n{e}```")
+        args = parser.parse_args(args)
 
         colour_converter = commands.ColourConverter()
         colour_converter.prepare(ctx, args.color)
@@ -316,7 +309,7 @@ class Admin:
         except discord.Forbidden:
             await ctx.send("I need the **Manage Roles** perm to edit roles, I think.")
         except discord.HTTPException:
-            await ctx.send(f"Editing role **{old_role}** failed, for some reason.") 
+            await ctx.send(f"Editing role **{old_role}** failed, for some reason.")
         else:
             await ctx.send(f"Successfully edited **{old_role}**!")
 

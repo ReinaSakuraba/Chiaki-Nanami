@@ -1,3 +1,4 @@
+import argparse
 import discord
 
 from collections import namedtuple
@@ -5,6 +6,10 @@ from discord.ext import commands
 from functools import partial
 
 from .misc import parse_int
+
+class ArgumentParser(argparse.ArgumentParser):
+    def error(self, message):
+        raise commands.BadArgument(f'Failed to parse args.```\n{message}```')
 
 class ApproximateUser(commands.MemberConverter):
     async def convert(self):
