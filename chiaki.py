@@ -12,6 +12,14 @@ from chiakibot import chiaki_bot
 from cogs.utils import errors
 from discord.ext import commands
 
+# use faster event loop, but fall back to default if on Windows or not installed
+try:
+    import uvloop
+except ImportError:
+    pass
+else:
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+
 logger = logging.getLogger('discord')
 logger.setLevel(logging.INFO)
 logging.basicConfig(level=logging.INFO)
@@ -85,8 +93,10 @@ async def on_ready():
 @bot.event
 async def on_command_error(error, ctx):
     cause =  error.__cause__
-    if isinstance(error, (errors.OutputtableException, commands.BadArgument)):
-        await ctx.send(str(cause or error))
+    if isinstance(error, errors.OutputtableException):
+        await ctx.send(str(error))
+    elif isinstance(error, commands.BadArgument):
+        await ctx.send(str(cause))
     elif isinstance(error, commands.NoPrivateMessage):
         await ctx.send('This command cannot be used in private messages.')
     elif isinstance(error, commands.CommandInvokeError):
