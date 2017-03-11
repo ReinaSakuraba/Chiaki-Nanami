@@ -21,13 +21,13 @@ class ApproximateUser(commands.MemberConverter):
             def pred(elem):
                 return (elem.nick and arg_lower in elem.nick.lower()) or arg_lower in elem.name.lower()
 
-            member_filter = list(filter(pred, guild.members))
-            filter_length = len(member_filter)
-            if member_filter:
-                if filter_length > 1:
-                    await channel.send(f"(I found {filter_length} occurences of '{arg}'. "
+            filtered = filter(pred, guild.members)
+            next_member = next(filtered, None)
+            if next_member is not None:
+                if next(filtered, None):
+                    await channel.send(f"(I found {sum(1 for _ in filtered) + 2} occurences of '{arg}'. "
                                         "I'll take the first result, probably.)")
-                return member_filter[0]
+                return next_member
         return super().convert()
 
 # Is there any way to make this such that there's no repetition?
@@ -38,13 +38,13 @@ class ApproximateRole(commands.RoleConverter):
         arg_lowered = arg.lower()
 
         if guild:
-            role_filter = [role for role in guild.roles if arg_lowered in role.name.lower()]
-            role_length = len(role_filter)
-            if role_filter:
-                if role_length > 1:
-                    await channel.send(f"(I found {role_length} occurences of '{arg}'. "
+            role_filter = (role for role in guild.roles if arg_lowered in role.name.lower())
+            next_role = next(role_filter, None)
+            if next_role is not None:
+                if next(role_filter, None):
+                    await channel.send(f"(I found {sum(1 for _ in role_filter) + 2} occurences of '{arg}'. "
                                         "I'll take the first result, probably.)")
-                return role_filter[0]
+                return next_role
         return super().convert()
 
 NamePair = namedtuple('NamePair', 'name value')
