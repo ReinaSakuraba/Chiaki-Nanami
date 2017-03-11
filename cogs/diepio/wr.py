@@ -264,7 +264,8 @@ class WRA:
     @commands.command()
     async def tankaliases(self, ctx):
         """All the tanks for diep.io"""
-        tank_aliases = '\n'.join([f"{k:<18} == {v}" for k, v in _alt_tank_names.items()])
+        max_len = len(max(_alt_tank_names, key=len)) + 1
+        tank_aliases = '\n'.join([f"{k:<{max_len}} == {v}" for k, v in _alt_tank_names.items()])
         await ctx.send(f"```\n{tank_aliases}```")
 
     @commands.command(usage='Anokuu')
