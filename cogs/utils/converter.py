@@ -126,4 +126,4 @@ def item_converter(d, *, key=lambda k: k, error_msg="Couldn't find key \"{arg}\"
             return d[key(arg)]
         except Exception as e:
             raise commands.BadArgument(error_msg.format(arg=arg)) from e
-    return dictgetter
+    return itemgetter
