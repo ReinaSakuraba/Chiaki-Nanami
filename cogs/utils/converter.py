@@ -120,10 +120,10 @@ def number(s):
             continue
     raise commands.BadArgument(f"{s} is not a number.")
 
-def dict_getter(d, *, key=lambda k: k, error_msg="Couldn't find key \"{key}\""):
-    def dictgetter(k):
+def item_converter(d, *, key=lambda k: k, error_msg="Couldn't find key \"{arg}\""):
+    def itemgetter(arg):
         try:
-            return d[key(k)]
-        except KeyError:
-            raise commands.BadArgument(error_msg.format(key=k))
+            return d[key(arg)]
+        except Exception as e:
+            raise commands.BadArgument(error_msg.format(arg=arg)) from e
     return dictgetter

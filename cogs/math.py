@@ -1,5 +1,4 @@
 import ast
-import contextlib
 import discord
 import inspect
 import itertools
@@ -14,7 +13,7 @@ from discord.ext import commands
 from operator import itemgetter
 from random import randrange
 
-from .utils.converter import dict_getter
+from .utils.converter import item_converter
 from .utils.errors import InvalidUserArgument
 
 try:
@@ -373,38 +372,45 @@ for k, v in _reverse_units.items():
     _reverse_units[k] = f"{name} {aliases}"
 del _length, _mass, _bit, _femto, _nano
 
+_unit_converter = item_converter(_units, key=str.lower, error_msg="I don't recognized **{key}** as a unit.")
 def _parse_unit(unit_type):
-    unit = dict_getter(_units, key=str.lower, error_msg="I don't recognized **{key}** as a unit.")(unit_type)
+    unit = _unit_converter(unit_type)
     if unit.type == 'Data':
         return _units.get(unit_type, unit)
     return unit
 
-def handle_temperature(u1, u2, value):
+def _handle_temperature(u1, u2, value):
     kelvin = (value + u1.intercept) * u1.ratio
     return kelvin / u2.ratio - u2.intercept
 
 def convert_unit(from_unit_type, to_unit_type, value):
     from_unit, to_unit = _parse_unit(from_unit_type), _parse_unit(to_unit_type)
-    # To avoid namespace conflicts when using abbreviations
     if from_unit.type != to_unit.type:
         raise IncompatibleUnits(f"{from_unit_type} ({from_unit.type}), {to_unit_type} ({to_unit.type})")
 
     # temperature uses adding along with multiplying
     if from_unit.type == 'Temperature':
-        new_value = handle_temperature(from_unit, to_unit, value)
+        new_value = _handle_temperature(from_unit, to_unit, value)
     else:
         new_value = value * (from_unit.ratio / to_unit.ratio)
 
-    return str(new_value) + to_unit_type
+    return str(round(new_value, 3)) + to_unit_type
+
+def _result_embed(ctx, input, output):
+    return (discord.Embed(colour=0x00FF00, timestamp=ctx.message.created_at)
+           .add_field(name='Input', value=f'`{input}`')
+           .add_field(name='Result', value=f'{output}', inline=False)
+           )
 
 class Math:
-    __prefix__ = ['+', '-', '*', '/', '^', '=']
+    __prefix__ = ['++', '--']
+
     def __init__(self, bot):
         self.bot = bot
 
-    async def _result_say(self, ctx, input, output):
+    async def _result_say(self, ctx, input, output, *, output_as_code=True):
         try:
-            return await ctx.send(f"```css\nInput: \n{input}\n\nOutput:\n{output}```")
+            return await ctx.send(embed=_result_embed(ctx, input, f'```\n{output}```' if output_as_code else output))
         except discord.HTTPException:
             return await ctx.send(f"Resulting message is too big for viewing.")
 
@@ -534,9 +540,9 @@ class Math:
             equation = parse_expr(expr, evaluate=False, transformations=default_transformations)
             symbols = list(equation.free_symbols)
             if len(symbols) > 1:
-                raise InvalidArgument("You have too many symbols in your equation")
+                raise InvalidUserArgument("You have too many symbols in your equation")
             result = sympy.pretty(sympy.diff(equation, *(symbols * n)))
-            await self._result_say(ctx, equation, result)
+            await self._result_say(ctx, equation, result, output_as_code=True)
 
         @commands.command()
         async def limit(self, ctx, expr: str, var: sympy.Symbol, to, dir='+'):
@@ -549,7 +555,7 @@ class Math:
             """
             equation = parse_expr(expr, evaluate=False, transformations=default_transformations)
             result = sympy.pretty(sympy.limit(expr, var, to, dir))
-            await self._result_say(ctx, equation, result)
+            await self._result_say(ctx, equation, result, output_as_code=True)
 
         @commands.command(aliases=['integral'])
         async def integrate(self, ctx, *, expr: str):
@@ -560,9 +566,9 @@ class Math:
             equation = parse_expr(expr, evaluate=False, transformations=default_transformations)
             symbols = list(equation.free_symbols)
             if len(symbols) > 1:
-                raise InvalidArgument("You have too many symbols in your equation")
+                raise InvalidUserArgument("You have too many symbols in your equation")
             result = sympy.pretty(sympy.integrate(equation, symbols[0]))
-            await self._result_say(ctx, equation, result)
+            await self._result_say(ctx, equation, result, output_as_code=True)
 
 def setup(bot):
     bot.add_cog(Math(bot))
