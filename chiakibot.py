@@ -156,8 +156,8 @@ class ChiakiBot(commands.Bot):
         self.commands.pop('help', None)
 
         self.counter = collections.Counter()
-        self.persistent_counter = Database.from_json('stats.json')
-        self.custom_prefixes = Database.from_json('customprefixes.json', default_factory=dict)
+        self.persistent_counter = Database('stats.json')
+        self.custom_prefixes = Database('customprefixes.json', default_factory=dict)
         self.databases = [self.persistent_counter, self.custom_prefixes, ]
         self.cog_aliases = {}
         self._config = collections.ChainMap(options.get('config', {}), _default_config)

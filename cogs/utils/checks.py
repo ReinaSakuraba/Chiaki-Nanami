@@ -15,7 +15,7 @@ class ChiakiRole(enum.Enum):
         return self.value.title()
 
 server_role_default = dict.fromkeys(map(str, ChiakiRole), DEFAULT)
-server_roles = Database.from_json("admin/adminsandmods.json", default_factory=server_role_default.copy)
+server_roles = Database("admin/adminsandmods.json", default_factory=server_role_default.copy)
 
 def assign_role(server, key, role):
     server_roles[server][str(key)] = getattr(role, 'id', DEFAULT)

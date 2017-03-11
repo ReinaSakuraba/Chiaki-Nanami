@@ -102,8 +102,8 @@ class Help:
         #self.bot.command(name='help', , aliases='h')(_default_help_command)
 
     async def on_ready(self):
-        self.problems = Database.from_json('issues.json', encoder=ProblemEncoder, load_later=True,
-                                           object_hook=partial(problem_hook, self.bot))
+        self.problems = Database('issues.json', encoder=ProblemEncoder, load_later=True,
+                                 object_hook=partial(problem_hook, self.bot))
         self.bot.add_database(self.problems)
 
     help = default_help_command(name='help', aliases=['h'])

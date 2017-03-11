@@ -25,8 +25,8 @@ class Admin:
 
     def __init__(self, bot):
         self.bot = bot
-        self.self_roles = Database.from_json("admin/selfroles.json", default_factory=list)
-        self.member_messages = Database.from_json("admin/membermessages.json")
+        self.self_roles = Database("admin/selfroles.json", default_factory=list)
+        self.member_messages = Database("admin/membermessages.json")
         self.bot.add_database(checks.server_roles)
 
     async def _set_chiaki_role(self, ctx, key, role, action):

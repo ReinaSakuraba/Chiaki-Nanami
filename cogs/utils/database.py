@@ -6,7 +6,6 @@ import logging
 import os
 import uuid
 
-from datetime import datetime
 from .transformdict import IDAbleDict
 
 DATA_PATH = 'data/'
@@ -33,21 +32,22 @@ def _load_data_func(file_type, **kwargs):
 _load_json = _load_data_func(open, encoding='utf-8')
 _load_gzip = _load_data_func(gzip.GzipFile)
 del _load_data_func
-
+ 
 @contextlib.contextmanager
 def atomic_temp_file(name, path=DB_PATH, file_type=open, **kwargs):
     # For Pythonic-ness
     path += name
     check_dir(os.path.dirname(path))
-    tmp_fname = f'{path}-{uuid.uuid4()}.tmp'
-    with file_type(tmp_fname, **kwargs) as f:
+    tmp_name = f'{path}-{uuid.uuid4()}.tmp'
+    with file_type(tmp_name, **kwargs) as f:
         yield f
-    os.replace(tmp_fname, path)
+    os.replace(tmp_name, path)
 
 class Database(IDAbleDict):
     """Database for any persistent data.
 
-    This is basically a wrapper for the defaultdict object.
+    This is basically a wrapper for the defaultdict object, that transforms any key 
+    with an 'id' attribute with the actual id casted as a string.
     """
 
     # json sucks.
@@ -57,13 +57,13 @@ class Database(IDAbleDict):
     # perfect Python dict capabilities
     # And pickle's out of the question due to security issues.
     # json sucks.
-    def __init__(self, name, default_factory=None, mapping=(), **kwargs):
+    def __init__(self, name, default_factory=None, *, path=DB_PATH, mapping=(), **kwargs):
         super().__init__(default_factory, mapping)
 
-        self.name = name
+        self.name = os.path.join(path, name)
         self.loop = kwargs.pop('loop', None) or asyncio.get_event_loop()
         self._dumper, self._ext, self._loader = ((self._gzip_dump, '.gz', _load_gzip)
-                                                  if kwargs.get('use_gzip', False) else
+                                                 if kwargs.get('use_gzip', False) else
                                                  (self._json_dump, '.json', _load_json))
 
         # Pay no attention to this copyness
@@ -102,14 +102,6 @@ class Database(IDAbleDict):
     @property
     def file_name(self):
         return self.name + (self._ext * (not self.name.endswith(self._ext)))
-
-    @classmethod
-    def from_json(cls, filename, path=DB_PATH, default_factory=None, **kwargs):
-        return cls(path + filename, default_factory, **kwargs)
-
-    @classmethod
-    def from_gzip(cls, filename, path=DB_PATH, default_factory=None, **kwargs):
-        return cls(path + filename, default_factory, use_gzip=True, **kwargs)
 
 def check_dir(dir_):
     os.makedirs(dir_, exist_ok=True)
