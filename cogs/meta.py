@@ -142,14 +142,14 @@ class Meta:
             members_value = f"{member_amount} (use {prefix}inrole '{role}' to figure out who's in that role)"
         else:
             members_name = f"Members ({member_amount})"
-            members_value = str_join(", ", has_roles)
+            members_value = str_join(", ", has_roles) or '-no one is in this role :(-'
 
         hex_role_color = str(role.colour).upper()
         permissions = role.permissions.value
         permission_binary = "{0:32b}".format(permissions)
         str_position = ordinal(role.position)
         nice_created_at = nice_time(role.created_at)
-        description = f"Just chilling as {server}'s {str_position} role"
+        description = f"Just chilling as {server}'s {str_position + 1} role"
         footer = f"Created at: {nice_created_at} | ID: {role.id}"
 
         # I think there's a way to make a solid color thumbnail, idk though
