@@ -234,7 +234,7 @@ class Meta:
             member = ctx.author
         await ctx.send(embed=await _user_embed(member))
 
-    @commands.command(name="you", )
+    @commands.command(name="you")
     async def botinfo(self, ctx):
         bot = self.bot
         user = bot.user
@@ -271,19 +271,43 @@ class Meta:
         # TODO: use GitHub
         await self._source(ctx, cmd.value.callback)
 
+    async def _inrole(self, ctx, *roles, predicate):
+        has_roles = [mem for mem in ctx.guild.members if predicate(mem, *roles)]
+        fmt = (f"Here are the members who have the {str_join(', ', roles)} role. ```css\n{str_join(', ', has_roles)}```"
+               if has_roles else f"There are no members who have the {str_join(', ', roles)} role. \U0001f641")
+        await ctx.send(fmt)
+
     @commands.command()
-    async def inrole(self, ctx, *roles: discord.Role):
+    async def inrole(self, ctx, *, role: discord.Role):
         """
-        Checks which members have a particular role(s)
+        Checks which members have a given role
+
+        The role are case sensitive.
+        """
+        await self._inrole(ctx, role, predicate=lambda m, r: r in m.roles)
+
+    @commands.command()
+    async def inanyrole(self, ctx, *roles: discord.Role):
+        """
+        Checks which members have any of the given role(s)
 
         The role(s) are case sensitive.
         If you don't want to mention a role, please put it in quotes,
         especially if there's a space in the role name
         """
-        has_roles = [mem for mem in ctx.guild.members
-                     if any(role in mem.roles for role in roles)]
-        fmt = f"Here are the members who have the {str_join(', ', roles)} roles"
-        await ctx.send(fmt + f"```css\n{str_join(', ', has_roles)}```")
+        await self._inrole(ctx, *roles, predicate=lambda m, *r: any(r in m.roles for r in roles))
+
+    @commands.command()
+    async def inallrole(self, ctx, *roles: discord.Role):
+        """
+        Checks which members have all of the given role(s)
+
+        The role(s) are case sensitive.
+        If you don't want to mention a role, please put it in quotes,
+        especially if there's a space in the role name
+        """
+        await self._inrole(ctx, *roles, predicate=lambda m, *r: all(r in m.roles for r in roles))
+
 
     @commands.command()
     async def permroles(self, ctx, *, perm: str):
