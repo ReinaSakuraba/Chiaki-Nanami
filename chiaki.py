@@ -32,18 +32,17 @@ except FileNotFoundError:
 handler.setFormatter(logging.Formatter('%(asctime)s/%(levelname)s:%(name)s: %(message)s'))
 logger.addHandler(handler)
 
-def _load_config():
+def _load_json(filename):
     def remove_comments(string):
         pattern = r"(\".*?\"|\'.*?\')|(/\*.*?\*/|//[^\r\n]*$)"
         regex = re.compile(pattern, re.MULTILINE | re.DOTALL)
         return regex.sub(lambda match: match.group(1) if match.group(2) is None else "", string)
-    with open('data/config.json') as f:
+    with open(filename) as f:
         return json.loads(remove_comments(f.read()))
 try:
-    config = _load_config()
+    config = _load_json('data/config.json')
 except FileNotFoundError:
     raise RuntimeError("You MUST have a config JSON file!")
-del _load_config
 
 bot = chiaki_bot(config)
 
@@ -93,7 +92,7 @@ async def on_ready():
 @bot.event
 async def on_command_error(error, ctx):
     cause =  error.__cause__
-    if isinstance(error, errors.OutputtableException):
+    if isinstance(error, errors.ChiakiException):
         await ctx.send(str(error))
     elif isinstance(error, commands.BadArgument):
         await ctx.send(str(cause))
@@ -164,7 +163,12 @@ def main():
             traceback.print_exc()
 
     try:
-        token = config.pop('token') or sys.argv[1]
+        credentials = _load_json('data/credentials.json')
+    except FileNotFoundError:
+        raise RuntimeError("A credentials file is required")
+
+    try:
+        token = credentials.pop('token') or sys.argv[1]
     except IndexError:
         raise RuntimeError("A token is required")
 

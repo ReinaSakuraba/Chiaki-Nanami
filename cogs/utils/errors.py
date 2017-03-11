@@ -1,16 +1,19 @@
 import discord
 from discord.ext import commands
 
-class OutputtableException(commands.CommandError):
+class ChiakiException(commands.CommandError):
     """Blanket exception for all exceptions with messages that the bot will say"""
 
-class PrivateMessagesOnly(OutputtableException):
+class ChiakiCheckFailure(ChiakiException):
+    """Check failure that is thrown when a check fails, and the bot must say it."""
+
+class PrivateMessagesOnly(ChiakiCheckFailure):
     """Exception raised when an operation only works in private message contexts."""
 
-class InvalidUserArgument(OutputtableException):
+class InvalidUserArgument(ChiakiException):
     """Exception raised when the user inputs an invalid argument, even though conversion is successful."""
 
-class ResultsNotFound(OutputtableException):
+class ResultsNotFound(ChiakiException):
     """Exception raised when a search returns some form of "not found" """
 
 def private_message_only(error_msg="This command can only be used in private messages"):
