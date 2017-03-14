@@ -156,7 +156,7 @@ class Admin:
         await self._self_role(role_action, role)
         await ctx.send(msg)
 
-    @commands.command(name='addrole', no_pm=True, aliases=['ar'])
+    @commands.command(name='addrole', no_pm=True, aliases=['adr'])
     @checks.admin_or_permissions(manage_roles=True)
     async def add_role(self, ctx, user: discord.Member, *, role: discord.Role):
         """Adds a role to a user
@@ -347,6 +347,16 @@ class Admin:
         self.member_messages.setdefault("join", {})[str(ctx.guild.id)] = message
         await ctx.send(f'Welcome message has been set to "*{message}*"')
 
+    @commands.command(name='removewelcome', no_pm=True, aliases=['rhi'])
+    @checks.admin_or_permissions(manage_guild=True)
+    async def remove_welcome(self, ctx, *, message: str):
+        """Removes the bot's message when a member joins this server.
+        """
+        if self.member_messages.setdefault("join", {}).pop(str(ctx.guild.id), None):
+            await ctx.send(f'Successfully removed the welcome message.')
+        else:
+            await ctx.send(f'This server never had a welcome message.')
+
     async def on_member_join(self, member):
         guild = member.guild
         message = self.member_messages.setdefault('join', {}).get(str(guild.id))
@@ -371,6 +381,15 @@ class Admin:
         """Sets the bot's message when a member leaves this server"""
         self.member_messages.setdefault("leave", {})[str(ctx.guild.id)] = message
         await ctx.send(f"Leave message has been set to *{message}*")
+
+    @commands.command(name='removebyebye', no_pm=True, aliases=['rbye'])
+    @checks.admin_or_permissions(manage_guild=True)
+    async def remove_byebye(self, ctx, *, message: str):
+        """Removes the bot's message when a member leaves this server."""
+        if self.member_messages.setdefault("leave", {}).pop(str(ctx.guild.id), None):
+            await ctx.send(f'Successfully removed the leave message.')
+        else:
+            await ctx.send(f'This server never had a leave message.')
 
     async def on_member_leave(self, member):
         guild = member.guild
@@ -417,7 +436,7 @@ class Admin:
                 cog_references.pop(name, None)
             await ctx.send("Successfully removed prefix \"{prefix}\" in **{name}**!")
 
-    @commands.command(name="resetprefix", no_pm=True, aliases=['clearprefix'])
+    @commands.command(name="resetprefix", no_pm=True, aliases=['rpf'])
     @checks.is_admin()
     async def reset_prefix(self, ctx, cog: bot_cog_default("default")):
         """Resets a prefix for a particular cog (or "default")"""
