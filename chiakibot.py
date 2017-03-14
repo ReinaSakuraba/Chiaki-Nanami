@@ -109,13 +109,12 @@ class ChiakiFormatter(commands.HelpFormatter):
         return func(result)
 
     async def cog_embed(self):
-        (cog_name, cog), ctx = self.command, self.context
+        cog, ctx = self.command, self.context
+        cog_name = type(cog).__name__
         bot = ctx.bot
         prefix = bot.str_prefix(ctx.message)
-        description = cog.__doc__ or 'No description... yet.'
-
-        with temp_attr(self, 'command', cog):
-            commands = await self.unique_cog_commands()
+        description = inspect.getdoc(cog) or 'No description... yet.'
+        commands = await self.unique_cog_commands()
 
         if not commands:
             raise commands.BadArgument(f"Module {cog_name} has no visible commands.")
@@ -161,10 +160,10 @@ class ChiakiFormatter(commands.HelpFormatter):
         return await super().format_help_for(ctx, command)
 
     async def format(self):
+        if self.is_bot():
+            return await self.bot_help()
         with temp_attr(self.command, 'help', self.description.format(prefix=self.prefix)):
-            if self.is_bot():
-                return await self.bot_help()
-            elif self.is_cog():
+            if self.is_cog():
                 return await self.cog_embed()
             return await self.command_embed()
 
