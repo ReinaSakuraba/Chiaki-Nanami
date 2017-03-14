@@ -95,7 +95,7 @@ async def on_command_error(error, ctx):
     if isinstance(error, errors.ChiakiException):
         await ctx.send(str(error))
     elif isinstance(error, commands.BadArgument):
-        await ctx.send(str(cause))
+        await ctx.send(str(cause or error))
     elif isinstance(error, commands.NoPrivateMessage):
         await ctx.send('This command cannot be used in private messages.')
     elif isinstance(error, commands.CommandInvokeError):
