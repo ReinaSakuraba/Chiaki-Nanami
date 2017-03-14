@@ -34,14 +34,13 @@ _load_gzip = _load_data_func(gzip.GzipFile)
 del _load_data_func
  
 @contextlib.contextmanager
-def atomic_temp_file(name, path=DB_PATH, file_type=open, **kwargs):
+def atomic_temp_file(name, file_type=open, **kwargs):
     # For Pythonic-ness
-    path += name
-    check_dir(os.path.dirname(path))
-    tmp_name = f'{path}-{uuid.uuid4()}.tmp'
+    check_dir(os.path.dirname(name))
+    tmp_name = f'{name}-{uuid.uuid4()}.tmp'
     with file_type(tmp_name, **kwargs) as f:
         yield f
-    os.replace(tmp_name, path)
+    os.replace(tmp_name, name)
 
 class Database(IDAbleDict):
     """Database for any persistent data.
