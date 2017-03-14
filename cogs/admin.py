@@ -7,11 +7,6 @@ from .utils.converter import ArgumentParser, bot_cog_default
 from .utils.database import Database
 from .utils.misc import multi_replace, nice_time, ordinal, str_join
 
-def _sanitize_prefix(prefix):
-    if prefix[-1].isalnum():
-        raise commands.BadArgument("Your prefix cannot end with a letter or number.")
-    return prefix
-
 def _check_role_position(ctx, role, action):
     author = ctx.author
     top_role = author.top_role
@@ -21,7 +16,6 @@ def _check_role_position(ctx, role, action):
 
 class Admin:
     """Admin-only commands"""
-    __prefix__ = '=>'
 
     def __init__(self, bot):
         self.bot = bot
@@ -86,7 +80,7 @@ class Admin:
         """Adds a self-assignable role to the server
 
         A self-assignable role is one that you can assign to yourself
-        using =>iam or =>selfrole
+        using `{prefix}iam` or `{prefix}selfrole`
         """
         self_roles = self.self_roles[ctx.guild]
         if role.id in self_roles:
@@ -101,7 +95,7 @@ class Admin:
         """Removes a self-assignable role from the server
 
         A self-assignable role is one that you can assign to yourself
-        using =>iam or =>selfrole
+        using `{prefix}iam` or `{prefix}selfrole`
         """
         _check_role_position(ctx, role, "remove as a self role")
         try:
@@ -117,7 +111,7 @@ class Admin:
         """List all the self-assignable roles in the server
 
         A self-assignable role is one that you can assign to yourself
-        using =>iam or =>selfrole
+        using `{prefix}iam` or `{prefix}selfrole`
         """
         self_roles_ids = self.self_roles[ctx.guild]
         self_roles = [discord.utils.get(ctx.guild.roles, id=id) for id in self_roles_ids]
@@ -181,7 +175,7 @@ class Admin:
         """Removes a role from a user
 
         This role must be lower than both the bot's highest role and your highest role.
-        Do not confuse this with deleterole, which deletes a role from the server.
+        Do not confuse this with `{prefix}deleterole`, which deletes a role from the server.
         """
         _check_role_position(ctx, role, "remove")
         try:
@@ -318,7 +312,7 @@ class Admin:
     async def delete_role(self, ctx, *, role: discord.Role):
         """Deletes a role from the server
 
-        Do not confuse this with removerole, which deletes a role from the server.
+        Do not confuse this with `{prefix}removerole`, which deletes a role from the server.
         """
         _check_role_position(ctx, role, "delete")
         try:
@@ -402,63 +396,52 @@ class Admin:
 
     @commands.command(no_pm=True)
     @checks.is_admin()
-    async def prefix(self, ctx, cog: bot_cog_default("default"), prefix: _sanitize_prefix):
-        """Sets a prefix for a particular cog (or "default")"""
-        self.bot.custom_prefixes[ctx.guild][cog.name] = [prefix]
-        await ctx.send(f"Successfully set **{cog.name}**'s prefix to \"{prefix}\"!")
+    async def prefix(self, ctx, *, prefix=None):
+        """Sets a custom prefix for a this server cog.
+
+        If no arguments are specified, it shows the custom prefixes for this server.
+        """
+        if prefix is None:
+            prefixes = self.bot.custom_prefixes.get(ctx.guild, [self.bot.default_prefix])
+            await ctx.send(f"{ctx.guild}'s custom prefix(es) are {', '.join(prefixes)}")
+            return
+        self.bot.custom_prefixes[ctx.guild] = [prefix]
+        await ctx.send(f"Successfully set {ctx.guild}'s prefix to \"{prefix}\"!")
 
     @commands.command(name="addprefix", no_pm=True)
     @checks.is_admin()
-    async def add_prefix(self, ctx, cog: bot_cog_default("default"), prefix: _sanitize_prefix):
-        """Adds a prefix for a particular cog (or "default")"""
-        name = cog.name
-        cog_references = self.bot.custom_prefixes[ctx.guild]
-        prefixes = cog_references.setdefault(name, [])
+    async def add_prefix(self, ctx, *, prefix):
+        """Adds a prefix for this server"""
+        prefixes = self.bot.custom_prefixes.setdefault(ctx.guild, [])
         if prefix in prefixes:
             await ctx.send(f"\"{prefix}\" was already added to **{name}**...")
         else:
             prefixes.append(prefix)
             await ctx.send(f"Successfully added prefix \"{prefix}\" to **{name}**!")
 
-    @commands.command(name="removeprefix", no_pm=True)
+    @commands.command(name="removeprefix", no_pm=True, aliases=['rpf'])
     @checks.is_admin()
-    async def remove_prefix(self, ctx, cog: bot_cog_default("default"), prefix: _sanitize_prefix):
-        """Removes a prefix for a particular cog (or "default")"""
-        name = cog.name
-        cog_references = self.bot.custom_prefixes[ctx.guild]
-        prefixes = cog_references.get(name, [])
+    async def remove_prefix(self, ctx, *, prefix):
+        """Removes a prefix for this server"""
+        prefixes = self.bot.custom_prefixes.get(ctx.guild)
+        if not prefixes:
+            raise errors.InvalidUserArgument("This server doesn't use any custom prefixes")
+
         try:
             prefixes.remove(prefix)
         except ValueError:
             await ctx.send(f"\"{prefix}\" was never in **{name}**...")
         else:
-            if not prefixes:
-                cog_references.pop(name, None)
             await ctx.send("Successfully removed prefix \"{prefix}\" in **{name}**!")
 
-    @commands.command(name="resetprefix", no_pm=True, aliases=['rpf'])
+    @commands.command(name="resetprefix", no_pm=True, aliases=['clrpf'])
     @checks.is_admin()
-    async def reset_prefix(self, ctx, cog: bot_cog_default("default")):
-        """Resets a prefix for a particular cog (or "default")"""
-        name = cog.name
-        cog_references = self.bot.custom_prefixes[ctx.guild]
-        try:
-            cog_references.pop(name)
-        except KeyError:
-            await ctx.send(f"**{name}** never had any custom prefixes...")
+    async def reset_prefix(self, ctx):
+        """Resets the server's custom prefixes back to the default prefix ({prefix})"""
+        if self.bot.custom_prefixes.pop(ctx.guild, None):
+            await ctx.send(f"Done. **{ctx.guild}** no longer has any custom prefixes")
         else:
-            ctx.send(f"Done. **{name}** no longer has any custom prefixes")
-
-    @commands.command(name="usedefaultprefix", no_pm=True, aliases=['udpf'])
-    @checks.is_admin()
-    async def use_default_prefix(self, ctx, option: bool):
-        """Sets whether or not the default prefix (either defined in the server
-        or the bot's default prefix) should be used
-        """
-        cog_references = self.bot.custom_prefixes[ctx.guild]
-        cog_references["use_default_prefix"] = option
-        default_prefix = cog_references.setdefault("default", [self.bot.default_prefix])
-        await ctx.send(f"{default_prefix if option else 'Custom prefixes'} will now be used for all modules.")
+            await ctx.send(f"**{ctx.guild}** never had any custom prefixes...")
 
 def setup(bot):
     bot.add_cog(Admin(bot), "Administrator", "Administration")

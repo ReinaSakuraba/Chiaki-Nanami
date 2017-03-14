@@ -53,7 +53,6 @@ async def _user_embed(member):
 
 class Meta:
     """Info related commands"""
-    __prefix__ = '?'
 
     def __init__(self, bot):
         self.bot = bot
@@ -135,7 +134,7 @@ class Meta:
     @info.command()
     async def role(self, ctx, *, role: converter.ApproximateRole):
         server = ctx.guild
-        prefix = self.bot.str_prefix(self, server)
+        prefix = self.bot.str_prefix(ctx.message)
 
         def bool_as_answer(b):
             return "YNeos"[not b::2]
@@ -180,7 +179,7 @@ class Meta:
         highest_role = server.role_hierarchy[0]
         nice_created_at = nice_time(server.created_at)
         footer = f"Created at: {nice_created_at} | ID: {server.id}"
-        prefix = self.bot.str_prefix(self, server)
+        prefix = self.bot.str_prefix(ctx.message)
 
         if member_count < 20:
             member_field_name = f"Members ({member_count})"
@@ -282,7 +281,8 @@ class Meta:
         """
         Checks which members have a given role
 
-        The role are case sensitive.
+        The role is case sensitive.
+        Only one role can be specified. To look at multiple, use `{prefix}inanyrole` or `{prefix}inallrole`.
         """
         await self._inrole(ctx, role, predicate=lambda m, r: r in m.roles)
 

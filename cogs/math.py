@@ -403,8 +403,6 @@ def _result_embed(ctx, input, output):
            )
 
 class Math:
-    __prefix__ = ['++', '--']
-
     def __init__(self, bot):
         self.bot = bot
 

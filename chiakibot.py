@@ -2,14 +2,17 @@ import asyncio
 import collections
 import contextlib
 import discord
+import functools
 import inspect
 import logging
+import operator
 import random
 import re
 
 from collections.abc import Sequence
 from datetime import datetime
 from discord.ext import commands
+from itertools import product, takewhile
 
 from cogs.utils.context_managers import temp_attr
 from cogs.utils.database import Database
@@ -46,15 +49,28 @@ _default_config = {
 del default_bot_help
 
 MAX_FORMATTER_WIDTH = 90
-# small hack to make command display all their possible names
+# small hacks to make command display all their possible names
 commands.Command.all_names = property(lambda self: [self.name, *self.aliases])
 
-def _all_qualified_names(self):
-    parent = self.full_parent_name
+def _all_qualified_names(command):
+    parent = command.full_parent_name
     fmt = '{parent} ' * bool(parent) + '{}'
-    return list(map(fmt.format, self.all_names))
+    return list(map(fmt.format, command.all_names))
 commands.Command.all_qualified_names = property(_all_qualified_names)
 del _all_qualified_names
+
+def _iterate(func, start):
+    while True:
+        yield start
+        start = func(start)
+
+def _all_recursive_names(command):
+    """Returns an iterator containing *all* possible qualified names"""
+    command_parents = takewhile(bool, _iterate(lambda obj: getattr(obj, 'parent'), command))
+    all_names = tuple(cmd.all_names for cmd in command_parents)[::-1]
+    return map(' '.join, product(*all_names))
+commands.Command.all_recursive_names = property(_all_recursive_names)
+del _all_recursive_names
 
 class ChiakiFormatter(commands.HelpFormatter):
     def get_ending_note(self):
@@ -64,16 +80,18 @@ class ChiakiFormatter(commands.HelpFormatter):
     async def unique_cog_commands(self):
         return [(name, cmd.aliases) for name, cmd in await self.filter_command_list() if name not in cmd.aliases]
 
-    async def command_usage(self, prefix=None):
-        cmd, ctx = self.command, self.context
-        if prefix is None:
-            prefix = await ctx.bot.get_prefix(ctx.message)
+    @property
+    def description(self):
+        return (self.command.help if not self.is_cog() else inspect.getdoc(self.command)) or 'No description'
 
+    @property
+    def command_usage(self):
+        cmd, ctx = self.command, self.context
         if cmd.clean_params:
             usage = cmd.usage
             if isinstance(usage, Sequence):
-                return (f'`{prefix}{random.choice(cmd.all_qualified_names)} {usage}`' if isinstance(usage, str)
-                        else '\n'.join([f'`{prefix}{random.choice(cmd.all_qualified_names)} {u}`' for u in usage]))
+                return (f'`{self.prefix}{random.choice(cmd.all_qualified_names)} {usage}`' if isinstance(usage, str)
+                        else '\n'.join([f'`{self.prefix}{random.choice(cmd.all_qualified_names)} {u}`' for u in usage]))
             # Assume it's invalid; usage must be a sequence (either a tuple, list, or str)
             return 'No example... yet'
         # commands that don't take any arguments don't really need an example generated manually....
@@ -82,8 +100,7 @@ class ChiakiFormatter(commands.HelpFormatter):
     @property
     def clean_prefix(self):
         ctx = self.context
-        return (super().clean_prefix if self.is_bot() or self.is_cog() else
-                ctx.bot.str_prefix(self.command, ctx.guild))
+        return (super().clean_prefix if self.is_bot() or self.is_cog() else ctx.bot.str_prefix(ctx.message))
 
     async def bot_help(self):
         bot, func = self.context.bot, self.apply_function
@@ -94,7 +111,7 @@ class ChiakiFormatter(commands.HelpFormatter):
     async def cog_embed(self):
         (cog_name, cog), ctx = self.command, self.context
         bot = ctx.bot
-        prefix = bot.str_prefix(cog, ctx.guild)
+        prefix = bot.str_prefix(ctx.message)
         description = cog.__doc__ or 'No description... yet.'
 
         with temp_attr(self, 'command', cog):
@@ -103,7 +120,7 @@ class ChiakiFormatter(commands.HelpFormatter):
         if not commands:
             raise commands.BadArgument(f"Module {cog_name} has no visible commands.")
 
-        module_embed = discord.Embed(title=f"List of my commands in {cog_name} (Prefix: {prefix})",
+        module_embed = discord.Embed(title=f"List of my commands in {cog_name}",
                                      description=description, colour=bot.colour)
         for name, aliases in sorted(commands):
             trunc_alias = truncate(', '.join(aliases) or '\u200b', 30, '...')
@@ -113,8 +130,7 @@ class ChiakiFormatter(commands.HelpFormatter):
     async def command_embed(self):
         command, ctx, func = self.command, self.context, self.apply_function
         bot = ctx.bot
-        prefix = bot.str_prefix(command, ctx.guild)
-        usages = await self.command_usage(prefix)
+        usages = self.command_usage
 
         with temp_attr(command, 'usage', None):
             signature = self.get_command_signature()
@@ -122,10 +138,10 @@ class ChiakiFormatter(commands.HelpFormatter):
         requirements = getattr(command.callback, '__requirements__', {})
         required_roles = ', '.join(requirements.get('roles', [])) or 'None'
         required_perms = ', '.join(requirements.get('perms', [])) or 'None'
-        cmd_name = f"`{prefix}{command.full_parent_name} {' / '.join(command.all_names)}`"
+        cmd_name = f"`{self.prefix}{command.full_parent_name} {' / '.join(command.all_names)}`"
         footer = '"{0}" is in the module *{0.cog_name}*'.format(command)
 
-        cmd_embed = discord.Embed(title=func(cmd_name), description=func(command.help or 'No description'), colour=bot.colour)
+        cmd_embed = discord.Embed(title=func(cmd_name), description=func(self.command.help), colour=bot.colour)
 
         if self.has_subcommands():
             command_name = sorted({cmd.name for cmd in command.commands.values()})
@@ -141,26 +157,28 @@ class ChiakiFormatter(commands.HelpFormatter):
 
     async def format_help_for(self, ctx, command, func=lambda s: s):
         self.apply_function = func
+        self.prefix = ctx.bot.str_prefix(ctx.message)
         return await super().format_help_for(ctx, command)
 
     async def format(self):
-        if self.is_bot():
-            return await self.bot_help()
-        elif self.is_cog():
-            return await self.cog_embed()
-        return await self.command_embed()
+        with temp_attr(self.command, 'help', self.description.format(prefix=self.prefix)):
+            if self.is_bot():
+                return await self.bot_help()
+            elif self.is_cog():
+                return await self.cog_embed()
+            return await self.command_embed()
 
 class ChiakiBot(commands.Bot):
     def __init__(self, command_prefix, formatter=None, description=None, pm_help=False, **options):
         super().__init__(command_prefix, formatter, description, pm_help, **options)
         self.commands.pop('help', None)
 
+        self._config = collections.ChainMap(options.get('config', {}), _default_config)
         self.counter = collections.Counter()
         self.persistent_counter = Database('stats.json')
-        self.custom_prefixes = Database('customprefixes.json', default_factory=dict)
+        self.custom_prefixes = Database('customprefixes.json')
         self.databases = [self.persistent_counter, self.custom_prefixes, ]
         self.cog_aliases = {}
-        self._config = collections.ChainMap(options.get('config', {}), _default_config)
 
         self.reset_requested = False
         if self._config['restart_code'] == 0:
@@ -261,21 +279,8 @@ class ChiakiBot(commands.Bot):
             if not self.invites_by_bot:
                 self.invites_by_bot.append(await official_guild.create_invite())
 
-    # unfortunately we can't use get_prefix as it's a coroutine
-    # so we have to do it the suboptimal way...
-    def cog_prefix(self, cmd, guild):
-        cog = cmd.instance if isinstance(cmd, commands.Command) else cmd
-        cog_name = type(cog).__name__ if cog else None
-        cog_references = self.custom_prefixes.get(guild)
-        default_prefix = lambda cog: getattr(cog, '__prefix__', None) or self.default_prefix
-        if cog_references:
-            if cog_references.get("use_default"):
-                return cog_references.get("default", default_prefix(cog))
-            return cog_references.get(cog_name, default_prefix(cog))
-        return default_prefix(cog)
-
-    def str_prefix(self, cmd, guild):
-        prefix = self.cog_prefix(cmd, guild)
+    def str_prefix(self, message):
+        prefix = self.prefix_function(message)
         return prefix if isinstance(prefix, str) else ', '.join(prefix)
 
     # ------ Config-related properties ------
@@ -314,6 +319,10 @@ class ChiakiBot(commands.Bot):
 
     # ------ misc. properties ------
 
+    @discord.utils.cached_property
+    def prefix_function(self):
+        return functools.partial(self.command_prefix, self)
+
     @property
     def uptime(self):
         return datetime.utcnow() - self.start_time
@@ -322,31 +331,12 @@ class ChiakiBot(commands.Bot):
     def str_uptime(self):
         return duration_units(self.uptime.total_seconds())
 
-def _find_prefix_by_cog(bot, message):
-    custom_prefixes = bot.custom_prefixes.get(message.guild, {})
-    default_prefix = custom_prefixes.get("default", bot.default_prefix)
-
-    if not message.content:
-        return default_prefix
-
-    if custom_prefixes.get("use_default_prefix", False):
-        return default_prefix
-
-    first_word = message.content.split()[0]
-    try:
-        maybe_cmd = re.search(r'(\w+)$', first_word).group(1)
-    except AttributeError:
-        return default_prefix
-
-    cmd = bot.get_command(maybe_cmd)
-    if cmd is None:
-        return default_prefix
-
-    return bot.cog_prefix(cmd, message.guild)
+def _command_prefix(bot, message):
+    return bot.custom_prefixes.get(message.guild, bot.default_prefix)
 
 # main bot
 def chiaki_bot(config):
-    return ChiakiBot(command_prefix=_find_prefix_by_cog,
+    return ChiakiBot(command_prefix=_command_prefix,
                      formatter=ChiakiFormatter(width=MAX_FORMATTER_WIDTH, show_check_failure=True),
                      description=config.pop('description'), pm_help=None,
                      command_not_found="I don't have a command called {}, I think.",
