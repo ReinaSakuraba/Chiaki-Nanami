@@ -31,15 +31,22 @@ class TransformedDict(_defaultdict):
     def setdefault(self, k, default=None):
         return super().setdefault(self.__keytransform__(k), default)
 
-    def pop(self, k):
-        return super().pop(self.__keytransform__(k))
+    __marker = object()
+
+    def pop(self, k, d=__marker):
+        try:
+            return super().pop(self.__keytransform__(k))
+        except KeyError:
+            if d is self.__marker:
+                raise
+            return d
 
     def update(self, mapping=(), **kwargs):
         super().update(self._process_args(mapping, **kwargs))
 
     @classmethod
     def fromkeys(cls, keys):
-        return super(TransformedDict, cls).fromkeys(self.__keytransform__(k) for k in keys)
+        return super(TransformedDict, cls).fromkeys(cls.__keytransform__(k) for k in keys)
 
     def __keytransform__(self, k):
         raise NotImplementedError("__keytransform__ not implemented... for some reason")
@@ -59,5 +66,3 @@ class LowerDict(TransformedDict):
 class IDAbleDict(TransformedDict):
     def __keytransform__(self, k):
         return str(getattr(k, "id", k))
-
-
