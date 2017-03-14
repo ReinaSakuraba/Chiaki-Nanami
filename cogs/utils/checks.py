@@ -53,14 +53,14 @@ def is_server_owner():
     return chiaki_check(lambda ctx: server_owner_predicate(ctx.guild, ctx.author), role="Server Owner")
 
 def permissions_predicate(msg, **perms):
-    if is_owner_predicate(msg):
+    if is_owner_predicate(msg.author):
         return True
     resolved = msg.channel.permissions_for(msg.author)
     return all(getattr(resolved, perm, None) == value
                for perm, value in perms.items())
 
 def role_predicate(msg, role):
-    if is_owner_predicate(msg):
+    if is_owner_predicate(msg.author):
         return True
     author, server = msg.author, msg.guild
     if not server:

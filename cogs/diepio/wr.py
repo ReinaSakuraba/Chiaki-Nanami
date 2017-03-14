@@ -189,11 +189,11 @@ class WRA:
     async def wrtank(self, ctx, *, tank: _replace_tank):
         """Gives a summary of the WRs for a particular tank
 
-        Use "wr" for the full info of a particular WR (proof, date, and full score)
+        Use {prefix}wr for the full info of a particular WR (proof, date, and full score)
         """
         desktop, mobile = self._wr_tank(tank)
         title = f"**__{tank}__**"
-        prefix = self.bot.str_prefix(self, ctx.guild)
+        prefix = await self.bot.get_prefix(ctx.message)
 
         def embed_from_iterable(title, records):
             if not records:
