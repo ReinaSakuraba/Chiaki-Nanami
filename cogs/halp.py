@@ -161,7 +161,7 @@ class Help:
 
         appinfo = await self.bot.application_info()
         owner = appinfo.owner
-        avatar = owner.avatar_url or owner.default_avatar_url
+        avatar = owner.avatar_url_as(format=None)
         footer = f"Message sent on {ctx.message.timestamp}"
         response_embed = (discord.Embed(colour=0x00FF00)
                          .set_author(name=str(owner), icon_url=avatar)

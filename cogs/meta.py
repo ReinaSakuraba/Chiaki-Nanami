@@ -241,7 +241,7 @@ class Meta:
 
         discord_lib = "{0.__title__}.py {0.__version__}".format(discord)
         app_icon_url = appinfo.icon_url
-        user_icon_url = user.avatar_url or user.default_avatar_url
+        user_icon_url = user.avatar_url_as(format=None)
         bot_embed = (discord.Embed(title=appinfo.name, description=self.bot.description, colour=self.bot.colour)
                     .set_author(name=f"{user.name} | {appinfo.id}", icon_url=user_icon_url)
                     .add_field(name="Library", value=discord_lib)
