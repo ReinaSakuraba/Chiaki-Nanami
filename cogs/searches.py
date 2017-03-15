@@ -1,4 +1,6 @@
 import aiohttp
+import contextlib
+import difflib
 import discord
 import enum
 import itertools
@@ -58,6 +60,11 @@ class TagSearch(enum.Enum):
 class Searching:
     def __init__(self, bot):
         self.bot = bot
+        self._xkcd_task = self.bot.loop.create_task(self._refresh_xkcd_cache())
+
+    def __unload(self):
+        with contextlib.suppress(BaseException):
+            self._xkcd_task.cancel()
 
     if BeautifulSoup:
         @commands.cooldown(rate=10, per=5, type=commands.BucketType.guild)
@@ -116,48 +123,66 @@ class Searching:
                      )
         await ctx.send(embed=oeis_embed)
 
-    @async_cache(maxsize=2 ** 13)
-    async def find_xkcd_by_keyword(self, key):
+    async def _refresh_xkcd_cache(self):
+        self.xkcds = {}
         for i in itertools.count(1):
             try:
-                result = await TagSearch.XKCD.search(str(i), fmt='json')
-            except LookupError as e:
-                if i != 404:
-                    raise errors.InvalidUserArgument(f"Couldn't find an XKCD comic with the keyword \"{key}\".") from e
-            else:
-                if key in result['title'].lower():
-                    return result
+                self.xkcds[str(i)] = await TagSearch.XKCD.search(str(i), fmt='json')
+            except LookupError:
+                if i == 404:
+                    continue
+                self.latest_xkcd = str(i - 1)
+                break
 
-    @commands.command()
-    async def xkcd(self, ctx, *, num):
-        """Retrieves the XKCD comic that corresponds with the number"""
-        # TODO: search comic by title.
-        try:
-            int(num)
-        except ValueError:
-            result = await self.find_xkcd_by_keyword(num)
-        else:
-            try:
-                result = await TagSearch.XKCD.search(num, fmt='json')
-            except LookupError as e:
-                raise errors.InvalidUserArgument(f"Couldn't find an XKCD comic #{num}") from e
-
-        xkcd_embed = (discord.Embed(title=f"{result['num']}: {result['title']}")
+    async def display_xkcd(self, ctx, result):
+        num = result['num']
+        xkcd_embed = (discord.Embed(title=f"{num}: {result['title']}", url=f'https://xkcd.com/{num}/')
                      .set_image(url=result['img'])
                      .set_footer(text=result['alt'])
                      )
+
         await ctx.send(embed=xkcd_embed)
+
+    @commands.group(invoke_without_command=True)
+    async def xkcd(self, ctx, *, query=None):
+        """Retrieves the XKCD comic that corresponds with the keyword."""
+        if query is None:
+            pass
+        if query == '404':
+            raise errors.InvalidUserArgument('XKCD comic not found.')
+
+        result = self.xkcds.get(query)
+        if result is None:
+            query = query.lower()
+            seq = difflib.SequenceMatcher(lambda x: x == ' ', a=None, b=query)
+
+            def key(s):
+                o = s['title'].lower()
+                seq.set_seq1(o)
+                m = seq.find_longest_match(0, len(o), 0, len(query))
+                return m.size
+
+            result = max(self.xkcds.values(), key=key)
+            if result is None:
+                raise errors.InvalidUserArgument(f"Couldn't find an XKCD comic \"{num}\"")
+
+        await self.display_xkcd(ctx, result)
+
+    @xkcd.command(name='latest')
+    async def xkcd_latest(self, ctx):
+        """Retrieves the latest XKCD comic."""
+        await self.display_xkcd(ctx, self.xkcds[self.latest_xkcd])
+
+    @xkcd.command(name='random')
+    async def xkcd_random(self, ctx):
+        """Retrieves a random XKCD comic."""
+        await self.display_xkcd(ctx, random.choice(list(self.xkcds.values())))
 
     async def wikipedia(self, ctx, *, title):
         pass
-
-class NSFW:
-    def __init__(self, bot):
-        self.bot = bot
-        self.session = self.bot.http.session
 
 def setup(bot):
     bot.add_cog(Searching(bot))
 
 def teardown(bot):
-    bot.loop.create_task(_static_session.close())
+    self.bot.loop.create_task(_static_session.close())
