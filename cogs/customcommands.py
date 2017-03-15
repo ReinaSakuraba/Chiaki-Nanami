@@ -32,6 +32,7 @@ def firstn(iterable, n, *, reverse=False):
 
     return (tuple(islice(iter(iterable), i)) for i in range_iterator)
 
+MAX_ALIAS_WORDS = 5
 class CustomReactions:
     def __init__(self, bot):
         self.bot = bot
@@ -153,6 +154,9 @@ class CustomReactions:
 
     @alias.command(name='add')
     async def add_alias(self, ctx, alias, *, real):
+        if len(alias.split()) > MAX_ALIAS_WORDS:
+            raise errors.InvalidUserArgument(f"Your alias is too long to be practical. "
+                                              "The limit is {MAX_ALIAS_WORDS}.")
         if any(alias in cmd.all_recursive_names for cmd in self.bot.walk_commands()):
             raise errors.InvalidUserArgument(f'\"{alias}\" is already an existing command')
 
@@ -168,7 +172,7 @@ class CustomReactions:
 
     @alias.command(name='show')
     async def show_alias(self, ctx, *, alias):
-        real = self.aliases[ctx.guild].pop(alias, None)
+        real = self.aliases[ctx.guild].get(alias)
         if real:
             await ctx.send(f'Alias "{alias}" is actually **{real}**, I think')
         else:
@@ -177,10 +181,11 @@ class CustomReactions:
     @alias.command(name='list')
     async def list_aliases(self, ctx):
         await iterable_limit_say(starmap('{0} => {1}'.format, self.aliases[ctx.guild].items()), ctx=ctx)
-        
+
     async def check_alias(self, message):
         if isinstance(message.channel, (discord.DMChannel, discord.GroupChannel)):
             return
+
         content = message.content
         prefix = self.bot.prefix_function(message)
         if not any(map(content.startswith, prefix)):
@@ -188,7 +193,7 @@ class CustomReactions:
 
         content_no_prefix = content[len(prefix):]
         words = content_no_prefix.split()
-        for alias in filter(content_no_prefix.startswith, map(' '.join, firstn(words, len(words), reverse=True))):
+        for alias in filter(content_no_prefix.startswith, map(' '.join, firstn(words, MAX_ALIAS_WORDS, reverse=True))):
             real = self.aliases[message.guild].get(alias)
             if real:
                 with temp_attr(message, 'content', message.content.replace(alias, real, 1)):
