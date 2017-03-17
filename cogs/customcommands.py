@@ -1,7 +1,7 @@
 import discord
 import random
 
-from collections import defaultdict
+from collections import ChainMap
 from discord.ext import commands
 from itertools import chain, islice, starmap
 from operator import itemgetter
@@ -11,13 +11,6 @@ from .utils.context_managers import temp_attr
 from .utils.database import Database
 from .utils.paginator import DelimPaginator, iterable_limit_say
 
-_cc_default = {"triggers": {}, "reactions": {}, "current_pow": 6}
-
-def _smart_truncate(content, length=100, suffix='...'):
-    if len(content) <= length:
-        return content
-    else:
-        return ' '.join(content[:length+1].split(' ')[0:-1]) + suffix
 
 def firstn(iterable, n, *, reverse=False):
     """Returns an iterator containing the first element, then the first two elements,
@@ -32,121 +25,88 @@ def firstn(iterable, n, *, reverse=False):
 
     return (tuple(islice(iter(iterable), i)) for i in range_iterator)
 
+# Only the owner can add commands in the global scope.
+def global_cc_check():
+    def predicate(ctx):
+        if ctx.guild:
+            return True
+        return is_owner_predicate(ctx.author)
+    return commands.check(predicate)
+
 MAX_ALIAS_WORDS = 5
-class CustomReactions:
+class CustomCommands:
     def __init__(self, bot):
         self.bot = bot
-        self.custom_reactions = Database("customcommands.json")
-        self.aliases = Database("commandaliases.json", default_factory=dict)
+        self.custom_reactions = Database("customcommands.json", default_factory=dict)
+        self.custom_reaction_pows = Database('custom-command-current-pow.json', default_factory=int)
+        self.aliases = Database('commandaliases.json', default_factory=dict)
+
+    def _all_reactions(self, server):
+        return ChainMap(*self.custom_reactions[server].values())
 
     def _get_all_trigger_ids(self, server):
-        if server not in self.custom_reactions:
-            return set()
-        return set(chain.from_iterable(self.custom_reactions[server]["triggers"].values()))
+        return set(self._all_reactions(server).keys())
 
     def _random_trigger(self, server):
-        db = self.custom_reactions[server]
-        ids = self._get_all_trigger_ids(server)
-        available_ids = set(range(1, 10 ** db["current_pow"])) - ids
+        ids = set(self._all_reactions(server).keys())
+        current_pow = self.custom_reaction_pows[server]
+        available_ids = set(map(str, range(1, 10 ** current_pow))) - ids
         if not available_ids:
-            db_pow = db["current_pow"]
-            available_ids |= set(range(10 ** db_pow, 10 ** (db_pow + 1)))
-            db["current_pow"] = db_pow + 1
+            available_ids = set(map(str, range(10 ** current_pow, 10 ** (current_pow + 1))))
+            self.custom_reaction_pows[server] += 1
         return random.sample(available_ids, 1)[0]
 
-    @commands.group(aliases=["customreact", "cc", "cr"])
-    async def customcommand(self):
+    def _cc_iterator(self, server):
+        # Someone come up with some itertools magic plz...
+        for trigger, reactions in self.custom_reactions[server].items():
+            for id_ in reactions:
+                yield f'`{id_}` => {trigger}'
+
+    @commands.group(name='customcommand', aliases=["customreact", "cc", "cr"])
+    async def custom_command(self, ctx):
         """Namespace for the custom commands"""
         pass
 
-    @customcommand.command()
-    @checks.is_admin()
-    async def add(self, ctx, trigger, *, reaction : str):
-        """Adds a new custom reaction/trigger (depending on what bot you use)
+    @custom_command.command(name='add', no_pm=True)
+    @global_cc_check()
+    async def add_custom_command(self, ctx, trigger, reaction):
+        server = ctx.guild or 'global'
+        server_reactions = self.custom_reactions[server]
+        new_trigger_id = self._random_trigger(server)
 
-        The trigger must be put in quotes if you want spaces in your trigger.
-        """
-        server = ctx.guild
-        if server not in self.custom_reactions:
-            self.custom_reactions[server] = _cc_default.copy()
+        server_reactions.setdefault(trigger.lower(), {})[new_trigger_id] = reaction
+        await ctx.send(f'Custom command added: "**{trigger}** = **{reaction}**"')
 
-        trigger_id = str(self._random_trigger(server))
+    @custom_command.command(name='remove', no_pm=True)
+    @global_cc_check()
+    async def remove_custom_command(self, ctx, trigger_id):
+        """Removes a custom trigger by id."""
+        if self._all_reactions(ctx.guild or 'global').pop(trigger_id, None):
+            await ctx.send(f'Successfully removed **"{trigger_id}"**.')
+        else:
+            await ctx.send(f'{trigger_id} was never a trigger, I think.')
 
-        triggers = self.custom_reactions[server]["triggers"]
-        triggers.setdefault(trigger.lower(), []).append(trigger_id)
+    @custom_command.command(name='delete', no_pm=True, aliases=['del'])
+    @checks.mod_or_permissions(manage_server=True)
+    @global_cc_check()
+    async def delete_custom_command(self, ctx, trigger):
+        """Deletes an entire trigger from the server."""
+        if self.custom_reactions[ctx.guild or 'global'].pop(trigger.lower(), None):
+            await ctx.send(f'Successfully removed *all* custom commands relating to **"{trigger}"**.')
+        else:
+            await ctx.send(f'"{trigger}" was never a custom command.')
 
-        self.custom_reactions[server]["reactions"][trigger_id] = reaction
-        await ctx.send("Custom command added")
-
-    def _cc_iterator(self, server):
-        database = self.custom_reactions[server]
-        for trigger, ids in sorted(database['triggers'].items(), key=itemgetter(0)):
-            for id_ in sorted(ids):
-                reaction = database['reactions'][id_]
-                truncated_reaction = _smart_truncate(reaction, 80)
-                yield f"`{id_:<6}`: {trigger} => {truncated_reaction}"
-
-    @customcommand.command()
-    async def list(self, ctx, page=0):
-        server = ctx.guild or "global"
+    @custom_command.command(name='list')
+    async def list_custom_commands(self, ctx, page: int=0):
+        """Lists the custom commands for the server."""
+        server = ctx.guild or 'global'
         paginator = DelimPaginator.from_iterable(self._cc_iterator(server), prefix='', suffix='')
         try:
             msg = paginator[page]
         except IndexError:
-            msg = f"Page {page} doesn't exist, or is out of bounds, I think."
+            msg = (f"Page {page} doesn't exist, or is out of bounds, I think." if page else
+                    "This server doesn't have any custom commands... I think.")
         await ctx.send(msg)
-
-    @customcommand.command(aliases=['delete', 'del', 'rem',])
-    @checks.is_admin()
-    async def remove(self, ctx, *, ccid):
-        """Removes a new custom reaction/trigger (depending on what bot you use)
-
-        Keep in mind the ccid is an integer.
-        """
-        storage = self.custom_reactions.get(ctx.guild, None)
-        if storage is None:
-            raise errors.ResultsNotFound("There are no commands for this server")
-        try:
-            storage["reactions"].pop(ccid)
-        except KeyError:
-            await ctx.send("{} was never a custom command".format(ccid))
-        else:
-            triggers = storage["triggers"]
-            key = discord.utils.find((lambda k: ccid in triggers[k]), triggers)
-            triggers[key].remove(ccid)
-            if not triggers[key]:
-                triggers.pop(key)
-            await ctx.send(f"#{ccid} successfully removed.")
-
-    @customcommand.command()
-    @checks.is_admin()
-    async def edit(self, ctx, ccid, *, new_react: str):
-        server = ctx.guild
-        storage = self.custom_reactions.get(server, None)
-        if storage is None:
-            raise errors.ResultsNotFound("There are no commands for this server")
-
-        reactions = storage["reactions"]
-        if ccid not in reactions:
-            raise errors.ResultsNotFound("Command {} doesn't ~~edit~~ exits".format(ccid))
-
-        reactions[ccid] = new_react
-        await ctx.send("{} command edited".format(ccid))
-
-    @customcommand.command(hidden=True)
-    @checks.is_owner()
-    @errors.private_message_only()
-    async def addg(self, ctx, trigger, *, msg : str):
-        self.custom_reactions["global"][trigger] = msg
-
-    @customcommand.command(hidden=True)
-    @checks.is_owner()
-    @errors.private_message_only()
-    async def remg(self, ctx, trigger):
-        try:
-            self.custom_reactions["global"].pop(ccid.lower())
-        except KeyError:
-            raise ResultsNotFound(f"{ccid} was never a custom command")
 
     @commands.group()
     async def alias(self, ctx):
@@ -201,22 +161,19 @@ class CustomReactions:
                 break
 
     async def check_custom_command(self, message):
-        storage = self.custom_reactions.get(message.guild) or self.custom_reactions.get("global")
-        if storage is None:
+        storage = self.custom_reactions.get(message.guild) or self.custom_reactions.get('global')
+        if not storage:
             return
 
-        triggers = storage["triggers"].get(message.content.lower())
-        if triggers is None:
+        reactions = storage.get(message.content.lower())
+        if reactions is None:
             return
 
-        trigger_id = str(random.choice(triggers))
-        reaction = storage["reactions"].get(trigger_id)
-        if reaction is not None:
-            await msg.channel.send(reaction)
+        await message.channel.send(random.choice(list(reactions.values())))
 
     async def on_message(self, message):
         await self.check_custom_command(message)
         await self.check_alias(message)
 
 def setup(bot):
-    bot.add_cog(CustomReactions(bot), "CustomCommands")
+    bot.add_cog(CustomCommands(bot), "CustomReactions")
