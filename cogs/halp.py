@@ -21,8 +21,8 @@ def default_help_command(func=lambda s: s, **kwargs):
     return commands.command(help=func("Shows this message and stuff"), **kwargs)(help_command)
 
 async def default_help(ctx, command=None, func=lambda s:s):
-    command = ctx.bot if command is None else command.value
-    destination = ctx.message.channel
+    command = ctx.bot if command is None else command
+    destination = ctx.channel
 
     page = await ctx.bot.formatter.format_help_for(ctx, command, func)
 
@@ -198,7 +198,7 @@ class Help:
 
     @commands.command(aliases=['cmds'])
     async def commands(self, ctx, cog: BotCogConverter):
-        commands_embed = await self.bot.formatter.format_help_for(ctx, cog.value)
+        commands_embed = await self.bot.formatter.format_help_for(ctx, cog)
         await ctx.send(embed=commands_embed)
 
 def setup(bot):

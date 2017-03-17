@@ -3,7 +3,7 @@ import discord
 from discord.ext import commands
 
 from .utils import checks, errors
-from .utils.converter import ArgumentParser, bot_cog_default
+from .utils.converter import ArgumentParser
 from .utils.database import Database
 from .utils.misc import multi_replace, nice_time, ordinal, str_join
 

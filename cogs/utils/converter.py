@@ -1,5 +1,6 @@
 import argparse
 import discord
+import re
 
 from collections import namedtuple
 from discord.ext import commands
@@ -47,7 +48,6 @@ class ApproximateRole(commands.RoleConverter):
                 return next_role
         return super().convert()
 
-NamePair = namedtuple('NamePair', 'name value')
 class BotCogConverter(commands.Converter):
     def __init__(self):
         super().__init__()
@@ -60,26 +60,22 @@ class BotCogConverter(commands.Converter):
         finder = partial(discord.utils.find, lambda s: s[0].lower() == cog)
         cog_pair = finder(bot.cogs.items())
         if cog_pair is not None:
-            return NamePair(*cog_pair)
+            return cog_pair[1]
 
         cog_alias_pair = finder(bot.cog_aliases.items())
         if cog_alias_pair is not None:
-            name = cog_alias_pair[1]
-            return NamePair(name, bot.get_cog(name))
+            return bot.get_cog(cog_alias_pair[1])
 
         if cog in self.alts:
-            return NamePair(cog, None)
+            return cog
         raise commands.BadArgument(f"Module {cog} not found")
-
-def bot_cog_default(*defaults):
-    return type('DefaultCogConverter', (BotCogConverter, ), {'alts': set(defaults)})
 
 class BotCommandsConverter(commands.Converter):
     def convert(self):
         cmd = self.ctx.bot.get_command(self.argument)
         if cmd is None:
             raise commands.BadArgument(f"I don't recognized the {self.argument} command")
-        return NamePair(cmd.all_names, cmd)
+        return cmd
 
 class RecursiveBotCommandConverter(commands.Converter):
     def convert(self):
@@ -92,9 +88,9 @@ class RecursiveBotCommandConverter(commands.Converter):
                     raise commands.BadArgument(bot.command_not_found.format(cmd_path))
             except AttributeError:
                 raise commands.BadArgument(bot.command_not_found.format(obj))
-        return NamePair(obj.all_names, obj)
+        return obj
 
-def positive(num):
+def non_negative(num):
     num = parse_int(num)
     if num is None:
         raise commands.BadArgument(f'"{num}" is not a number.')
@@ -127,3 +123,31 @@ def item_converter(d, *, key=lambda k: k, error_msg="Couldn't find key \"{arg}\"
         except Exception as e:
             raise commands.BadArgument(error_msg.format(arg=arg)) from e
     return itemgetter
+
+DURATION_MULTIPLIERS = {
+    's': 1,                  'sec': 1,
+    'm': 60,                 'min': 60,
+    'h': 60 * 60,            'hr': 60 * 60,
+    'd': 60 * 60 * 24,       'day': 60 * 60 * 24,
+    'w': 60 * 60 * 24 * 7,   'wk': 60 * 60 * 24 * 7,
+    'y': 60 * 60 * 24 * 365, 'yr': 60 * 60 * 24 * 365,
+}
+
+def _pairwise(iterable):
+    it = iter(iterable)
+    return zip(*[it, it])
+
+def _parse_time(string, unit='m'):
+    if not unit:
+        unit = 'm'
+    lowered_unit = unit.lower()
+
+    duration = number(string)
+    unit_multiplier = DURATION_MULTIPLIERS.get(lowered_unit)
+    if unit_multiplier is None:
+        raise command.BadArgument(f"Unrecognized unit: {unit_multiplier}")
+    return duration * unit_multiplier
+
+def duration(strings):
+    durations = re.split(r"(\d+[\.]?\d*)", strings)[1:]
+    return sum(_parse_time(d, u) for d, u in _pairwise(durations))
