@@ -67,7 +67,7 @@ def _iterate(func, start):
 def _all_recursive_names(command):
     """Returns an iterator containing *all* possible qualified names"""
     command_parents = takewhile(bool, _iterate(lambda obj: getattr(obj, 'parent'), command))
-    all_names = tuple(cmd.all_names for cmd in command_parents)[::-1]
+    all_names = [cmd.all_names for cmd in command_parents][::-1]
     return map(' '.join, product(*all_names))
 commands.Command.all_recursive_names = property(_all_recursive_names)
 del _all_recursive_names
@@ -77,7 +77,7 @@ class ChiakiFormatter(commands.HelpFormatter):
         command_name = self.context.invoked_with
         return f"Type {self.clean_prefix}help command for more info on a command."
 
-    async def unique_cog_commands(self):
+    async def unique_cog_command_names(self):
         return [(name, cmd.aliases) for name, cmd in await self.filter_command_list() if name not in cmd.aliases]
 
     @property
@@ -100,7 +100,7 @@ class ChiakiFormatter(commands.HelpFormatter):
     @property
     def clean_prefix(self):
         ctx = self.context
-        return (super().clean_prefix if self.is_bot() or self.is_cog() else ctx.bot.str_prefix(ctx.message))
+        return (super().clean_prefix if self.is_bot() or self.is_cog() else self.prefix)
 
     async def bot_help(self):
         bot, func = self.context.bot, self.apply_function
@@ -112,9 +112,8 @@ class ChiakiFormatter(commands.HelpFormatter):
         cog, ctx = self.command, self.context
         cog_name = type(cog).__name__
         bot = ctx.bot
-        prefix = bot.str_prefix(ctx.message)
         description = inspect.getdoc(cog) or 'No description... yet.'
-        commands = await self.unique_cog_commands()
+        commands = await self.unique_cog_command_names()
 
         if not commands:
             raise commands.BadArgument(f"Module {cog_name} has no visible commands.")
@@ -292,7 +291,7 @@ class ChiakiBot(commands.Bot):
 
     @discord.utils.cached_property
     def permissions(self):
-        permissions_dict = self._config['permissions']
+        permissions_dict = dict.fromkeys(self._config['permissions'], True)
         chiaki_permissions = discord.Permissions.none()
         chiaki_permissions.update(**permissions_dict)
         return chiaki_permissions
@@ -329,6 +328,10 @@ class ChiakiBot(commands.Bot):
     @property
     def str_uptime(self):
         return duration_units(self.uptime.total_seconds())
+
+    @property
+    def all_cogs(self):
+        return collections.ChainMap(bot.cogs, bot.cog_aliases)
 
 def _command_prefix(bot, message):
     return bot.custom_prefixes.get(message.guild, bot.default_prefix)

@@ -1,5 +1,6 @@
 import argparse
 import discord
+import inspect
 import re
 
 from collections import namedtuple
@@ -51,24 +52,18 @@ class ApproximateRole(commands.RoleConverter):
 class BotCogConverter(commands.Converter):
     def __init__(self):
         super().__init__()
-        self.alts = set()
 
     def convert(self):
         bot = self.ctx.bot
-        cog = self.argument.lower()
+        lowered = self.argument.lower()
 
-        finder = partial(discord.utils.find, lambda s: s[0].lower() == cog)
-        cog_pair = finder(bot.cogs.items())
-        if cog_pair is not None:
-            return cog_pair[1]
+        result = discord.utils.find(lambda s: s[0].lower() == lowered, bot.all_cogs.items())
+        if result is None:
+            raise commands.BadArgument(f"Module {lowered} not found")
 
-        cog_alias_pair = finder(bot.cog_aliases.items())
-        if cog_alias_pair is not None:
-            return bot.get_cog(cog_alias_pair[1])
-
-        if cog in self.alts:
-            return cog
-        raise commands.BadArgument(f"Module {cog} not found")
+        cog = result[1]
+        # figure out if the key is from bot.cog_aliases or bot.cogs
+        return bot.get_cog(cog) if isinstance(cog, str) else cog
 
 class BotCommandsConverter(commands.Converter):
     def convert(self):
@@ -151,3 +146,26 @@ def _parse_time(string, unit='m'):
 def duration(strings):
     durations = re.split(r"(\d+[\.]?\d*)", strings)[1:]
     return sum(_parse_time(d, u) for d, u in _pairwise(durations))
+
+def multi_converter(*types):
+    converters = [getattr(commands, f'{typ.__name__}Converter')
+                  if getattr(typ, '__module__', '').startswith('discord') else typ for typ in types]
+    class MultiConverter(commands.Converter):
+        async def convert(self):
+            arg = self.argument
+            for converter in converters:
+                # isinstance(converter, commands.Converter) doesn't work for some reason
+                actual_converter = (lambda arg: converter(self.ctx, arg).convert()
+                                    if hasattr(converter, 'convert') else converter)
+                try:
+                    result = actual_converter(arg)
+                    if inspect.isawaitable(result):
+                        result = await result
+                except Exception as e:
+                    print(e)
+                    continue
+                else:
+                    return result
+            raise commands.BadArgument(f"I couldn't parse {arg} successfully, "
+                                       f"given these types: {', '.join([t.__name__ for t in types])}")
+    return MultiConverter

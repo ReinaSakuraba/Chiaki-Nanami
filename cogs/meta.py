@@ -308,7 +308,6 @@ class Meta:
         """
         await self._inrole(ctx, *roles, predicate=lambda m, *r: all(r in m.roles for r in roles))
 
-
     @commands.command()
     async def permroles(self, ctx, *, perm: str):
         """
@@ -321,6 +320,23 @@ class Meta:
                                  if getattr(role.permissions, perm_attr)]
         fmt = f"Here are the roles who have the {perm.title()} perm."
         await ctx.send(fmt + f"```css\n{str_join(', ', roles_that_have_perms)}```")
+
+    @commands.command(pass_context=True, aliases=['perms'])
+    async def permissions(self, ctx, *, member_or_role: multi_converter(discord.Member, discord.Role)=None):
+        """Shows either a member's Permissions, or a role's Permissions"""
+        if member_or_role is None:
+            member_or_role = ctx.message.author
+        permissions = getattr(member_or_role, 'permissions', None) or member_or_role.server_permissions
+
+        value = permissions.value
+        diff_mapper = '\n'.join([f"{'-+'[value]} {attr.title().replace('_', ' ')}" for attr, value in permissions])
+
+        message = (f"The permissions for **{member_or_role}** is **{value}**."
+                   f"\nIn binary it's {bin(value)[2:]}"
+                   f"\nThis implies the following values:"
+                   f"\n```diff\n{diff_mapper}```"
+                   )
+        await self.bot.say(message)
 
     @commands.command(aliases=['av'])
     async def avatar(self, ctx, *, user: converter.ApproximateUser=None):
