@@ -1,4 +1,5 @@
 import discord
+import inspect
 
 from collections import namedtuple
 from discord.ext import commands
@@ -83,7 +84,7 @@ class BotCommandsConverter(commands.Converter):
         if cmd is None:
             raise commands.BadArgument(f"I don't recognized the {self.argument} command")
         return NamePair([cmd.qualified_name.split()[0], *cmd.aliases], cmd)
-        
+
 class RecursiveBotCommandConverter(commands.Converter):
     def convert(self):
         cmd_path = self.argument
@@ -106,7 +107,7 @@ def positive(num):
     if num >= 0:
         return num
     raise commands.BadArgument(f'Number must be positive')
-    
+
 def attr_converter(obj, msg="Cannot find attribute {attr}."):
     def attrgetter(attr):
         if attr.startswith('_'):
@@ -124,4 +125,26 @@ def number(s):
         except ValueError:
             continue
     raise commands.BadArgument(f"{s} is not a number.")
-    
+
+def multi_converter(*types):
+    converters = [getattr(commands, f'{typ.__name__}Converter')
+                  if getattr(typ, '__module__', '').startswith('discord') else typ for typ in types]
+    class MultiConverter(commands.Converter):
+        async def convert(self):
+            arg = self.argument
+            for converter in converters:
+                # isinstance(converter, commands.Converter) doesn't work for some reason
+                actual_converter = (lambda arg: converter(self.ctx, arg).convert()
+                                    if hasattr(converter, 'convert') else converter)
+                try:
+                    result = actual_converter(arg)
+                    if inspect.isawaitable(result):
+                        result = await result
+                except Exception as e:
+                    print(e)
+                    continue
+                else:
+                    return result
+            raise commands.BadArgument(f"I couldn't parse {arg} successfully, "
+                                       f"given these types: {', '.join([t.__name__ for t in types])}")
+    return MultiConverter

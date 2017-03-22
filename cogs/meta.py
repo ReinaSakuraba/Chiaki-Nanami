@@ -3,6 +3,7 @@ import discord
 import inspect
 import json
 import sys
+import textwrap
 
 from collections import defaultdict, deque
 from discord.ext import commands
@@ -10,7 +11,7 @@ from operator import attrgetter, itemgetter
 
 from .utils import converter
 from .utils.compat import url_color, user_color
-from .utils.converter import BotCogConverter, RecursiveBotCommandConverter
+from .utils.converter import BotCogConverter, multi_converter, RecursiveBotCommandConverter
 from .utils.errors import ResultsNotFound
 from .utils.misc import str_join, nice_time, ordinal
 from .utils.paginator import iterable_limit_say, iterable_say
@@ -315,6 +316,33 @@ class Meta:
                                  if getattr(role.permissions, perm_attr)]
         fmt = f"Here are the roles who have the {perm.title()} perm."
         await self.bot.say(fmt + f"```css\n{str_join(', ', roles_that_have_perms)}```")
+
+    async def display_permissions(self, thing, permissions, extra=''):
+        value = permissions.value
+        diff_mapper = '\n'.join([f"{'-+'[value]} {attr.title().replace('_', ' ')}" for attr, value in permissions])
+
+        message = (f"The permissions {extra} for **{thing}** is **{value}**."
+                   f"\nIn binary it's {bin(value)[2:]}"
+                   f"\nThis implies the following values:"
+                   f"\n```diff\n{diff_mapper}```"
+                   )
+        await self.bot.say(message)
+        
+    @commands.command(pass_context=True, aliases=['perms'])
+    async def permissions(self, ctx, *, member_or_role: multi_converter(discord.Member, discord.Role)=None):
+        """Shows either a member's Permissions, or a role's Permissions"""
+        if member_or_role is None:
+            member_or_role = ctx.message.author
+        permissions = getattr(member_or_role, 'permissions', None) or member_or_role.server_permissions
+        await self.display_permissions(member_or_role, permissions)
+        
+    @commands.command(pass_context=True, aliases=['permsin'])
+    async def permissionsin(self, ctx, *, member: discord.Member=None):
+        """Shows either a member's Permissions *in the channel*"""
+        if member is None:
+            member = ctx.message.author
+        channel = ctx.message.channel
+        await self.display_permissions(member, channel.permissions_for(member), extra=f'in {channel.mention}')
 
     @commands.command(pass_context=True, aliases=['av'])
     async def avatar(self, ctx, *, user: converter.ApproximateUser=None):
