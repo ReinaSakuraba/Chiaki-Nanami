@@ -1,5 +1,6 @@
 import aiohttp
 import discord
+import functools
 import re
 import socket
 import struct
@@ -77,8 +78,11 @@ class DiepioServer(namedtuple('DiepioServer', 'ip_port name')):
 
 class LinkServerData(namedtuple('LinkServerData', 'code server')):
     def is_sandbox(self):
-        print(self.code_length)
+        print(type(self.code_length), self.code_length)
         return self.server.mode == 'Sandbox' or self.code_length > 20
+
+    def is_tdm(self):
+        return self.server.mode.endswith('TDM')
 
     def format(self):
         return ("Code: {0.code}\n"
@@ -128,10 +132,10 @@ def _ip_from_hex(hexs):
     return socket.inet_ntoa(struct.pack("<L", addr_long)[::-1])
 
 def _extract_links(message):
-    return re.findall(r'\s?(diep.io/#[1234567890ABCDEF]*)\s?', message)
+    return re.findall(r'(diep.io/#[1234567890ABCDEF]*)\s?', message)
 
 def _extract_code(link):
-    return _search(r'\s?diep.io/#([1234567890ABCDEF]*)\s?', link)
+    return _search(r'diep.io/#([1234567890ABCDEF]*)\s?', link)
 
 def _is_valid_hex(s):
     try:
@@ -163,9 +167,24 @@ def read_link(link):
 class PartyLinks:
     def __init__(self, bot):
         self.bot = bot
-        config_default = lambda: {"detect" : True, "delete" : True}
+        config_default = lambda: {"detect" : True, "delete" : True, 'tdm_delete': False}
         self.pl_config_db = Database.from_json("plconfig.json", default_factory=config_default)
+        self.pl_allowed = Database.from_json("plimmune.json", default_factory=list)
         self.bot.loop.create_task(_produce_server_list())
+
+    def _is_immune(self, message):
+        immune_roles = self.pl_allowed[message.server]
+        if not immune_roles:
+            return False
+        getter = functools.partial(discord.utils.get, message.author.roles)
+        return any(getter(id=id) is not None for id in immune_roles)
+
+    async def _handle_delete(self, message, message_string=None, *, silent=False):
+        if self._is_immune(message):
+            return
+        if not silent:
+            await self.bot.send_message(message.channel, message_string.format(msg=message))
+        await self.bot.delete_message(message)
 
     async def on_message(self, message):
         server = message.server
@@ -174,16 +193,21 @@ class PartyLinks:
         if not links:
             return
         link_data = list(filter(None, map(read_link, links)))
+
+        if config.get('all_delete'):
+            await self._handle_delete(message, silent=True)
+            return
+
+        # Prevent posting TDM links in public
+        if config.get("tdm_delete") and any(data.is_tdm() for data in link_data):
+            await self._handle_delete(message, "{msg.author.mention} TDM links are not allowed here.")
+            return
+
         # Prevent posting sandbox links in public
         # Posting links in public chats never seems to end well so I've created a guard for it
-        if (config["delete"] and
-            any(data.is_sandbox() for data in link_data)):
-            print("Sandbox Link!")
-            await self.bot.delete_message(message)
-            notif_fmt = ("{.author.mention} Please DM (direct message) "
-                         "your sandbox links, unless you want Arena Closers")
-
-            await self.bot.send_message(message.channel, notif_fmt.format(message))
+        if config["delete"] and any(data.is_sandbox() for data in link_data):
+            await self._handle_delete(message, "{msg.author.mention} Please DM (direct message) "
+                                               "your sandbox links, unless you want Arena Closers")
             return
 
         data_formats = [data.format() for data in link_data]
@@ -199,20 +223,52 @@ class PartyLinks:
     async def partylinkset(self):
         pass
 
+    @partylinkset.command(pass_context=True, aliases=['plra'])
+    @checks.is_admin()
+    async def linkroleadd(self, ctx, *, role: discord.Role):
+        """Adds a role to the list of roles that are allowed to post party-links on this server"""
+        self.pl_allowed[ctx.message.server].append(role.id)
+        await self.bot.say(f"Successfully allowed **{role}** to post party links!")
+
+    @partylinkset.command(pass_context=True, aliases=['plrd'])
+    @checks.is_admin()
+    async def linkroledelete(self, ctx, *, role: discord.Role):
+        """Removes a role to the list of roles that are allowed to post party-links on this server"""
+        try:
+            self.pl_allowed[ctx.message.server].remove(role.id)
+        except ValueError:
+            await self.bot.say(f"**{role}** was never allowed to post party links in the first place...")
+        else:
+            await self.bot.say(f"Successfully disallowed **{role}** to post party links!")
+
     @partylinkset.command(pass_context=True)
-    # Just in case.
     @checks.is_admin()
     async def detect(self, ctx, mode: bool):
+        """Configures if party link detection (and the posting of info relating to the link) should be deleted"""
         self.pl_config_db[ctx.message.server]["detect"] = mode
         await self.bot.say(f"Party link detection {'deins'[mode::2]}abled, I think")
 
     @partylinkset.command(pass_context=True)
-    # Just in case.
     @checks.is_admin()
     async def delete(self, ctx, mode: bool):
+        """Configures if all party links should be deleted"""
+        self.pl_config_db[ctx.message.server]["all_delete"] = mode
+        await self.bot.say(f"Party Link deletion {'deins'[mode::2]}abled, I think")
+
+
+    @partylinkset.command(pass_context=True)
+    @checks.is_admin()
+    async def sbdelete(self, ctx, mode: bool):
         """Configures if sandbox party links should be deleted"""
         self.pl_config_db[ctx.message.server]["delete"] = mode
         await self.bot.say(f"Sandbox link deletion {'deins'[mode::2]}abled, I think")
+
+    @partylinkset.command(pass_context=True)
+    @checks.is_admin()
+    async def tdmdelete(self, ctx, mode: bool):
+        """Configures if TDM party links should be deleted"""
+        self.pl_config_db[ctx.message.server]["tdm_delete"] = mode
+        await self.bot.say(f"TDM (2 Teams and 4 Teams) deletion {'deins'[mode::2]}abled, I think")
 
 def setup(bot):
     bot.add_cog(PartyLinks(bot), hidden=True)
