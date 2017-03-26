@@ -26,7 +26,6 @@ def _user_info(user):
 
 _special_pairs = {}
 
-
 @functools.lru_cache(maxsize=2 ** 20)
 def _calculate_compatibilty(info1, info2):
     id_pair = frozenset((info1, info2))
@@ -77,7 +76,7 @@ class OtherStuffs:
             embed.add_field(name=pasta, value='\u200b')
         await ctx.send(embed=embed)
 
-    @commands.command(usage=['rjt#2336, Nelyn#7808', 'Danny#0007 Jake#0001'])
+    @commands.command(usage=['rjt#2336 Nelyn#7808', 'Danny#0007 Jake#0001'])
     async def ship(self, ctx, user1: discord.Member, user2: discord.Member=None):
         """Determines if two users are compatible with one another.
 
@@ -91,6 +90,7 @@ class OtherStuffs:
         # Using the actual User object won't work if we're gonna take advantage of functools.lru_cache
         # Because a change in avatar or username won't create a new result
         rating = _calculate_compatibilty(_user_info(user1), _user_info(user1))
+        # TODO: Use pillow to make an image out of the two users' thumbnails.
         ship_embed = (discord.Embed(title='Ship', description=f'{user1.mention} x {user2.mention}?', colour=0xff80aa)
                      .add_field(name='Test', value=str(rating))
                      )

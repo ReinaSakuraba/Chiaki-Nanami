@@ -85,7 +85,7 @@ async def on_ready():
     if bot.official_guild is None:
         warnings.warn("Your bot is not in the server you've set for 'official_guild' in config.json. "
                       "Either your ID is isn't an integer, or you haven't invited your bot to that server. "
-                     f"Use this link to invite it: {self.oauth_url}")
+                     f"Use this link to invite it: {bot.oauth_url}")
     bot.loop.create_task(bot.change_game())
     bot.loop.create_task(bot.update_official_invite())
 

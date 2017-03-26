@@ -125,13 +125,14 @@ class Searching:
 
     async def _refresh_xkcd_cache(self):
         self.xkcds = {}
-        for i in itertools.count(1):
+        for i in map(str, itertools.count(1)):
             try:
-                self.xkcds[str(i)] = await TagSearch.XKCD.search(str(i), fmt='json')
+                self.xkcds[i] = await TagSearch.XKCD.search(i, fmt='json')
             except LookupError:
-                if i == 404:
+                if i == '404':
                     continue
-                self.latest_xkcd = str(i - 1)
+                self.latest_xkcd = int(i) - 1
+                self.latest_xkcd_key = str(self.latest_xkcd)
                 break
 
     async def display_xkcd(self, ctx, result):
@@ -164,14 +165,14 @@ class Searching:
 
             result = max(self.xkcds.values(), key=key)
             if result is None:
-                raise errors.InvalidUserArgument(f"Couldn't find an XKCD comic \"{num}\"")
+                raise errors.InvalidUserArgument(f"Couldn't find an XKCD comic \"{query}\"")
 
         await self.display_xkcd(ctx, result)
 
     @xkcd.command(name='latest')
     async def xkcd_latest(self, ctx):
         """Retrieves the latest XKCD comic."""
-        await self.display_xkcd(ctx, self.xkcds[self.latest_xkcd])
+        await self.display_xkcd(ctx, self.xkcds[self.latest_xkcd_key])
 
     @xkcd.command(name='random')
     async def xkcd_random(self, ctx):
