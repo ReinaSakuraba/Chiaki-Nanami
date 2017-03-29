@@ -34,10 +34,55 @@ else:
             closest_name = closest_colour(requested_colour)
             actual_name = None
         return actual_name, closest_name
-
-with open(r'data\tanks.txt') as f:
-    _back_up_tanks = f.read().splitlines()
-
+        
+_back_up_tanks = [
+    'Annihilator',
+    'Assassin',
+    'Auto 3',
+    'Auto 5',
+    'Auto Gunner',
+    'Auto Smasher',
+    'Auto Trapper',
+    'Basic Tank',
+    'Battleship',
+    'Booster',
+    'Destroyer',
+    'Factory',
+    'Fighter',
+    'Flank Guard',
+    'Gunner',
+    'Gunner Trapper',
+    'Hunter',
+    'Hybrid',
+    'Landmine',
+    'Machine Gun',
+    'Manager',
+    'Mega Trapper',
+    'Necromancer',
+    'Octo Tank',
+    'Overlord',
+    'Overseer',
+    'OverTrapper',
+    'Pentashot',
+    'Predator',
+    'Quad Tank',
+    'Ranger',
+    'Smasher',
+    'Sniper',
+    'Spike',
+    'Sprayer',
+    'Spreadshot',
+    'Stalker',
+    'Streamliner',
+    'Trapper',
+    'Tri-angle',
+    'Tri-Trapper',
+    'Triple Shot',
+    'Triple Twin',
+    'Triplet',
+    'Twin',
+    'Twin Flank'
+    ]
 
 SMASHERS = ("Auto Smasher", "Landmine", "Smasher", "Spike",)
 BALL_ANSWERS = ("Yes", "No", "Maybe so", "Definitely", "I think so",
@@ -151,8 +196,15 @@ class RNG:
         If points is not provided, it defaults to a max-level build (33)"""
         await self.bot.say(self._build_str(points, True))
 
+    @discord.utils.cached_property
+    def _diepio_tanks(self):
+        try:
+            return self.bot.get_cog("WRA").all_tanks()
+        except AttributeError:
+            return _back_up_tanks
+
     def _class(self):
-        return random.choice(self.bot.get_cog("WRA").all_tanks() or _back_up_tanks)
+        return random.choice(self._diepio_tanks)
 
     @random.command(name="class")
     async def class_(self):
