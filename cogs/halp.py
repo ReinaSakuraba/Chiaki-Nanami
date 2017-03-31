@@ -138,10 +138,10 @@ class Help:
     async def invite(self):
         """...it's an invite"""
         await self.bot.say(textwrap.dedent(f"""\
-        I am not a not a public bot yet... but here's the invite link just in case:
+        This is the link to invite me, I think.
         {self.bot.invite_url}
 
-        But in the meantime, here's a link to the offical Chiaki Nanami server:
+        And here's the official server:
         {self.bot.official_server_invite}
 
         And here's the source code if you want it:
