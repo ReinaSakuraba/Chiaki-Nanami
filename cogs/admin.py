@@ -414,10 +414,10 @@ class Admin:
         """Adds a prefix for this server"""
         prefixes = self.bot.custom_prefixes.setdefault(ctx.guild, [])
         if prefix in prefixes:
-            await ctx.send(f"\"{prefix}\" was already added to **{name}**...")
+            await ctx.send(f"\"{prefix}\" was already added...")
         else:
             prefixes.append(prefix)
-            await ctx.send(f"Successfully added prefix \"{prefix}\" to **{name}**!")
+            await ctx.send(f"Successfully added prefix \"{prefix}\"!")
 
     @commands.command(name="removeprefix", no_pm=True, aliases=['rpf'])
     @checks.is_admin()
@@ -430,9 +430,9 @@ class Admin:
         try:
             prefixes.remove(prefix)
         except ValueError:
-            await ctx.send(f"\"{prefix}\" was never in **{name}**...")
+            await ctx.send(f"\"{prefix}\" was never a custom prefix...")
         else:
-            await ctx.send("Successfully removed prefix \"{prefix}\" in **{name}**!")
+            await ctx.send("Successfully removed prefix \"{prefix}\"!")
 
     @commands.command(name="resetprefix", no_pm=True, aliases=['clrpf'])
     @checks.is_admin()
