@@ -8,6 +8,7 @@ import logging
 import operator
 import random
 import re
+import time
 
 from collections.abc import Sequence
 from datetime import datetime
@@ -54,31 +55,13 @@ commands.Command.all_names = property(lambda self: [self.name, *self.aliases])
 
 def _all_qualified_names(command):
     parent = command.full_parent_name
-    fmt = '{parent} ' * bool(parent) + '{}'
-    return list(map(fmt.format, command.all_names))
-commands.Command.all_qualified_names = property(_all_qualified_names)
-del _all_qualified_names
-
-def _iterate(func, start):
-    while True:
-        yield start
-        start = func(start)
-
-def _all_recursive_names(command):
-    """Returns an iterator containing *all* possible qualified names"""
-    command_parents = takewhile(bool, _iterate(lambda obj: getattr(obj, 'parent'), command))
-    all_names = [cmd.all_names for cmd in command_parents][::-1]
-    return map(' '.join, product(*all_names))
-commands.Command.all_recursive_names = property(_all_recursive_names)
-del _all_recursive_names
+    parent_name = f'{parent} ' * bool(parent)
+    return [f'{parent}{name}' for name in command.all_names]
 
 class ChiakiFormatter(commands.HelpFormatter):
     def get_ending_note(self):
         command_name = self.context.invoked_with
         return f"Type {self.clean_prefix}help command for more info on a command."
-
-    async def unique_cog_command_names(self):
-        return [(name, cmd.aliases) for name, cmd in await self.filter_command_list() if name not in cmd.aliases]
 
     @property
     def description(self):
@@ -87,11 +70,12 @@ class ChiakiFormatter(commands.HelpFormatter):
     @property
     def command_usage(self):
         cmd, ctx = self.command, self.context
+        qualified_names = _all_qualified_names(cmd)
         if cmd.clean_params:
             usage = cmd.usage
             if isinstance(usage, Sequence):
-                return (f'`{self.prefix}{random.choice(cmd.all_qualified_names)} {usage}`' if isinstance(usage, str)
-                        else '\n'.join([f'`{self.prefix}{random.choice(cmd.all_qualified_names)} {u}`' for u in usage]))
+                usage = (usage, ) if isinstance(usage, str) else usage
+                return '\n'.join([f'`{self.prefix}{random.choice(qualified_names)} {u}`' for u in usage])
             # Assume it's invalid; usage must be a sequence (either a tuple, list, or str)
             return 'No example... yet'
         # commands that don't take any arguments don't really need an example generated manually....
@@ -104,23 +88,23 @@ class ChiakiFormatter(commands.HelpFormatter):
 
     async def bot_help(self):
         bot, func = self.context.bot, self.apply_function
-        default_help = bot._config['default_help']
+        default_help = bot.default_help
         result = default_help.format(bot, bot=bot)
         return func(result)
 
     async def cog_embed(self):
-        cog, ctx = self.command, self.context
+        cog, ctx, prefix = self.command, self.context, self.prefix
         cog_name = type(cog).__name__
         bot = ctx.bot
         description = inspect.getdoc(cog) or 'No description... yet.'
-        commands = await self.unique_cog_command_names()
 
+        commands = bot.get_cog_commands(cog_name)
         if not commands:
             raise commands.BadArgument(f"Module {cog_name} has no visible commands.")
 
         module_embed = discord.Embed(title=f"List of my commands in {cog_name}",
                                      description=description, colour=bot.colour)
-        for name, aliases in sorted(commands):
+        for name, *aliases in (cmd.all_names for cmd in sorted(commands, key=operator.attrgetter('name'))):
             trunc_alias = truncate(', '.join(aliases) or '\u200b', 30, '...')
             module_embed.add_field(name=prefix + name, value=trunc_alias)
         return module_embed.set_footer(text=ctx.bot.formatter.get_ending_note())
@@ -130,8 +114,9 @@ class ChiakiFormatter(commands.HelpFormatter):
         bot = ctx.bot
         usages = self.command_usage
 
+        # if usage is truthy, it will immediately return with that usage. We don't want that.
         with temp_attr(command, 'usage', None):
-            signature = self.get_command_signature()
+            signature = command.signature
 
         requirements = getattr(command.callback, '__requirements__', {})
         required_roles = ', '.join(requirements.get('roles', [])) or 'None'
@@ -142,13 +127,14 @@ class ChiakiFormatter(commands.HelpFormatter):
         cmd_embed = discord.Embed(title=func(cmd_name), description=func(self.command.help), colour=bot.colour)
 
         if self.has_subcommands():
-            command_name = sorted({cmd.name for cmd in command.commands.values()})
-            children = ', '.join(command_name) or "No commands... yet."
+            command_names = sorted(cmd.name for cmd in command.commands)
+            children = ', '.join(command_names) or "No commands... yet."
             cmd_embed.add_field(name=func("Child Commands"), value=func(children), inline=False)
 
         cmd_embed.add_field(name=func("Required Roles"), value=func(required_roles))
         cmd_embed.add_field(name=func("Required Permissions"), value=func(required_perms))
         cmd_embed.add_field(name=func("Structure"), value=f'`{func(signature)}`', inline=False)
+
         if usages is not None:
             cmd_embed.add_field(name=func("Usage"), value=func(usages), inline=False)
         return cmd_embed.set_footer(text=func(footer))
@@ -169,7 +155,7 @@ class ChiakiFormatter(commands.HelpFormatter):
 class ChiakiBot(commands.Bot):
     def __init__(self, command_prefix, formatter=None, description=None, pm_help=False, **options):
         super().__init__(command_prefix, formatter, description, pm_help, **options)
-        self.commands.pop('help', None)
+        self.remove_command('help')
 
         self._config = collections.ChainMap(options.get('config', {}), _default_config)
         self.counter = collections.Counter()
@@ -272,14 +258,21 @@ class ChiakiBot(commands.Bot):
 
     async def update_official_invite(self):
         await self.wait_until_ready()
-        while not self.is_closed():
-            self.invites_by_bot = [inv for inv in await self.official_guild.invites() if inv.inviter == self.user]
-            if not self.invites_by_bot:
-                self.invites_by_bot.append(await official_guild.create_invite())
+        self.invites_by_bot = [inv for inv in await self.official_guild.invites() if inv.inviter.id == self.user.id]
+        if not self.invites_by_bot:
+            self.invites_by_bot.append(await official_guild.create_invite())
 
     def str_prefix(self, message):
         prefix = self.prefix_function(message)
         return prefix if isinstance(prefix, str) else ', '.join(prefix)
+
+    async def ping(self, times=1):
+        async def pinger():
+            start = time.perf_counter()
+            await (await self.ws.ping())
+            end = time.perf_counter()
+            return (end - start) * 1000
+        return sum(pinger() for _ in range(times)) / times
 
     # ------ Config-related properties ------
 
@@ -303,6 +296,10 @@ class ChiakiBot(commands.Bot):
     @property
     def default_prefix(self):
         return self._config['default_command_prefix']
+
+    @property
+    def default_help(self):
+        return self._config['default_help']
 
     @property
     def official_guild(self):
@@ -331,7 +328,7 @@ class ChiakiBot(commands.Bot):
 
     @property
     def all_cogs(self):
-        return collections.ChainMap(bot.cogs, bot.cog_aliases)
+        return collections.ChainMap(self.cogs, self.cog_aliases)
 
 def _command_prefix(bot, message):
     return bot.custom_prefixes.get(message.guild, bot.default_prefix)
