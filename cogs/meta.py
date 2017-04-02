@@ -29,7 +29,7 @@ def _icon_embed(idable, url, name):
 
 async def _mee6_stats(session, member):
     async with session.get(f"https://mee6.xyz/levels/{member.guild.id}?json=1&limit=-1") as r:
-        levels = await r.json()
+        levels = await r.json(content_type=None)
     for idx, user_stats in enumerate(levels['players'], start=1):
         if user_stats.get("id") == member.id:
             user_stats["rank"] = idx

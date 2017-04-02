@@ -1,5 +1,6 @@
 import aiohttp
 import asyncio
+import contextlib
 import discord
 
 from collections import OrderedDict
@@ -18,7 +19,7 @@ GAMEMODE_ID_URL = 'https://dieprecords.moepl.eu/api/gamemodes'
 
 async def _load_json(session, url):
     async with session.get(url) as r:
-        return await r.json()
+        return await r.json(content_type=None)
 
 WR_RELOAD_TIME_SECS = 60
 
@@ -69,7 +70,7 @@ def _replace_tank(tankname):
 async def url_is_image(url, session, *, img_filter=None):
     if img_filter is None:
         img_filter = {'png', 'jpeg', 'jpg', 'bmp', 'webp', 'gif', }
-    async with session.get(link) as response:
+    async with session.get(url) as response:
         content = response.headers['Content-Type']
         mime_type, _, subtype = content.partition("/")
         return mime_type == "image" and subtype in img_filter
@@ -99,11 +100,13 @@ class WRA:
         }
     def __init__(self, bot):
         self.bot = bot
-        self.session = aiohttp.ClientSession()
-        self.bot.loop.create_task(self._load_wr_loop())
+        self.session = aiohttp.ClientSession(loop=bot.loop)
+        self.load_wr_task = self.bot.loop.create_task(self._load_wr_loop())
 
     def __unload(self):
         # pray it closes
+        with contextlib.suppress(BaseException):
+            self.load_wr_task.cancel()
         self.bot.loop.create_task(self.session.close())
 
     async def _load_records(self):
@@ -123,7 +126,7 @@ class WRA:
     # Best compromise between performance and up-to-date-ness I could think of
     async def _load_wr_loop(self):
         await self.bot.wait_until_ready()
-        while not self.bot.is_closed:
+        while not self.bot.is_closed():
             self.wr_records.update(await self._load_records())
             self.tank_ids.update(await self._load_tanks())
             self.gamemode_ids.update(await self._load_gamemodes())
@@ -182,7 +185,7 @@ class WRA:
         title = "**__{0} {gamemode} {tankname}__**".format(version.title(), **record)
         embed = _wr_embed(record)
         if await url_is_image(record['submittedlink'], self.session):
-            embed.set_image(url=records["submittedlink"])
+            embed.set_image(url=record["submittedlink"])
         await ctx.send(title, embed=embed)
 
     @commands.command(usage='sniper')
@@ -295,7 +298,7 @@ class WRA:
         def lines(header, records):
             def mapper(record):
                 return "__{tank}__ __{gamemode}__ | {score} |  <{submittedlink}>".format(**record)
-            return [header.format(len(records)), *list(map(mapper, records))]
+            return [header.format(len(records)), *map(mapper, records)]
 
         current_header = [f"**__{name}__**", f"**Current World Records**: {len(current)}"]
         desktop_current_str = lines("**Desktop**: {}", desktop_current)
