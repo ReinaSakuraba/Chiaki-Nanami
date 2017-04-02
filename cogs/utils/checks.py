@@ -1,9 +1,13 @@
 import discord
 import enum
+import functools
 
+from collections import namedtuple
 from discord.ext import commands
 
 from .database import Database
+
+# -----------SPECIAL ROLES-------------
 
 DEFAULT = 'Bot Admin'
 class ChiakiRole(enum.Enum):
@@ -24,73 +28,61 @@ def get_role(server, key):
     return server_roles[server][str(key)]
 
 # -----------PREDICATES AND CHECKS------------
+class ChiakiCheck(namedtuple('ChiakiCheck', 'predicate roles perms')):
+    def __new__(cls, predicate, *, role=None, perms=None):
+        return super().__new__(cls, predicate, role, perms)
 
-def chiaki_check(predicate, *, role=None, perms=None):
-    def decorator(func):
-        func = getattr(func, 'callback', func)
-        if not hasattr(func, '__requirements__'):
-            func.__requirements__ = {}
-        if role is not None:
-            func.__requirements__.setdefault('roles', []).append(role)
-        if perms is not None:
-            func.__requirements__.setdefault('perms', []).extend(perms)
-        return commands.check(predicate)(func)
-    return decorator
+    async def __call__(self, ctx):
+        return await discord.utils.maybe_coroutine(self.predicate, ctx)
 
-def _nice_perms(**perms):
+def _format_perms(**perms):
     return [f"{'Not' * (not v)} {k.replace('_', ' ').title()}" for k, v in perms.items()]
 
-def is_owner_predicate(author):
-    return author.id == 239110748180054017
+async def is_owner_predicate(ctx):
+    return await ctx.bot.is_owner(ctx.author)
 
 def is_owner():
-    return chiaki_check(lambda ctx: is_owner_predicate(ctx.author), role="Bot Owner")
+    return commands.check(ChiakiCheck(is_owner_predicate, role="Bot Owner"))
 
 def server_owner_predicate(guild, author):
     return author.id == guild.owner.id
 
 def is_server_owner():
-    return chiaki_check(lambda ctx: server_owner_predicate(ctx.guild, ctx.author), role="Server Owner")
+    return commands.check(ChiakiCheck(lambda ctx: server_owner_predicate(ctx.guild, ctx.author), role="Server Owner"))
 
-def permissions_predicate(msg, **perms):
-    if is_owner_predicate(msg.author):
+def permissions_predicate(ctx, **perms):
+    if is_owner_predicate(ctx):
         return True
-    resolved = msg.channel.permissions_for(msg.author)
+    resolved = ctx.channel.permissions_for(ctx.author)
     return all(getattr(resolved, perm, None) == value
                for perm, value in perms.items())
 
-def role_predicate(msg, role):
-    if is_owner_predicate(msg.author):
+def role_predicate(role_key, ctx):
+    if is_owner_predicate(ctx):
         return True
-    author, server = msg.author, msg.guild
+    author, server = ctx.author, ctx.guild
     if not server:
         return False
-    role_id = get_role(server, role)
+    role_id = get_role(server, role_key)
     role = discord.utils.get(author.roles, id=role_id)
     role_name = discord.utils.get(author.roles, name=DEFAULT)
     return role is not None or role_name is not None
 
-def role_or_perms_predicate(msg, role, **perms):
-    return role_predicate(msg, role) or permissions_predicate(msg, **perms)
+def role_or_perms_predicate(ctx, role, **perms):
+    return role_predicate(ctx, role) or permissions_predicate(ctx, **perms)
 
 def has_role(role):
-    return chiaki_check(lambda ctx: role_predicate(ctx.message, role), role=str(role))
+    return commands.check(ChiakiCheck(functools.partial(role_predicate, role), role=str(role)))
 
 def has_perms(**perms):
-    return chiaki_check(lambda ctx: permissions_predicate(ctx.message, **perms), perms=_nice_perms(**perms))
+    return commands.check(ChiakiCheck(lambda ctx: permissions_predicate(ctx, **perms),
+                                      perms=_format_perms(**perms)))
 
 def has_role_or_perms(role, **perms):
-    return chiaki_check(lambda ctx: role_or_perms_predicate(ctx.message, role, **perms),
-                        role=str(role), perms=_nice_perms(**perms))
+    return commands.check(ChiakiCheck(lambda ctx: role_or_perms_predicate(ctx, role, **perms),
+                                      role=str(role), perms=_format_perms(**perms)))
 
-def is_admin():
-    return has_role(ChiakiRole.admin)
-
-def is_mod():
-    return has_role(ChiakiRole.mod)
-
-def admin_or_permissions(**perms):
-    return has_role_or_perms(ChiakiRole.admin, **perms)
-
-def mod_or_permissions(**perms):
-    return has_role_or_perms(ChiakiRole.mod, **perms)
+is_admin = functools.partial(has_role, ChiakiRole.admin)
+is_mod = functools.partial(has_role, ChiakiRole.mod)
+admin_or_permissions = functools.partial(has_role_or_perms, ChiakiRole.admin)
+mod_or_permissions = functools.partial(has_role_or_perms, ChiakiRole.mod)

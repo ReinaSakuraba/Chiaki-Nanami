@@ -15,6 +15,7 @@ from datetime import datetime
 from discord.ext import commands
 from itertools import product, takewhile
 
+from cogs.utils.checks import ChiakiCheck
 from cogs.utils.context_managers import temp_attr
 from cogs.utils.database import Database
 from cogs.utils.misc import cycle_shuffle, duration_units, truncate
@@ -81,6 +82,10 @@ class ChiakiFormatter(commands.HelpFormatter):
         # commands that don't take any arguments don't really need an example generated manually....
         return None
 
+    def command_requirements(self):
+        chiaki_checks = [check for check in self.command.checks if isinstance(check, ChiakiCheck)]
+        return {key: ', '.join(filter(None, map(operator.attrgetter(key), chiaki_checks))) or 'None' for key in ['roles', 'perms'] }
+
     @property
     def clean_prefix(self):
         ctx = self.context
@@ -118,9 +123,7 @@ class ChiakiFormatter(commands.HelpFormatter):
         with temp_attr(command, 'usage', None):
             signature = command.signature
 
-        requirements = getattr(command.callback, '__requirements__', {})
-        required_roles = ', '.join(requirements.get('roles', [])) or 'None'
-        required_perms = ', '.join(requirements.get('perms', [])) or 'None'
+        requirements = self.command_requirements()
         cmd_name = f"`{self.prefix}{command.full_parent_name} {' / '.join(command.all_names)}`"
         footer = '"{0}" is in the module *{0.cog_name}*'.format(command)
 
@@ -131,8 +134,8 @@ class ChiakiFormatter(commands.HelpFormatter):
             children = ', '.join(command_names) or "No commands... yet."
             cmd_embed.add_field(name=func("Child Commands"), value=func(children), inline=False)
 
-        cmd_embed.add_field(name=func("Required Roles"), value=func(required_roles))
-        cmd_embed.add_field(name=func("Required Permissions"), value=func(required_perms))
+        cmd_embed.add_field(name=func("Required Roles"), value=func(requirements['roles']))
+        cmd_embed.add_field(name=func("Required Permissions"), value=func(requirements['perms']))
         cmd_embed.add_field(name=func("Structure"), value=f'`{func(signature)}`', inline=False)
 
         if usages is not None:
