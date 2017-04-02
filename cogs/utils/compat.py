@@ -1,18 +1,19 @@
 """Compatibility incase some libraries weren't imported"""
 import aiohttp
-import tempfile
+import asyncio
+import discord
+import functools
 
+from collections import deque, OrderedDict
 from discord.ext import commands
+from io import BytesIO
+
 # someone make this standard plz
 try:
     from aiocache import cached as async_cache
 except ImportError:
     # http://stackoverflow.com/a/37627076
-    import asyncio
-    from collections import OrderedDict
-    from functools import _make_key, wraps
-
-    def async_cache(maxsize=128, key=_make_key):
+    def async_cache(maxsize=128, key=functools._make_key):
         # support use as decorator without calling, for this case maxsize will
         # not be an int
         try:
@@ -29,11 +30,11 @@ except ImportError:
             result = await func(*args, **kwargs)
             cache[key(args, kwargs, False)] = result
             if not boundless and len(cache) > real_max_size:
-                cache.popitem(False)
+                cache.popitem(last=False)
             return result
 
         def wrapper(func):
-            @wraps(func)
+            @functools.wraps(func)
             def decorator(*args, **kwargs):
                 key_ = key(args, kwargs, False)
                 if key_ in cache:
@@ -62,30 +63,32 @@ try:
 except ImportError:
     ColorThief = None
 
-_chunk_size = 1024
-async def _write_from_url(url, file):
+@async_cache(maxsize=16384)
+async def read_image_from_url(url):
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as resp:
-            # TODO: Is there a way to make an async functools.partial?
-            while True:
-                chunk = await resp.content.read(_chunk_size)
-                if not chunk:
-                    break
-                file.write(chunk)
+            return await resp.read()
 
-@async_cache(maxsize=_chunk_size * 8)
+async def chunk_image_from_url(url, chunk_size=1024):
+    while True:
+        chunk = await resp.content.read(chunk_size)
+        if not chunk:
+            break
+        yield chunk
+
+@async_cache(maxsize=16384)
 async def _dominant_color_from_url(url):
-    '''Downloads ths image file and analyzes the dominant color'''
-    with tempfile.NamedTemporaryFile() as f:
-        await _write_from_url(url, f)
-        color_thief = ColorThief(f)
-        return color_thief.get_color(quality=1)
+    """Returns an rgb tuple consisting the dominant color given a image url."""
+    with BytesIO(await read_image_from_url(url)) as f:
+        # TODO: Make my own color-grabber module. This is ugly as hell.
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, functools.partial(ColorThief(f).get_color, quality=1))
 
 def _color_from_rgb(r, g, b):
     rgb = f"#{r:02x}{g:02x}{b:02x}"
-    colour_converter = commands.ColourConverter()
-    colour_converter.prepare(None, rgb)
-    return colour_converter.convert()
+    converter = commands.ColourConverter()
+    converter.prepare(None, rgb)
+    return converter.convert()
 
 async def url_color(url):
     return _color_from_rgb(*(await _dominant_color_from_url(url)))
@@ -93,7 +96,21 @@ url_colour = url_color
 
 async def user_color(user):
     if ColorThief:
-        avatar = user.avatar_url or user.default_avatar_url
-        return _color_from_rgb(*(await _dominant_color_from_url(avatar)))
-    return user.colour
+        avatar = user.avatar_url_as(format=None)
+        return await url_color(avatar)
+    return getattr(user, 'colour', discord.Colour.default())
 user_colour = user_color
+
+# itertools related stuff
+
+try:
+    from more_itertools import ilen, iterate
+except ImportError:
+    def ilen(iterable):
+        d = deque(enumerate(iterable, 1), maxlen=1)
+        return d[0][0] if d else 0
+
+    def iterate(func, start):
+        while True:
+            yield start
+            start = func(start)

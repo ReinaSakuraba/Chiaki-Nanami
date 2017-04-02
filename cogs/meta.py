@@ -8,12 +8,13 @@ from collections import defaultdict, deque
 from contextlib import redirect_stdout
 from discord.ext import commands
 from io import StringIO
+from itertools import islice
 from operator import attrgetter
 
 from .utils import converter
 from .utils.compat import url_color, user_color
-from .utils.converter import RecursiveBotCommandConverter
-from .utils.errors import ResultsNotFound
+from .utils.converter import RecursiveBotCommandConverter, union
+from .utils.errors import InvalidUserArgument, ResultsNotFound
 from .utils.misc import str_join, nice_time, ordinal
 from .utils.paginator import iterable_limit_say, iterable_say
 
@@ -51,14 +52,14 @@ async def _user_embed(member):
             .set_footer(text=f"ID: {member.id}")
             )
 
+def default_last_n(n=50): return lambda: deque(maxlen=n)
 class Meta:
     """Info related commands"""
 
     def __init__(self, bot):
         self.bot = bot
-        self.cmd_history = defaultdict(lambda: deque(maxlen=50))
-        # Could use self.bot.http.session but that's incredibly bad practice
-        # (not sure why though...)
+        self.cmd_history = defaultdict(default_last_n())
+        self.last_members = defaultdict(default_last_n())
         self.session = aiohttp.ClientSession()
 
     def __unload(self):
@@ -235,30 +236,7 @@ class Meta:
 
     @commands.command(name="you")
     async def botinfo(self, ctx):
-        bot = self.bot
-        user = bot.user
-        appinfo = await bot.application_info()
-
-        discord_lib = "{0.__title__}.py {0.__version__}".format(discord)
-        app_icon_url = appinfo.icon_url
-        user_icon_url = user.avatar_url_as(format=None)
-        bot_embed = (discord.Embed(title=appinfo.name, description=self.bot.description, colour=self.bot.colour)
-                    .set_author(name=f"{user.name} | {appinfo.id}", icon_url=user_icon_url)
-                    .add_field(name="Library", value=discord_lib)
-                    .add_field(name="Python", value=str_join('.', sys.version_info[:3]))
-                    .add_field(name="Owner", value=appinfo.owner)
-                    .add_field(name="Uptime", value=bot.str_uptime)
-                    .add_field(name="Cogs running", value=len(bot.cogs))
-                    .add_field(name="Databases", value=len(bot.databases))
-                    .add_field(name="Servers", value=len(bot.servers))
-                    .add_field(name="Members I see", value=len(set(bot.get_all_members())))
-                    .add_field(name="Channels I see", value=_ilen(bot.get_all_channels()))
-                    )
-        if app_icon_url:
-            bot_embed.set_thumbnail(url=app_icon_url)
-        for name, value in sorted(bot.counter.items()):
-            bot_embed.add_field(name=name, value=value)
-        await ctx.send(embed=bot_embed)
+        pass
 
     async def _source(self, ctx, thing):
         lines = inspect.getsourcelines(thing)[0]
@@ -268,13 +246,14 @@ class Meta:
     async def source(self, ctx, *, cmd: RecursiveBotCommandConverter):
         """Displays the source code for a particular command"""
         # TODO: use GitHub
-        await self._source(ctx, cmd.value.callback)
+        await self._source(ctx, cmd.callback)
 
     async def _inrole(self, ctx, *roles, predicate):
         has_roles = [mem for mem in ctx.guild.members if predicate(mem, *roles)]
-        fmt = (f"Here are the members who have the {str_join(', ', roles)} role. ```css\n{str_join(', ', has_roles)}```"
-               if has_roles else f"There are no members who have the {str_join(', ', roles)} role. \U0001f641")
-        await ctx.send(fmt)
+        joined_roles = str_join(', ', roles)
+        msg = (f"Here are the members who have the {joined_roles} role. ```css\n{str_join(', ', has_roles)}```"
+               if has_roles else f"There are no members who have the {joined_roles} role. \U0001f641")
+        await ctx.send(msg)
 
     @commands.command()
     async def inrole(self, ctx, *, role: discord.Role):
@@ -321,22 +300,31 @@ class Meta:
         fmt = f"Here are the roles who have the {perm.title()} perm."
         await ctx.send(fmt + f"```css\n{str_join(', ', roles_that_have_perms)}```")
 
-    @commands.command(pass_context=True, aliases=['perms'])
-    async def permissions(self, ctx, *, member_or_role: multi_converter(discord.Member, discord.Role)=None):
-        """Shows either a member's Permissions, or a role's Permissions"""
-        if member_or_role is None:
-            member_or_role = ctx.message.author
-        permissions = getattr(member_or_role, 'permissions', None) or member_or_role.server_permissions
-
+    async def display_permissions(self, ctx, thing, permissions, extra=''):
         value = permissions.value
         diff_mapper = '\n'.join([f"{'-+'[value]} {attr.title().replace('_', ' ')}" for attr, value in permissions])
 
-        message = (f"The permissions for **{member_or_role}** is **{value}**."
+        message = (f"The permissions {extra} for **{thing}** is **{value}**."
                    f"\nIn binary it's {bin(value)[2:]}"
                    f"\nThis implies the following values:"
                    f"\n```diff\n{diff_mapper}```"
                    )
-        await self.bot.say(message)
+        await ctx.send(message)
+
+    @commands.command(aliases=['perms'])
+    async def permissions(self, ctx, *, member_or_role: union(discord.Member, discord.Role)=None):
+        """Shows either a member's Permissions, or a role's Permissions"""
+        if member_or_role is None:
+            member_or_role = ctx.author
+        permissions = getattr(member_or_role, 'permissions', None) or member_or_role.guild_permissions
+        await self.display_permissions(ctx, member_or_role, permissions)
+
+    @commands.command(aliases=['permsin'])
+    async def permissionsin(self, ctx, *, member: discord.Member=None):
+        """Shows either a member's Permissions *in the channel*"""
+        if member is None:
+            member = ctx.author
+        await self.display_permissions(ctx, member, ctx.channel.permissions_for(member), extra=f'in {ctx.channel.mention}')
 
     @commands.command(aliases=['av'])
     async def avatar(self, ctx, *, user: converter.ApproximateUser=None):
@@ -372,11 +360,23 @@ class Meta:
         (or any sort of function, for that matter)
         """
         # Someone told me a "lib" already does this. Is that true? If so, what lib is it?
-        with StringIO() as output:
-            with redirect_stdout(output):
-                help(thing)
+        with StringIO() as output, redirect_stdout(output):
+            help(thing)
             help_lines = output.getvalue().splitlines()
             await iterable_limit_say(help_lines, ctx=ctx)
+
+    async def lastjoin(self, ctx, n: int=10):
+        """Display the last n members that have joined the server. Default is 10. Maximum is 50."""
+        if not 0 < n < 50:
+            raise InvalidUserArgument("I can only show between 1 and 50 members. Sorry. :(")
+
+        members = str_join(', ', islice(self.last_members[ctx.guild], n))
+        message = (f'These are the last {n} members that have joined the server:```\ncss{members}```'
+                   if members else "I don't think any members joined this server yet :(")
+        await ctx.send(message)
+
+    async def on_member_join(self, member):
+        self.last_members[member.server].append(member)
 
 def setup(bot):
     bot.add_cog(Meta(bot))

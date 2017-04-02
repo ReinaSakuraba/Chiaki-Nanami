@@ -7,7 +7,22 @@ from collections import namedtuple
 from discord.ext import commands
 from functools import partial
 
+from .compat import ilen
 from .misc import parse_int
+
+# We need this because discord.py rewrite converters no longer puts ctx or arg in __init__
+# Thie makes one-lining it near-impossible.
+def make_converter(converter, ctx, arg, *converter_args, **converter_kwargs):
+    c = converter(*converter_args, **converter_kwargs)
+    c.prepare(ctx, arg)
+    return c
+
+def type_to_converter(type_):
+    """Returns the underlying converter that discord.py uses for converting arguments."""
+    if type_ is bool:
+        return commands.core._convert_to_bool
+    return (getattr(commands, f'{type_.__name__}Converter', type_)
+            if getattr(type_, '__module__', '').startswith('discord') else _type)
 
 class ArgumentParser(argparse.ArgumentParser):
     def error(self, message):
@@ -27,7 +42,7 @@ class ApproximateUser(commands.MemberConverter):
             next_member = next(filtered, None)
             if next_member is not None:
                 if next(filtered, None):
-                    await channel.send(f"(I found {sum(1 for _ in filtered) + 2} occurences of '{arg}'. "
+                    await channel.send(f"(I found {ilen(filtered) + 2} occurences of '{arg}'. "
                                         "I'll take the first result, probably.)")
                 return next_member
         return super().convert()
@@ -44,7 +59,7 @@ class ApproximateRole(commands.RoleConverter):
             next_role = next(role_filter, None)
             if next_role is not None:
                 if next(role_filter, None):
-                    await channel.send(f"(I found {sum(1 for _ in role_filter) + 2} occurences of '{arg}'. "
+                    await channel.send(f"(I found {ilen(role_filter) + 2} occurences of '{arg}'. "
                                         "I'll take the first result, probably.)")
                 return next_role
         return super().convert()
@@ -91,7 +106,7 @@ def non_negative(num):
         raise commands.BadArgument(f'"{num}" is not a number.')
     if num >= 0:
         return num
-    raise commands.BadArgument(f'Number must be positive')
+    raise commands.BadArgument(f'Number cannot be negatives')
 
 def attr_converter(obj, msg="Cannot find attribute {attr}."):
     def attrgetter(attr):
@@ -133,6 +148,7 @@ def _pairwise(iterable):
     return zip(*[it, it])
 
 def _parse_time(string, unit='m'):
+    # TODO: order check
     if not unit:
         unit = 'm'
     lowered_unit = unit.lower()
@@ -147,20 +163,16 @@ def duration(strings):
     durations = re.split(r"(\d+[\.]?\d*)", strings)[1:]
     return sum(_parse_time(d, u) for d, u in _pairwise(durations))
 
-def multi_converter(*types):
-    converters = [getattr(commands, f'{typ.__name__}Converter')
-                  if getattr(typ, '__module__', '').startswith('discord') else typ for typ in types]
+def union(*types):
     class MultiConverter(commands.Converter):
         async def convert(self):
             arg = self.argument
-            for converter in converters:
-                # isinstance(converter, commands.Converter) doesn't work for some reason
-                actual_converter = (lambda arg: converter(self.ctx, arg).convert()
-                                    if hasattr(converter, 'convert') else converter)
+            for converter in map(type_to_converter, types):
+                actual_converter, *args = ((make_converter(converter, self.ctx, arg).convert,)
+                                           if isinstance(converter, commands.Converter) else
+                                           (converter, arg))
                 try:
-                    result = actual_converter(arg)
-                    if inspect.isawaitable(result):
-                        result = await result
+                    result = await discord.utils.maybe_coroutine(actual_converter, *args)
                 except Exception as e:
                     print(e)
                     continue
@@ -169,3 +181,12 @@ def multi_converter(*types):
             raise commands.BadArgument(f"I couldn't parse {arg} successfully, "
                                        f"given these types: {', '.join([t.__name__ for t in types])}")
     return MultiConverter
+
+def in_(*choices):
+    def in_converter(arg):
+        lowered = arg.lower()
+        if lowered in choices:
+            return lowered
+        raise commands.BadArgument(f"{lowered} is not valid option. "
+                                    "Available options:\n{', '.join(choices)}")
+    return in_converter
