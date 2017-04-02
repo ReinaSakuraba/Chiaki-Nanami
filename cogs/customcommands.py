@@ -3,27 +3,16 @@ import random
 
 from collections import ChainMap
 from discord.ext import commands
-from itertools import chain, islice, starmap
-from operator import itemgetter
+from itertools import chain, starmap
 
 from .utils import checks, errors
 from .utils.context_managers import temp_attr
+from .utils.converter import make_converter, RecursiveBotCommandConverter
 from .utils.database import Database
 from .utils.paginator import DelimPaginator, iterable_limit_say
 
-
-def firstn(iterable, n, *, reverse=False):
-    """Returns an iterator containing the first element, then the first two elements,
-    all the way up to the first n elements.
-
-    If reverse is True, it yields the first n elements, then the first n-1 elements,
-    all the way up to the first element.
-    """
-    range_iterator = range(1, n + 1)
-    if reverse:
-        range_iterator = reversed(range_iterator)
-
-    return (tuple(islice(iter(iterable), i)) for i in range_iterator)
+def word_count(s):
+    return len(s.split()), len(s)
 
 # Only the owner can add commands in the global scope.
 def global_cc_check():
@@ -33,7 +22,7 @@ def global_cc_check():
         return is_owner_predicate(ctx.author)
     return commands.check(predicate)
 
-MAX_ALIAS_WORDS = 5
+MAX_ALIAS_WORDS = 20
 class CustomCommands:
     def __init__(self, bot):
         self.bot = bot
@@ -44,11 +33,11 @@ class CustomCommands:
     def _all_reactions(self, server):
         return ChainMap(*self.custom_reactions[server].values())
 
-    def _get_all_trigger_ids(self, server):
+    def _get_used_ids(self, server):
         return set(self._all_reactions(server).keys())
 
     def _random_trigger(self, server):
-        ids = set(self._all_reactions(server).keys())
+        ids = self._get_used_ids(server)
         current_pow = self.custom_reaction_pows[server]
         available_ids = set(map(str, range(1, 10 ** current_pow))) - ids
         if not available_ids:
@@ -108,6 +97,19 @@ class CustomCommands:
                     "This server doesn't have any custom commands... I think.")
         await ctx.send(msg)
 
+    def get_prefix(self, message):
+        prefix = self.bot.prefix_function(message)
+        return prefix if isinstance(prefix, str) else discord.utils.find(message.content.startswith, prefix)
+
+    @staticmethod
+    def is_part_of_existing_command(ctx, arg):
+        try:
+            make_converter(RecursiveBotCommandConverter, ctx, arg).convert()
+        except commands.BadArgument:
+            return False
+        else:
+            return True
+
     @commands.group()
     async def alias(self, ctx):
         pass
@@ -117,7 +119,7 @@ class CustomCommands:
         if len(alias.split()) > MAX_ALIAS_WORDS:
             raise errors.InvalidUserArgument(f"Your alias is too long to be practical. "
                                               "The limit is {MAX_ALIAS_WORDS}.")
-        if any(alias in cmd.all_recursive_names for cmd in self.bot.walk_commands()):
+        if self.is_part_of_existing_command(ctx, alias):
             raise errors.InvalidUserArgument(f'\"{alias}\" is already an existing command')
 
         self.aliases[ctx.guild][alias] = real
@@ -147,18 +149,20 @@ class CustomCommands:
             return
 
         content = message.content
-        prefix = self.bot.prefix_function(message)
-        if not any(map(content.startswith, prefix)):
+        prefix = self.get_prefix(message)
+        if not (prefix and content.startswith(prefix)):
             return
 
+        aliases = self.aliases[message.guild]
         content_no_prefix = content[len(prefix):]
-        words = content_no_prefix.split()
-        for alias in filter(content_no_prefix.startswith, map(' '.join, firstn(words, MAX_ALIAS_WORDS, reverse=True))):
-            real = self.aliases[message.guild].get(alias)
-            if real:
-                with temp_attr(message, 'content', message.content.replace(alias, real, 1)):
-                    await self.bot.process_commands(message)
-                break
+        possible_aliases = filter(content_no_prefix.startswith, aliases)
+        try:
+            alias = max(possible_aliases, key=word_count)
+        except ValueError:
+            return
+        else:
+            with temp_attr(message, 'content', content.replace(alias, aliases[alias], 1)):
+                await self.bot.process_commands(message)
 
     async def check_custom_command(self, message):
         storage = self.custom_reactions.get(message.guild) or self.custom_reactions.get('global')
