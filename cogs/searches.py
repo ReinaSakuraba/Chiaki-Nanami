@@ -1,4 +1,5 @@
 import aiohttp
+import asyncio
 import contextlib
 import difflib
 import discord
@@ -61,6 +62,7 @@ class Searching:
     def __init__(self, bot):
         self.bot = bot
         self._xkcd_task = self.bot.loop.create_task(self._refresh_xkcd_cache())
+        self.latest_xkcd_loaded = asyncio.Event()
 
     def __unload(self):
         with contextlib.suppress(BaseException):
@@ -133,6 +135,7 @@ class Searching:
                     continue
                 self.latest_xkcd = int(i) - 1
                 self.latest_xkcd_key = str(self.latest_xkcd)
+                self.latest_xkcd_loaded.set()
                 break
 
     async def display_xkcd(self, ctx, result):
@@ -146,9 +149,9 @@ class Searching:
 
     @commands.group(invoke_without_command=True)
     async def xkcd(self, ctx, *, query=None):
-        """Retrieves the XKCD comic that corresponds with the keyword."""
+        """Retrieves the XKCD comic that corresponds with the keyword. If no query was specified, it retrieves a random comic."""
         if query is None:
-            pass
+            await ctx.invoke(self.xkcd_random)
         if query == '404':
             raise errors.InvalidUserArgument('XKCD comic not found.')
 
@@ -171,6 +174,7 @@ class Searching:
 
     @xkcd.command(name='latest')
     async def xkcd_latest(self, ctx):
+        await self.latest_xkcd_loaded.wait()
         """Retrieves the latest XKCD comic."""
         await self.display_xkcd(ctx, self.xkcds[self.latest_xkcd_key])
 
