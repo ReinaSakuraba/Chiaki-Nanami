@@ -10,6 +10,7 @@ import traceback
 
 from chiakibot import chiaki_bot
 from cogs.utils import errors
+from cogs.utils.context_managers import redirect_exception
 from discord.ext import commands
 
 # use faster event loop, but fall back to default if on Windows or not installed
@@ -47,7 +48,7 @@ except FileNotFoundError:
 bot = chiaki_bot(config)
 
 initial_extensions = (
-#   'cogs.admin',
+    'cogs.admin',
 #   'cogs.afk',
 #   'cogs.cleverbot',
 #   'cogs.customcommands',
@@ -56,10 +57,9 @@ initial_extensions = (
 #   'cogs.meta',
 #   'cogs.moderator',
 #   'cogs.music',
-#   'cogs.newpoints',
 #   'cogs.otherstuff',
     'cogs.owner',
-#   'cogs.permissions',
+    'cogs.permissions',
 #   'cogs.quotes',
     'cogs.rng',
 #   'cogs.searches',
@@ -162,15 +162,11 @@ def main():
             print(f'Failed to load extension {ext}\n')
             traceback.print_exc()
 
-    try:
+    with redirect_exception((FileNotFoundError, "A credentials file is required"), cls=RuntimeError):
         credentials = _load_json('data/credentials.json')
-    except FileNotFoundError:
-        raise RuntimeError("A credentials file is required")
 
-    try:
-        token = credentials.pop('token') or sys.argv[1]
-    except IndexError:
-        raise RuntimeError("A token is required")
+    with redirect_exception((FileNotFoundError, "A token is required"), cls=RuntimeError):
+        token = credentials.pop('token', None) or sys.argv[1]
 
     bot.run(token)
     return bot._config['restart_code'] * bot.reset_requested

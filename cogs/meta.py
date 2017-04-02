@@ -13,6 +13,7 @@ from operator import attrgetter
 
 from .utils import converter
 from .utils.compat import url_color, user_color
+from .utils.context_managers import redirect_exception, temp_message
 from .utils.converter import RecursiveBotCommandConverter, union
 from .utils.errors import InvalidUserArgument, ResultsNotFound
 from .utils.misc import str_join, nice_time, ordinal
@@ -102,18 +103,13 @@ class Meta:
     @commands.command(no_pm=True)
     async def rank(self, ctx, *, member: converter.ApproximateUser=None):
         """Gets mee6 info... if it exists"""
-        message = await ctx.send("Fetching data, please wait...")
         if member is None:
             member = ctx.author
         avatar_url = member.avatar_url_as(format=None)
 
-        with ctx.typing():
-            try:
+        with ctx.typing(), redirect_exception((json.JSONDecodeError, "No stats found. You don't have mee6 in this server... I think.")):
+            async with temp_message(ctx, "Fetching data, please wait...") as message:
                 stats = await _mee6_stats(self.session, member)
-            except json.JSONDecodeError:
-                return await ctx.send("No stats found. You don't have mee6 in this server... I think.")
-            finally:
-                await message.delete()
 
         description = f"Currently sitting at {stats['rank']}!"
         xp_progress = "{xp}/{lvl_xp} ({xp_percent}%)".format(**stats)

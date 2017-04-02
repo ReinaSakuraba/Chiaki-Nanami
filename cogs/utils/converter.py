@@ -8,6 +8,7 @@ from discord.ext import commands
 from functools import partial
 
 from .compat import ilen
+from .context_managers import redirect_exception
 from .misc import parse_int
 
 # We need this because discord.py rewrite converters no longer puts ctx or arg in __init__
@@ -21,8 +22,9 @@ def type_to_converter(type_):
     """Returns the underlying converter that discord.py uses for converting arguments."""
     if type_ is bool:
         return commands.core._convert_to_bool
+    module = getattr(type_, '__module__', '')
     return (getattr(commands, f'{type_.__name__}Converter', type_)
-            if getattr(type_, '__module__', '').startswith('discord') else _type)
+            if module.startswith('discord') and not module.endswith('converter') else _type)
 
 class ArgumentParser(argparse.ArgumentParser):
     def error(self, message):
@@ -97,7 +99,7 @@ class RecursiveBotCommandConverter(commands.Converter):
                 if obj is None:
                     raise commands.BadArgument(bot.command_not_found.format(cmd_path))
             except AttributeError:
-                raise commands.BadArgument(bot.command_not_found.format(obj))
+                raise commands.BadArgument(bot.command_has_no_subcommands.format(obj))
         return obj
 
 def non_negative(num):
@@ -128,10 +130,8 @@ def number(s):
 
 def item_converter(d, *, key=lambda k: k, error_msg="Couldn't find key \"{arg}\""):
     def itemgetter(arg):
-        try:
+        with redirect_exception((Exception, error_msg.format(arg=arg)), cls=commands.BadArgument):
             return d[key(arg)]
-        except Exception as e:
-            raise commands.BadArgument(error_msg.format(arg=arg)) from e
     return itemgetter
 
 DURATION_MULTIPLIERS = {

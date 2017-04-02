@@ -1,4 +1,6 @@
 import contextlib
+from collections.abc import Sequence
+from .errors import ChiakiException
 
 _sentinel = object()
 
@@ -15,7 +17,36 @@ def temp_attr(obj, attr, value):
         else:
             setattr(obj, attr, old_value)
 
+@contextlib.contextmanager
+def redirect_exception(*exceptions, cls=ChiakiException):
+    """Context manager to re-raise exceptions with a proxy exception class.
+
+    The exceptions can either be an exception type or a (exc_type, string) pair.
+    """
+    exceptions = dict(exc if isinstance(exc, Sequence) else (exc, None)
+                      for exc in exceptions)
+    try:
+        yield
+    except tuple(exceptions) as e:
+        raise cls(exceptions[type(e)] or str(e)) from e
+
+# asynccontextmanager when
+class temp_message:
+    """Sends a temporary message, then deletes it"""
+    def __init__(self, destination, content=None, embed=None):
+        self.destination = destination
+        self.content = content
+        self.embed = embed
+
+    async def __aenter__(self):
+        self.message = await destination.send(content, embed)
+        return self.message
+
+    async def __aexit__(self, exc_type, exc, tb):
+        await message.delete()
+
 class temp_edit:
+    """Temporarily edits anything that's editable (with a .edit() coroutine method)"""
     def __init__(self, editable, **fields):
         self.editable = editable
         self._old_fields = {k: getattr(editable, k) for k in fields}
@@ -23,6 +54,7 @@ class temp_edit:
 
     async def __aenter__(self):
         await self.editable.edit(**self._new_fields)
+        return self.editable
 
     async def __aexit__(self, exc_type, exc, tb):
         await self.editable.edit(**self._old_fields)
