@@ -33,17 +33,18 @@ def redirect_exception(*exceptions, cls=ChiakiException):
 # asynccontextmanager when
 class temp_message:
     """Sends a temporary message, then deletes it"""
-    def __init__(self, destination, content=None, embed=None):
+    def __init__(self, destination, content=None, file=None, embed=None):
         self.destination = destination
         self.content = content
+        self.file = file
         self.embed = embed
 
     async def __aenter__(self):
-        self.message = await destination.send(content, embed)
+        self.message = await self.destination.send(self.content, file=self.file, embed=self.embed)
         return self.message
 
     async def __aexit__(self, exc_type, exc, tb):
-        await message.delete()
+        await self.message.delete()
 
 class temp_edit:
     """Temporarily edits anything that's editable (with a .edit() coroutine method)"""
