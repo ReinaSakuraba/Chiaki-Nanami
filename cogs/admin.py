@@ -2,6 +2,7 @@ import argparse
 import discord
 import operator
 
+from datetime import datetime
 from discord.ext import commands
 
 from .utils import checks
@@ -380,7 +381,7 @@ class Admin:
         replacements = {
             "{user}": member.mention,
             "{server}": str(server),
-            "{count}": member_count,
+            "{count}": str(member_count),
             "{countord}": ordinal(member_count),
             "{joinedat}": nice_time(member.joined_at)
         }
@@ -401,7 +402,15 @@ class Admin:
         if not message:
             return
 
-        message = message.replace("{user}", member.mention)
+        replacements = {
+            "{user}": member.mention,
+            "{server}": str(server),
+            "{count}": str(member_count),
+            "{leftat}": f'{datetime.now() :%c}',
+            "{joinedat}": nice_time(member.joined_at)
+        }
+
+        message = multi_replace(message, replacements)
         await self.bot.send_message(server, message)
 
     @commands.command(pass_context=True, no_pm=True)
