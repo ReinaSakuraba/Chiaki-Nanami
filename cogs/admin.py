@@ -130,19 +130,19 @@ class Admin:
             raise errors.InvalidUserArgument("That role is not self-assignable... :neutral_face:")
         await role_action(role)
 
-    @commands.command(no_pm=True)
+    @commands.command()
     async def iam(self, ctx, *, role: discord.Role):
         """Gives a self-assignable role (and only a self-assignable role) to yourself."""
         await self._self_role(ctx.author.add_roles, role)
         await ctx.send(f"You are now **{role}**... I think.")
 
-    @commands.command(no_pm=True)
+    @commands.command()
     async def iamnot(self, ctx, *, role: discord.Role):
         """Removes a self-assignable role (and only a self-assignable role) from yourself."""
         await self._self_role(ctx.author.remove_roles, role)
         await ctx.send(f"You are no longer **{role}**... probably.")
 
-    @commands.command(no_pm=True)
+    @commands.command()
     async def selfrole(self, ctx, *, role: discord.Role):
         """Gives or removes a self-assignable role (and only a self-assignable role)
 
@@ -305,7 +305,7 @@ class Admin:
             await role.delete()
         await ctx.send(f"Successfully deleted **{role.name}**!")
 
-    @commands.command(no_pm=True)
+    @commands.command()
     @checks.admin_or_permissions(manage_guild=True)
     async def welcome(self, ctx, *, message: str):
         """Sets the bot's message when a member joins this server.
@@ -342,7 +342,7 @@ class Admin:
         replacements = {
             '{user}': member.mention,
             '{server}': str(guild),
-            '{count}': member_count,
+            '{count}': str(member_count),
             '{countord}': ordinal(member_count),
             '{joinedat}': nice_time(member.joined_at)
         }
@@ -350,7 +350,7 @@ class Admin:
         message = multi_replace(message, replacements)
         await guild.default_channel.send(message)
 
-    @commands.command(no_pm=True)
+    @commands.command()
     @checks.admin_or_permissions(manage_guild=True)
     async def byebye(self, ctx, *, message: str):
         """Sets the bot's message when a member leaves this server"""
@@ -375,7 +375,7 @@ class Admin:
         message = message.replace("{user}", member.mention)
         await guild.default_channel.send(message)
 
-    @commands.command(no_pm=True)
+    @commands.command()
     @checks.is_admin()
     async def prefix(self, ctx, *, prefix=None):
         """Sets a custom prefix for a this server cog.
@@ -389,7 +389,7 @@ class Admin:
         self.bot.custom_prefixes[ctx.guild] = [prefix]
         await ctx.send(f"Successfully set {ctx.guild}'s prefix to \"{prefix}\"!")
 
-    @commands.command(name="addprefix", no_pm=True)
+    @commands.command(name="addprefix", aliases=['apf'])
     @checks.is_admin()
     async def add_prefix(self, ctx, *, prefix):
         """Adds a prefix for this server"""

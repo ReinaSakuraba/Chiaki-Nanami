@@ -56,7 +56,7 @@ class CustomCommands:
         """Namespace for the custom commands"""
         pass
 
-    @custom_command.command(name='add', no_pm=True)
+    @custom_command.command(name='add')
     @global_cc_check()
     async def add_custom_command(self, ctx, trigger, reaction):
         server = ctx.guild or 'global'
@@ -66,7 +66,7 @@ class CustomCommands:
         server_reactions.setdefault(trigger.lower(), {})[new_trigger_id] = reaction
         await ctx.send(f'Custom command added: "**{trigger}** = **{reaction}**"')
 
-    @custom_command.command(name='remove', no_pm=True)
+    @custom_command.command(name='remove')
     @global_cc_check()
     async def remove_custom_command(self, ctx, trigger_id):
         """Removes a custom trigger by id."""
@@ -75,7 +75,7 @@ class CustomCommands:
         else:
             await ctx.send(f'{trigger_id} was never a trigger, I think.')
 
-    @custom_command.command(name='delete', no_pm=True, aliases=['del'])
+    @custom_command.command(name='delete', aliases=['del'])
     @checks.mod_or_permissions(manage_server=True)
     @global_cc_check()
     async def delete_custom_command(self, ctx, trigger):

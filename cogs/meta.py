@@ -67,7 +67,8 @@ class Meta:
         # Pray it closes
         self.bot.loop.create_task(self.session.close())
 
-    @commands.command(no_pm=True)
+    @commands.command()
+    @commands.guild_only()
     async def uinfo(self, ctx, *, user: discord.Member=None):
         """Gets some basic userful info because why not"""
         if user is None:
@@ -91,16 +92,19 @@ class Meta:
             subcommands = '\n'.join(ctx.command.commands.keys())
             await ctx.send(f"```\nAvailable info commands:\n{subcommands}```")
 
-    @info.command(no_pm=True)
+    @info.command()
+    @commands.guild_only()
     async def user(self, ctx, *, member: converter.ApproximateUser=None):
         """Gets some userful info because why not"""
         await ctx.invoke(self.userinfo, member=member)
 
-    @info.command(no_pm=True)
+    @info.command()
+    @commands.guild_only()
     async def mee6(self, ctx, *, member: converter.ApproximateUser=None):
         await ctx.invoke(self.rank, member=member)
 
-    @commands.command(no_pm=True)
+    @commands.command()
+    @commands.guild_only()
     async def rank(self, ctx, *, member: converter.ApproximateUser=None):
         """Gets mee6 info... if it exists"""
         if member is None:
@@ -197,7 +201,8 @@ class Meta:
             server_embed.colour = await url_color(icon)
         await ctx.send(embed=server_embed)
 
-    @info.group(no_pm=True, aliases=['guild'], invoke_without_command=True)
+    @info.group(aliases=['guild'], invoke_without_command=True)
+    @commands.guild_only()
     async def server(self, ctx):
         if ctx.subcommand_passed in ['server', 'guild']:
             await self._default_server_info(ctx, ctx.guild)
@@ -223,7 +228,8 @@ class Meta:
     async def roles(self, ctx):
         await iterable_say(ctx.guild.role_hierarchy, ', ', ctx=ctx)
 
-    @commands.command(no_pm=True)
+    @commands.command()
+    @commands.guild_only()
     async def userinfo(self, ctx, *, member: discord.Member=None):
         """Gets some userful info because why not"""
         if member is None:
@@ -252,6 +258,7 @@ class Meta:
         await ctx.send(msg)
 
     @commands.command()
+    @commands.guild_only()
     async def inrole(self, ctx, *, role: discord.Role):
         """
         Checks which members have a given role
@@ -262,6 +269,7 @@ class Meta:
         await self._inrole(ctx, role, predicate=lambda m, r: r in m.roles)
 
     @commands.command()
+    @commands.guild_only()
     async def inanyrole(self, ctx, *roles: discord.Role):
         """
         Checks which members have any of the given role(s)
@@ -273,6 +281,7 @@ class Meta:
         await self._inrole(ctx, *roles, predicate=lambda m, *r: any(r in m.roles for r in roles))
 
     @commands.command()
+    @commands.guild_only()
     async def inallrole(self, ctx, *roles: discord.Role):
         """
         Checks which members have all of the given role(s)
@@ -284,6 +293,7 @@ class Meta:
         await self._inrole(ctx, *roles, predicate=lambda m, *r: all(r in m.roles for r in roles))
 
     @commands.command()
+    @commands.guild_only()
     async def permroles(self, ctx, *, perm: str):
         """
         Checks which roles have a particular permission
@@ -308,6 +318,7 @@ class Meta:
         await ctx.send(message)
 
     @commands.command(aliases=['perms'])
+    @commands.guild_only()
     async def permissions(self, ctx, *, member_or_role: union(discord.Member, discord.Role)=None):
         """Shows either a member's Permissions, or a role's Permissions"""
         if member_or_role is None:
@@ -316,6 +327,7 @@ class Meta:
         await self.display_permissions(ctx, member_or_role, permissions)
 
     @commands.command(aliases=['permsin'])
+    @commands.guild_only()
     async def permissionsin(self, ctx, *, member: discord.Member=None):
         """Shows either a member's Permissions *in the channel*"""
         if member is None:
