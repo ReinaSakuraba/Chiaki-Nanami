@@ -1,6 +1,7 @@
 import discord
 
 from discord.ext import commands
+from functools import partial
 
 from .utils import checks, errors
 from .utils.converter import ArgumentParser, make_converter
@@ -15,6 +16,8 @@ class Admin:
         self.bot = bot
         self.self_roles = Database("admin/selfroles.json", default_factory=list)
         self.member_messages = Database("admin/membermessages.json")
+        self.join_messages = self.member_messages.setdefault("join", {})
+        self.leave_messages = self.member_messages.setdefault("leave", {})
         self.bot.add_database(checks.server_roles)
 
     def __local_check(self, ctx):
@@ -41,8 +44,8 @@ class Admin:
     async def _chiaki_roles(ctx, key):
         server = ctx.guild
         id = checks.get_role(server, key)
-        role = discord.utils.get(server.roles, id=id)
-        await ctx.send(f'**{role}** is your \"{key}\" role.')
+        role = discord.utils.get(server.roles, id=id) or checks.DEFAULT
+        await ctx.send(f'**{role}** is your current \"{key}\" role.')
 
     async def _chiaki_role_command(self, ctx, key, role):
         if role is None:
@@ -51,6 +54,7 @@ class Admin:
             await self._set_chiaki_role(ctx, key, role, 'assign an {key} role to')
 
     @commands.command(name='adminrole', aliases=['ar'])
+    @checks.is_admin()
     async def admin_role(self, ctx, *, role: discord.Role=None):
         """Sets a role for the 'Admin' role. If no role is specified, it shows what role is assigned as the Admin role.
 
@@ -72,11 +76,13 @@ class Admin:
         await self._chiaki_role_command(ctx, checks.ChiakiRole.mod, role)
 
     @commands.command(name='resetadminrole', aliases=['rar'])
+    @checks.is_admin()
     async def reset_admin_role(self, ctx):
         """Resets the Admin role to the default role."""
         await self._set_chiaki_role(ctx, checks.ChiakiRole.admin, None, 'remove an Admin role from')
 
     @commands.command(name='resetmodrole', aliases=['rmr'])
+    @checks.is_admin()
     async def reset_mod_role(self, ctx):
         """Resets the Admin role to the default role."""
         await self._set_chiaki_role(ctx, checks.ChiakiRole.mod, None, 'remove the Moderator role from')
@@ -319,22 +325,20 @@ class Admin:
         """
         if "{user}" not in message:
             message = "{user} " + message
-        self.member_messages.setdefault("join", {})[str(ctx.guild.id)] = message
+        self.join_messages[str(ctx.guild.id)] = message
         await ctx.send(f'Welcome message has been set to "*{message}*"')
 
     @commands.command(name='removewelcome', aliases=['rhi'])
     @checks.admin_or_permissions(manage_guild=True)
-    async def remove_welcome(self, ctx, *, message: str):
-        """Removes the bot's message when a member joins this server.
-        """
-        if self.member_messages.setdefault("join", {}).pop(str(ctx.guild.id), None):
-            await ctx.send(f'Successfully removed the welcome message.')
-        else:
-            await ctx.send(f'This server never had a welcome message.')
+    async def remove_welcome(self, ctx):
+        """Removes the bot's message when a member joins this server."""
+        with redirect_exception((KeyError, 'This server never had a welcome message.')):
+             self.join_messages.pop(str(ctx.guild.id))
+        await ctx.send('Successfully removed the welcome message.')
 
     async def on_member_join(self, member):
         guild = member.guild
-        message = self.member_messages.setdefault('join', {}).get(str(guild.id))
+        message = self.join_messages.get(str(guild.id))
         if not message:
             return
         member_count = len(guild.members)
@@ -354,21 +358,20 @@ class Admin:
     @checks.admin_or_permissions(manage_guild=True)
     async def byebye(self, ctx, *, message: str):
         """Sets the bot's message when a member leaves this server"""
-        self.member_messages.setdefault("leave", {})[str(ctx.guild.id)] = message
+        self.leave_messages[str(ctx.guild.id)] = message
         await ctx.send(f"Leave message has been set to *{message}*")
 
     @commands.command(name='removebyebye', aliases=['rbye'])
     @checks.admin_or_permissions(manage_guild=True)
-    async def remove_byebye(self, ctx, *, message: str):
+    async def remove_byebye(self, ctx):
         """Removes the bot's message when a member leaves this server."""
-        if self.member_messages.setdefault("leave", {}).pop(str(ctx.guild.id), None):
-            await ctx.send(f'Successfully removed the leave message.')
-        else:
-            await ctx.send(f'This server never had a leave message.')
+        with redirect_exception((KeyError, 'This server never had a leave message.')):
+            self.leave_messages.pop(str(ctx.guild.id))
+        await ctx.send('Successfully removed the leave message.')
 
     async def on_member_leave(self, member):
         guild = member.guild
-        message = self.member_messages.setdefault("leave", {}).get(str(guild.id))
+        message = self.leave_messages.get(str(guild.id))
         if not message:
             return
 
@@ -378,7 +381,7 @@ class Admin:
     @commands.command()
     @checks.is_admin()
     async def prefix(self, ctx, *, prefix=None):
-        """Sets a custom prefix for a this server cog.
+        """Sets a custom prefix for this server.
 
         If no arguments are specified, it shows the custom prefixes for this server.
         """
@@ -395,10 +398,10 @@ class Admin:
         """Adds a prefix for this server"""
         prefixes = self.bot.custom_prefixes.setdefault(ctx.guild, [])
         if prefix in prefixes:
-            await ctx.send(f"\"{prefix}\" was already added to **{name}**...")
+            await ctx.send(f"\"{prefix}\" was already a custom prefix...")
         else:
             prefixes.append(prefix)
-            await ctx.send(f"Successfully added prefix \"{prefix}\" to **{name}**!")
+            await ctx.send(f"Successfully added prefix \"{prefix}\"!")
 
     @commands.command(name="removeprefix", aliases=['rpf'])
     @checks.is_admin()
@@ -408,18 +411,17 @@ class Admin:
         if not prefixes:
             raise errors.InvalidUserArgument("This server doesn't use any custom prefixes")
 
-        with redirect_exception((ValueError, f"\"{prefix}\" was never in **{name}**...")):
+        with redirect_exception((ValueError, f"\"{prefix}\" was never a custom prefix in this server...")):
             prefixes.remove(prefix)
-        await ctx.send("Successfully removed prefix \"{prefix}\" in **{name}**!")
+        await ctx.send(f"Successfully removed \"{prefix}\"!")
 
     @commands.command(name="resetprefix", aliases=['clrpf'])
     @checks.is_admin()
     async def reset_prefix(self, ctx):
         """Resets the server's custom prefixes back to the default prefix ({prefix})"""
-        if self.bot.custom_prefixes.pop(ctx.guild, None):
-            await ctx.send(f"Done. **{ctx.guild}** no longer has any custom prefixes")
-        else:
-            await ctx.send(f"**{ctx.guild}** never had any custom prefixes...")
+        with redirect_exception((KeyError, f"**{ctx.guild}** never had any custom prefixes...")):
+            self.bot.custom_prefixes.pop(ctx.guild)
+        await ctx.send(f"Done. **{ctx.guild}** no longer has any custom prefixes")
 
 def setup(bot):
     bot.add_cog(Admin(bot), "Administrator", "Administration")
