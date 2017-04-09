@@ -95,7 +95,7 @@ class RecursiveBotCommandConverter(commands.Converter):
             try:
                 obj = obj.get_command(cmd)
                 if obj is None:
-                    raise commands.BadArgument(bot.command_not_found.format(cmd_path))
+                    raise commands.BadArgument(bot.command_not_found.format(self.argument))
             except AttributeError:
                 raise commands.BadArgument(bot.command_not_found.format(obj))
         return NamePair([obj.qualified_name.split()[0], *obj.aliases], obj)
