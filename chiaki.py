@@ -54,7 +54,7 @@ initial_extensions = (
 #   'cogs.customcommands',
     'cogs.halp',
     'cogs.math',
-#   'cogs.meta',
+    'cogs.meta',
 #   'cogs.moderator',
 #   'cogs.music',
 #   'cogs.otherstuff',
@@ -62,7 +62,7 @@ initial_extensions = (
     'cogs.permissions',
 #   'cogs.quotes',
     'cogs.rng',
-#   'cogs.searches',
+    'cogs.searches',
 #   'cogs.diepio.partylink',
     'cogs.diepio.wr',
 #   'cogs.games.eventhost',
@@ -165,7 +165,7 @@ def main():
     with redirect_exception((FileNotFoundError, "A credentials file is required"), cls=RuntimeError):
         credentials = _load_json('data/credentials.json')
 
-    with redirect_exception((FileNotFoundError, "A token is required"), cls=RuntimeError):
+    with redirect_exception((IndexError, "A token is required"), cls=RuntimeError):
         token = credentials.pop('token', None) or sys.argv[1]
 
     bot.run(token)
