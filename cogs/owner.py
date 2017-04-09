@@ -2,11 +2,14 @@ import argparse
 import copy
 import discord
 import inspect
+import importlib
+import sys
 import traceback
 
 from discord.ext import commands
 
 from .utils import checks
+from .utils.converter import item_converter
 from .utils.context_managers import temp_attr
 from .utils.misc import code_msg
 
@@ -84,6 +87,24 @@ class Owner:
     async def reload(self, ctx, cog: str):
         self.bot.unload_extension(cog)
         await self._load(ctx, cog)
+        
+    @staticmethod
+    async def _attempt_external_import(ctx, func, module, *, message):
+        try:
+            getattr(importlib, func)(module)
+        except Exception as e:
+            await ctx.send(f"Failed to {message} module")
+            raise
+        else:
+            await ctx.send("\N{THUMBS UP SIGN}")    
+        
+    @commands.command(hidden=True)
+    async def reloadext(self, ctx, module: item_converter(sys.modules)):
+        await self._attempt_external_import(ctx, 'reload', module, message='reload')
+            
+    @commands.command(hidden=True)
+    async def loadext(self, ctx, module):
+        await self._attempt_external_import(ctx, 'import_module', module, message='import')
 
     @commands.command(hidden=True)
     async def load(self, ctx, cog: str):
