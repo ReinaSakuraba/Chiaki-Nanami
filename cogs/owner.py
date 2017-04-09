@@ -16,8 +16,8 @@ class Owner:
     def __init__(self, bot):
         self.bot = bot
 
-    def __local_check(self, ctx):
-        return checks.is_owner_predicate(ctx.author)
+    async def __local_check(self, ctx):
+        return await checks.is_owner_predicate(ctx)
 
     async def _load(self, ctx, ext):
         try:
@@ -50,7 +50,6 @@ class Owner:
             if inspect.isawaitable(result):
                 result = await result
         except Exception as e:
-            exc_fmt = "{0.__class__.__name__}: {0}"
             await ctx.send(code_msg(traceback.format_exc(), 'py'))
         else:
             await ctx.send(code_msg(result, 'py'))
