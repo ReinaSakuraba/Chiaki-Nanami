@@ -99,7 +99,7 @@ class CustomCommands:
 
     def get_prefix(self, message):
         prefix = self.bot.prefix_function(message)
-        return prefix if isinstance(prefix, str) else discord.utils.find(message.content.startswith, prefix)
+        return discord.utils.find(message.content.startswith, prefix)
 
     @staticmethod
     def is_part_of_existing_command(ctx, arg):
@@ -150,7 +150,7 @@ class CustomCommands:
 
         content = message.content
         prefix = self.get_prefix(message)
-        if not (prefix and content.startswith(prefix)):
+        if prefix is None:
             return
 
         aliases = self.aliases[message.guild]

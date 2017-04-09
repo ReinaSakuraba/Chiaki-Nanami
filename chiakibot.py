@@ -16,6 +16,7 @@ from discord.ext import commands
 from itertools import product, takewhile
 
 from cogs.utils.checks import ChiakiCheck
+from cogs.utils.compat import always_iterable
 from cogs.utils.context_managers import temp_attr
 from cogs.utils.database import Database
 from cogs.utils.misc import cycle_shuffle, duration_units, truncate
@@ -75,8 +76,7 @@ class ChiakiFormatter(commands.HelpFormatter):
         if cmd.clean_params:
             usage = cmd.usage
             if isinstance(usage, Sequence):
-                usage = (usage, ) if isinstance(usage, str) else usage
-                return '\n'.join([f'`{self.prefix}{random.choice(qualified_names)} {u}`' for u in usage])
+                return '\n'.join([f'`{self.prefix}{random.choice(qualified_names)} {u}`' for u in always_iterable(usage)])
             # Assume it's invalid; usage must be a sequence (either a tuple, list, or str)
             return 'No example... yet'
         # commands that don't take any arguments don't really need an example generated manually....
@@ -266,8 +266,7 @@ class ChiakiBot(commands.Bot):
             self.invites_by_bot.append(await official_guild.create_invite())
 
     def str_prefix(self, message):
-        prefix = self.prefix_function(message)
-        return prefix if isinstance(prefix, str) else ', '.join(prefix)
+        return ', '.join(self.prefix_function(message))
 
     async def ping(self, times=1):
         async def pinger():
@@ -298,7 +297,7 @@ class ChiakiBot(commands.Bot):
 
     @property
     def default_prefix(self):
-        return self._config['default_command_prefix']
+        return always_iterable(self._config['default_command_prefix'])
 
     @property
     def default_help(self):

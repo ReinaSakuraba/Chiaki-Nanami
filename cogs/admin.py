@@ -386,7 +386,7 @@ class Admin:
         If no arguments are specified, it shows the custom prefixes for this server.
         """
         if prefix is None:
-            prefixes = self.bot.custom_prefixes.get(ctx.guild, [self.bot.default_prefix])
+            prefixes = self.bot.custom_prefixes.get(ctx.guild, self.bot.default_prefix)
             await ctx.send(f"{ctx.guild}'s custom prefix(es) are {', '.join(prefixes)}")
             return
         self.bot.custom_prefixes[ctx.guild] = [prefix]
@@ -396,7 +396,7 @@ class Admin:
     @checks.is_admin()
     async def add_prefix(self, ctx, *, prefix):
         """Adds a prefix for this server"""
-        prefixes = self.bot.custom_prefixes.setdefault(ctx.guild, [])
+        prefixes = self.bot.custom_prefixes.setdefault(ctx.guild, [*self.bot.default_prefix])
         if prefix in prefixes:
             await ctx.send(f"\"{prefix}\" was already a custom prefix...")
         else:

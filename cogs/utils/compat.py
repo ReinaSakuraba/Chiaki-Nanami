@@ -104,7 +104,7 @@ user_colour = user_color
 # itertools related stuff
 
 try:
-    from more_itertools import ilen, iterate
+    from more_itertools import always_iterable, ilen, iterate
 except ImportError:
     def ilen(iterable):
         d = deque(enumerate(iterable, 1), maxlen=1)
@@ -114,3 +114,12 @@ except ImportError:
         while True:
             yield start
             start = func(start)
+
+    def always_iterable(obj):
+        if obj is None:
+            return ()
+
+        if isinstance(obj, (str, bytes)) or not hasattr(obj, '__iter__'):
+            return obj,
+
+        return obj
