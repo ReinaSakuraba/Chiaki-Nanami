@@ -1,12 +1,15 @@
 import argparse
 import copy
 import discord
+import importlib
 import inspect
+import sys
 import traceback
 
 from discord.ext import commands
 
 from .utils import checks
+from .utils.converter import item_converter
 from .utils.misc import code_msg
 
 class Owner:
@@ -65,7 +68,24 @@ class Owner:
     async def botav(self, *, new_avatar: str):
         with open(new_avatar, 'rb') as f:
             await self.bot.edit_profile(avatar=f.read())
-
+            
+    async def _attempt_external_import(self, func, module, *, message):
+        try:
+            getattr(importlib, func)(module)
+        except Exception as e:
+            await self.bot.say(f"Failed to {message} module")
+            raise
+        else:
+            await self.bot.say("\N{THUMBS UP SIGN}")    
+        
+    @commands.command(hidden=True)
+    async def reloadext(self, module: item_converter(sys.modules)):
+        await self._attempt_external_import('reload', module, message='reload')
+            
+    @commands.command(hidden=True)
+    async def loadext(self, module):
+        await self._attempt_external_import('import_module', module, message='import')
+        
     @commands.command(hidden=True)
     @checks.is_owner()
     async def reload(self, cog: str):

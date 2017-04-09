@@ -118,6 +118,14 @@ def attr_converter(obj, msg="Cannot find attribute {attr}."):
             raise commands.BadArgument(msg.format(attr=attr))
     return attrgetter
 
+def item_converter(d, *, key=lambda k: k, error_msg="Couldn't find key \"{arg}\""):
+    def itemgetter(arg):
+        try:
+            return d[key(arg)]
+        except Exception as e:
+            raise commands.BadArgument(error_msg.format(arg=arg))
+    return itemgetter
+
 def number(s):
     for typ in (int, float):
         try:
