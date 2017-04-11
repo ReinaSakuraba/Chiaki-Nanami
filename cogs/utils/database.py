@@ -6,19 +6,14 @@ import logging
 import os
 import uuid
 
+from .misc import file_handler
 from .transformdict import IDAbleDict
 
 DATA_PATH = 'data/'
 DB_PATH = DATA_PATH + 'databases/'
 
 log = logging.getLogger(f"chiaki-{__name__}")
-try:
-    handler = logging.FileHandler(filename='./logs/databases.log', encoding='utf-8', mode='w')
-except FileNotFoundError:
-    os.makedirs("logs", exist_ok=True)
-    handler = logging.FileHandler(filename='./logs/databases.log', encoding='utf-8', mode='w')
-handler.setFormatter(logging.Formatter('%(asctime)s/%(levelname)s:%(name)s: %(message)s'))
-log.addHandler(handler)
+log.addHandler(file_handler('databases'))
 
 def _load_data_func(file_type, **kwargs):
     def load_data(name, object_hook=None):
@@ -32,7 +27,7 @@ def _load_data_func(file_type, **kwargs):
 _load_json = _load_data_func(open, encoding='utf-8')
 _load_gzip = _load_data_func(gzip.GzipFile)
 del _load_data_func
- 
+
 @contextlib.contextmanager
 def atomic_temp_file(name, file_type=open, **kwargs):
     # For Pythonic-ness
@@ -45,7 +40,7 @@ def atomic_temp_file(name, file_type=open, **kwargs):
 class Database(IDAbleDict):
     """Database for any persistent data.
 
-    This is basically a wrapper for the defaultdict object, that transforms any key 
+    This is basically a wrapper for the defaultdict object, that transforms any key
     with an 'id' attribute with the actual id casted as a string.
     """
 
@@ -110,4 +105,3 @@ def check_data_dir(dir_):
 
 def check_database_dir(dir_):
     os.makedirs(DB_PATH + dir_, exist_ok=True)
-

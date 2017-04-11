@@ -19,16 +19,10 @@ from cogs.utils.checks import ChiakiCheck
 from cogs.utils.compat import always_iterable
 from cogs.utils.context_managers import temp_attr
 from cogs.utils.database import Database
-from cogs.utils.misc import cycle_shuffle, duration_units, truncate
+from cogs.utils.misc import cycle_shuffle, duration_units, file_handler, truncate
 
 log = logging.getLogger(__name__)
-try:
-    handler = logging.FileHandler(filename='./logs/chiakinanami.log', encoding='utf-8', mode='w')
-except FileNotFoundError:
-    os.makedirs("logs", exist_ok=True)
-    handler = logging.FileHandler(filename='./logs/chiakinanami.log', encoding='utf-8', mode='w')
-handler.setFormatter(logging.Formatter('%(asctime)s/%(levelname)s:%(name)s: %(message)s'))
-log.addHandler(handler)
+log.addHandler(file_handler('chiakinanami'))
 
 default_bot_help = """\
 *{0.description}*

@@ -1,10 +1,11 @@
-import contextlib
 import inspect
+import logging
+import os
 import random
 import re
 
 from collections import namedtuple
-from datetime import timezone
+from datetime import datetime, timezone
 from discord.ext import commands
 
 def code_say(bot, msg):
@@ -58,3 +59,10 @@ def duration_units(secs):
 def ordinal(num):
     # pay no attention to this ugliness
     return "%d%s" % (num, "tsnrhtdd"[(num//10%10!=1)*(num%10<4)*num%10::4])
+
+def file_handler(name, path='./logs', *, format='%(asctime)s/%(levelname)s: %(name)s: %(message)s'):
+    now = datetime.now()
+    os.makedirs(path, exist_ok=True)
+    handler = logging.FileHandler(filename=f'{path}/{name}{now : %Y-%m-%d %H.%M.%S.%f.txt}.log', encoding='utf-8', mode='w')
+    handler.setFormatter(logging.Formatter(format))
+    return handler

@@ -11,6 +11,7 @@ import traceback
 from chiakibot import chiaki_bot
 from cogs.utils import errors
 from cogs.utils.context_managers import redirect_exception
+from cogs.utils.misc import file_handler
 from discord.ext import commands
 
 # use faster event loop, but fall back to default if on Windows or not installed
@@ -24,14 +25,7 @@ else:
 logger = logging.getLogger('discord')
 logger.setLevel(logging.INFO)
 logging.basicConfig(level=logging.INFO)
-
-try:
-    handler = logging.FileHandler(filename='./logs/discord.log', encoding='utf-8', mode='w')
-except FileNotFoundError:
-    os.makedirs("logs", exist_ok=True)
-    handler = logging.FileHandler(filename='./logs/discord.log', encoding='utf-8', mode='w')
-handler.setFormatter(logging.Formatter('%(asctime)s/%(levelname)s:%(name)s: %(message)s'))
-logger.addHandler(handler)
+logger.addHandler(file_handler('discord'))
 
 def _load_json(filename):
     def remove_comments(string):
