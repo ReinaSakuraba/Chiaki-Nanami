@@ -34,7 +34,7 @@ else:
             closest_name = closest_colour(requested_colour)
             actual_name = None
         return actual_name, closest_name
-        
+
 _back_up_tanks = [
     'Annihilator',
     'Assassin',
@@ -113,7 +113,7 @@ def _make_maze(w=16, h=8):
 
     walk(randrange(w), randrange(h))
     return(''.join(a + ['\n'] + b) for (a, b) in zip(hor, ver))
-    
+
 _available_distributions = {
     'uniform': random.uniform,
     'int': random.randint,
@@ -130,14 +130,15 @@ class RNG:
         """...it's a 8-ball"""
         if not question.endswith('?'):
             return await self.bot.reply(f"That's not a question, I think.")
-        msg = await self.bot.reply(f"\n:question:: **{question}**\n")
+
+        msg = await self.bot.reply(f'\n\N{BLACK QUESTION MARK ORNAMENT}: **{question}**\n')
         await asyncio.sleep(random.uniform(0.5, 1.5))
-        afmt =  "{}\n:8ball:: {}"
-        for i in range(4):
-            await self.bot.edit_message(msg, afmt.format(msg.content, "." * i))
-            await asyncio.sleep(random.uniform(0.75, 1.25))
+        await self.bot.type()
+        msg = await self.bot.edit_message(msg, f'{msg.content}\n\N{BILLIARDS}: ...\N{THINKING FACE}')
+        await asyncio.sleep(random.uniform(0.75, 1.25) * 3)
+        await asyncio.sleep(random.uniform(0.75, 1.25))
         answer = random.choice(BALL_ANSWERS)
-        await self.bot.edit_message(msg, afmt.format(msg.content, f"***__{answer}.__***"))
+        await self.bot.edit_message(msg, msg.content.replace('\N{THINKING FACE}', f'***__{answer}.__***'))
 
     @commands.group(aliases=['rand'], invoke_without_command=True)
     async def random(self, lo: number, hi: number=None, dist='range'):
@@ -152,7 +153,7 @@ class RNG:
         msg = await self.bot.say(answer)
         await asyncio.sleep(random.uniform(0, 1))
         await self.bot.edit_message(msg, answer + f'**{result}!!**')
-        
+
     @random.command(aliases=['dists'])
     async def distributions(self):
         """Shows all the distributions one can use for the random command"""
