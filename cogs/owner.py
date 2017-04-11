@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 import copy
 import discord
 import inspect
@@ -87,7 +88,7 @@ class Owner:
     async def reload(self, ctx, cog: str):
         self.bot.unload_extension(cog)
         await self._load(ctx, cog)
-        
+
     @staticmethod
     async def _attempt_external_import(ctx, func, module, *, message):
         try:
@@ -96,12 +97,12 @@ class Owner:
             await ctx.send(f"Failed to {message} module")
             raise
         else:
-            await ctx.send("\N{THUMBS UP SIGN}")    
-        
+            await ctx.send("\N{THUMBS UP SIGN}")
+
     @commands.command(hidden=True)
     async def reloadext(self, ctx, module: item_converter(sys.modules)):
         await self._attempt_external_import(ctx, 'reload', module, message='reload')
-            
+
     @commands.command(hidden=True)
     async def loadext(self, ctx, module):
         await self._attempt_external_import(ctx, 'import_module', module, message='import')
@@ -146,6 +147,14 @@ class Owner:
         with temp_attr(ctx.message, 'content', command):
             for i in range(num):
                 await self.bot.process_commands(ctx.message)
+
+    @commands.command(hidden=True, aliases=['chaincmd'])
+    async def chaincommand(self, ctx, *commands):
+        for cmd in commands:
+            with temp_attr(ctx.message, 'content', cmd):
+                await self.bot.process_commands(ctx.message)
+                # prevent rate-limiting.
+                await asyncio.sleep(1)
 
 def setup(bot):
     bot.add_cog(Owner(bot), hidden=True)
