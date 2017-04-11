@@ -9,7 +9,8 @@ from functools import partial
 
 from .compat import ilen
 from .context_managers import redirect_exception
-from .misc import parse_int
+from .errors import InvalidUserArgument
+from .misc import pairwise, parse_int
 
 # We need this because discord.py rewrite converters no longer puts ctx or arg in __init__
 # Thie makes one-lining it near-impossible.
@@ -82,15 +83,17 @@ class BotCogConverter(commands.Converter):
         # figure out if the key is from bot.cog_aliases or bot.cogs
         return bot.get_cog(cog) if isinstance(cog, str) else cog
 
-class BotCommandsConverter(commands.Converter):
-    def convert(self):
+class BotCommand(commands.Converter):
+    def __init__(self, *, recursive=False):
+        self.convert = self._recursive_convert if recursive else self._convert
+
+    def _convert(self):
         cmd = self.ctx.bot.get_command(self.argument)
         if cmd is None:
             raise commands.BadArgument(f"I don't recognized the {self.argument} command")
         return cmd
 
-class RecursiveBotCommandConverter(commands.Converter):
-    def convert(self):
+    def _recursive_convert(self):
         cmd_path = self.argument
         obj = bot = self.ctx.bot
         for cmd in cmd_path.split() if isinstance(cmd_path, str) else cmd_path:
@@ -135,33 +138,28 @@ def item_converter(d, *, key=lambda k: k, error_msg="Couldn't find key \"{arg}\"
     return itemgetter
 
 DURATION_MULTIPLIERS = {
-    's': 1,                  'sec': 1,
-    'm': 60,                 'min': 60,
-    'h': 60 * 60,            'hr': 60 * 60,
+    'y': 60 * 60 * 24 * 365, 'yr' : 60 * 60 * 24 * 365,
+    'w': 60 * 60 * 24 * 7,   'wk' : 60 * 60 * 24 * 7,
     'd': 60 * 60 * 24,       'day': 60 * 60 * 24,
-    'w': 60 * 60 * 24 * 7,   'wk': 60 * 60 * 24 * 7,
-    'y': 60 * 60 * 24 * 365, 'yr': 60 * 60 * 24 * 365,
+    'h': 60 * 60,            'hr' : 60 * 60,
+    'm': 60,                 'min': 60,
+    's': 1,                  'sec': 1,
 }
 
-def _pairwise(iterable):
-    it = iter(iterable)
-    return zip(*[it, it])
+_time_pattern = ''.join(f'(?:([0-9]{{1,5}})({u1}|{u2}))?' for u1, u2 in pairwise(DURATION_MULTIPLIERS))
+_time_compiled = re.compile(f'{_time_pattern}$')
 
-def _parse_time(string, unit='m'):
-    # TODO: order check
-    if not unit:
-        unit = 'm'
-    lowered_unit = unit.lower()
-
-    duration = number(string)
-    unit_multiplier = DURATION_MULTIPLIERS.get(lowered_unit)
-    if unit_multiplier is None:
-        raise command.BadArgument(f"Unrecognized unit: {unit_multiplier}")
-    return duration * unit_multiplier
-
-def duration(strings):
-    durations = re.split(r"(\d+[\.]?\d*)", strings)[1:]
-    return sum(_parse_time(d, u) for d, u in _pairwise(durations))
+def duration(string):
+    try:
+        return float(string)
+    except ValueError as e:
+        match = _time_compiled.match(string)
+        if match is None:
+            # cannot use commands.BadArgument because on_command_error will say the command's __cause__
+            # rather than the actual error.
+            raise InvalidUserArgument(f'{string} is not a valid time.') from e
+        no_nones = list(filter(None, match.groups()))
+        return sum(float(amount) * DURATION_MULTIPLIERS[unit] for amount, unit in pairwise(no_nones))
 
 class union(commands.Converter):
     def __init__(self, *types):

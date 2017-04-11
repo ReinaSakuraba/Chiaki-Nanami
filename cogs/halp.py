@@ -10,13 +10,13 @@ from discord.ext import commands
 from functools import partial
 
 from .utils import checks, errors
-from .utils.converter import BotCogConverter, RecursiveBotCommandConverter
+from .utils.converter import BotCogConverter, BotCommand
 from .utils.database import Database
 from .utils.misc import multi_replace, nice_time, truncate
 from .utils.paginator import iterable_limit_say
 
 def default_help_command(func=lambda s: s, **kwargs):
-    async def help_command(self, ctx, *, command: RecursiveBotCommandConverter=None):
+    async def help_command(self, ctx, *, command: BotCommand(recursive=True)=None):
         await default_help(ctx, command, func=func)
     return commands.command(help=func("Shows this message and stuff"), **kwargs)(help_command)
 

@@ -14,7 +14,7 @@ from operator import attrgetter
 from .utils import converter
 from .utils.compat import url_color, user_color
 from .utils.context_managers import redirect_exception, temp_message
-from .utils.converter import RecursiveBotCommandConverter, union
+from .utils.converter import BotCommand, union
 from .utils.errors import InvalidUserArgument, ResultsNotFound
 from .utils.misc import str_join, nice_time, ordinal
 from .utils.paginator import iterable_limit_say, iterable_say
@@ -245,7 +245,7 @@ class Meta:
         await iterable_limit_say(lines, '', ctx=ctx, prefix='```py\n', escape_code=True)
 
     @commands.command()
-    async def source(self, ctx, *, cmd: RecursiveBotCommandConverter):
+    async def source(self, ctx, *, cmd: BotCommand(recursive=True)):
         """Displays the source code for a particular command"""
         # TODO: use GitHub
         await self._source(ctx, cmd.callback)
