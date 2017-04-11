@@ -163,24 +163,21 @@ def duration(strings):
     durations = re.split(r"(\d+[\.]?\d*)", strings)[1:]
     return sum(_parse_time(d, u) for d, u in _pairwise(durations))
 
-def union(*types):
-    class MultiConverter(commands.Converter):
-        async def convert(self):
-            arg = self.argument
-            for converter in map(type_to_converter, types):
-                actual_converter, *args = ((make_converter(converter, self.ctx, arg).convert,)
-                                           if isinstance(converter, commands.Converter) else
-                                           (converter, arg))
-                try:
-                    result = await discord.utils.maybe_coroutine(actual_converter, *args)
-                except Exception as e:
-                    print(e)
-                    continue
-                else:
-                    return result
-            raise commands.BadArgument(f"I couldn't parse {arg} successfully, "
-                                       f"given these types: {', '.join([t.__name__ for t in types])}")
-    return MultiConverter
+class union(commands.Converter):
+    def __init__(self, *types):
+        self.types = types
+
+    async def convert(self):
+        arg, ctx = self.argument, self.ctx
+        for type_ in self.types:
+            try:
+                # small hack here because commands.Command.do_conversion expects a Command instance
+                # even though it's not used at all
+                return await ctx.command.do_conversion(ctx, type_, arg)
+            except Exception as e:
+                continue
+        raise commands.BadArgument(f"I couldn't parse {arg} successfully, "
+                                   f"given these types: {', '.join([t.__name__ for t in self.types])}")
 
 def in_(*choices):
     def in_converter(arg):
