@@ -1,9 +1,11 @@
 import inspect
+import logging
+import os
 import random
 import re
 
 from collections import namedtuple
-from datetime import timezone
+from datetime import datetime, timezone
 from discord.ext import commands
 
 def code_say(bot, msg):
@@ -65,6 +67,13 @@ def usage(*usages):
         func.__usage__ = usages
         return cmd
     return wrapper
+
+def file_handler(name, path='./logs', *, format='%(asctime)s/%(levelname)s: %(name)s: %(message)s'):
+    now = datetime.now()
+    os.makedirs(path, exist_ok=True)
+    handler = logging.FileHandler(filename=f'{path}/{name}{now : %Y-%m-%d %H.%M.%S.%f.txt}.log', encoding='utf-8', mode='w')
+    handler.setFormatter(logging.Formatter(format))
+    return handler
 
 AlternateException = namedtuple('AlternateException', ['type', 'message', 'successful', 'original'])
 def try_call(func, on_success=None, exception_alts=()):

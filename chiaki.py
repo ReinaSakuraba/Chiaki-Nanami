@@ -12,20 +12,12 @@ from chiakibot import chiaki_bot
 from cogs.utils import checks, converter, errors
 from cogs.utils.aitertools import aiterable, acount
 from cogs.utils.compat import user_colour
-from cogs.utils.misc import nice_time
+from cogs.utils.misc import file_handler, nice_time
 from discord.ext import commands
 
 logger = logging.getLogger('discord')
 logger.setLevel(logging.INFO)
-try:
-    handler = logging.FileHandler(filename='./logs/discord.log', encoding='utf-8', mode='w')
-except FileNotFoundError:
-    os.makedirs("logs", exist_ok=True)
-    handler = logging.FileHandler(filename='./logs/discord.log', encoding='utf-8', mode='w')
-
-
-handler.setFormatter(logging.Formatter('%(asctime)s/%(levelname)s:%(name)s: %(message)s'))
-logger.addHandler(handler)
+logger.addHandler(file_handler('discord'))
 logging.basicConfig(level=logging.INFO)
 
 bot = chiaki_bot()
@@ -193,7 +185,7 @@ def main():
     config = load_config()
     token = config.get("token") or sys.argv[1]
     bot.run(token)
-    
+
 
 if __name__ == '__main__':
     main()

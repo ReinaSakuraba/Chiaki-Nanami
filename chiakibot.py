@@ -12,16 +12,10 @@ from discord.ext import commands
 from operator import itemgetter
 
 from cogs.utils.database import Database
-from cogs.utils.misc import cycle_shuffle, duration_units, truncate
+from cogs.utils.misc import cycle_shuffle, duration_units, file_handler, truncate
 
 log = logging.getLogger(__name__)
-try:
-    handler = logging.FileHandler(filename='./logs/chiakinanami.log', encoding='utf-8', mode='w')
-except FileNotFoundError:
-    os.makedirs("logs", exist_ok=True)
-    handler = logging.FileHandler(filename='./logs/chiakinanami.log', encoding='utf-8', mode='w')
-handler.setFormatter(logging.Formatter('%(asctime)s/%(levelname)s:%(name)s: %(message)s'))
-log.addHandler(handler)
+log.addHandler(file_handler('chiakinanami'))
 
 # You are free to change this if you want.
 DEFAULT_CMD_PREFIX = '->'
@@ -258,7 +252,7 @@ class ChiakiBot(commands.Bot):
             await asyncio.sleep(60)
             await self.dump_databases()
             print('all databases successfully dumped')
-            
+
     async def update_official_invite(self, official_server_id):
         official_server = self.get_server(official_server_id)
         while not self.is_closed:
@@ -298,11 +292,11 @@ class ChiakiBot(commands.Bot):
     def invite_url(self):
         chiaki_permissions = discord.Permissions(2146823295)
         return discord.utils.oauth_url(self.user.id, chiaki_permissions)
-        
+
     @property
     def official_server_invite(self):
         return random.choice(self.invites_by_bot)
-        
+
     @property
     def default_prefix(self):
         return DEFAULT_CMD_PREFIX

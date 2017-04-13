@@ -7,6 +7,7 @@ import os
 import uuid
 
 from datetime import datetime
+from .misc import file_handler
 from .transformdict import IDAbleDict
 
 DATA_PATH = 'data/'
@@ -20,13 +21,7 @@ def _load_json(name, object_hook=None):
         return {}
 
 log = logging.getLogger(f"chiaki-{__name__}")
-try:
-    handler = logging.FileHandler(filename='./logs/databases.log', encoding='utf-8', mode='w')
-except FileNotFoundError:
-    os.makedirs("logs", exist_ok=True)
-    handler = logging.FileHandler(filename='./logs/databases.log', encoding='utf-8', mode='w')
-handler.setFormatter(logging.Formatter('%(asctime)s/%(levelname)s:%(name)s: %(message)s'))
-log.addHandler(handler)
+log.addHandler(file_handler('databases'))
 
 @contextlib.contextmanager
 def atomic_temp_file(name, path=DB_PATH, file_type=open, **kwargs):
@@ -104,4 +99,3 @@ def check_data_dir(dir_):
 
 def check_database_dir(dir_):
     os.makedirs(DB_PATH + dir_, exist_ok=True)
-
