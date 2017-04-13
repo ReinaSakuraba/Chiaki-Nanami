@@ -210,9 +210,9 @@ class Moderator:
             member = await self.bot.get_user_info(status["user"])
             await self.bot.unban(server, member)
             invite = await self.bot.create_invite(server)
-            msg = f"You have been unbanned from {server}, please be on your best behaviour from now on..."                
+            msg = f"You have been unbanned from {server}, please be on your best behaviour from now on..."
             await self.bot.send_message(member, f"{msg}\n{invite}")
-            
+
         while not self.bot.is_closed:
             await update_db(self.muted_users_db, unmute)
             await update_db(self.temp_bans_db, unban)
@@ -223,8 +223,9 @@ class Moderator:
     @usage('slowmode 100')
     async def slowmode(self, ctx, secs: int=10):
         """Puts the channel in slowmode"""
-        if secs < 0:
-            raise InvalidUserArgument("Seconds cannot be negative, unless you want me to back in time...")
+        if secs <= 0:
+            raise InvalidUserArgument("Seconds must be positive, unless you want me to back in time...")
+
         channel = ctx.message.channel
         self.slowmodes[channel].seconds = secs
         fmt = (f"{channel.mention} is now in slow mode, probably."
@@ -236,6 +237,9 @@ class Moderator:
     @usage('slowonly Salt')
     async def slowonly(self, ctx, user: discord.Member, secs: int):
         """Puts a user in a certain channel in slowmode"""
+        if secs <= 0:
+            raise errors.InvalidUserArgument(f"How can I put someone in slowmode for {secs} seconds...?")
+
         channel = ctx.message.channel
         slowonly_channel = self.slowonlys[channel]
 
