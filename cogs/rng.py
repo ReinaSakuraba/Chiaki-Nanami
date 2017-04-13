@@ -18,23 +18,19 @@ try:
 except ImportError:
     webcolors = None
 else:
+    def _color_distance(c1, c2):
+        return sum((v1 - v2) ** 2 for v1, v2 in zip(c1, c2))
+
     def closest_colour(requested_colour):
-        min_colours = {}
-        for key, name in webcolors.css3_hex_to_names.items():
-            r_c, g_c, b_c = webcolors.hex_to_rgb(key)
-            rd = (r_c - requested_colour[0]) ** 2
-            gd = (g_c - requested_colour[1]) ** 2
-            bd = (b_c - requested_colour[2]) ** 2
-            min_colours[(rd + gd + bd)] = name
-        return min_colours[min(min_colours.keys())]
+        min_colours = {name: _color_distance(webcolors.hex_to_rgb(key), requested_colour)
+                       for key, name in webcolors.css3_hex_to_names.items()}
+        return min(min_colours, key=min_colours.get)
 
     def get_colour_name(requested_colour):
         try:
-            closest_name = actual_name = webcolors.rgb_to_name(requested_colour)
+            return webcolors.rgb_to_name(requested_colour)
         except ValueError:
-            closest_name = closest_colour(requested_colour)
-            actual_name = None
-        return actual_name, closest_name
+            return closest_colour(requested_colour)
 
 with contextlib.suppress(FileNotFoundError):
     with open(r'data\tanks.txt') as f:
@@ -183,7 +179,7 @@ class RNG:
         colour = discord.Colour(colour_long)
         r, g, b = colour.to_tuple()
         h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
-        hsv = [round(h * 360, 3), round(s * 100, 3), round(v * 100, 3)]
+        hsv = round(h * 360, 3), round(s * 100, 3), round(v * 100, 3)
 
         colour_embed = (discord.Embed(title=str(colour), colour=colour)
                        .add_field(name="RGB", value=str_join(', ', (r, g, b)))
