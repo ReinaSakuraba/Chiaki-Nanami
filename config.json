@@ -1,0 +1,49 @@
+{
+    // The ID of your official server for your bot.
+    // This *must* be an integer, as discord IDs are now integers.
+    // Note that your bot must be on this server
+	"official_server": 0,
+    
+    // Settings for logging commands
+    // If log is false then there is no need to set logging_channels
+	"log": false,
+	"logging_channels": [],
+    
+    // Customizable stuff
+    "default_command_prefix": "->",
+    "default_help": "Your help text here",
+    "description": "I'm a bot!",
+    
+    // Permissions of your bot
+    // Any permission that isn't on here is considered to be False
+    "permissions": [
+        "administrator",
+        "manage_guild",
+        "manage_roles",
+        "manage_channels",
+        "kick_members",
+        "ban_members",
+        "create_instant_invite",
+        
+        "read_messages",
+        "send_messages",
+        "manage_messages",
+        "embed_links",
+        "attach_files",
+        "read_message_history",
+        "use_external_emojis",
+        "add_reactions",
+        
+        "connect",
+        "speak",
+        "mute_members",
+        "deafen_members",
+        "move_members"
+     ],
+     
+    // Games that will rotate with the playing status
+    "rotating_games": [
+        "A game",
+        "discord.py"
+    ]
+}

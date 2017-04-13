@@ -35,9 +35,9 @@ def _load_json(filename):
     with open(filename) as f:
         return json.loads(remove_comments(f.read()))
 try:
-    config = _load_json('data/config.json')
+    config = _load_json('config.json')
 except FileNotFoundError:
-    raise RuntimeError("You MUST have a config JSON file!")
+    raise RuntimeError("a config json is required")
 
 bot = chiaki_bot(config)
 
@@ -102,7 +102,6 @@ async def on_command_error(error, ctx):
     print(f'{type(error).__name__}: {error}')
     if cause:
         traceback.print_tb(cause.__traceback__)
-        print(f'{type(cause).__name__}: {cause}')
 
 
 #-----------------MISC COMMANDS--------------
@@ -157,7 +156,7 @@ def main():
             traceback.print_exc()
 
     with redirect_exception((FileNotFoundError, "A credentials file is required"), cls=RuntimeError):
-        credentials = _load_json('data/credentials.json')
+        credentials = _load_json('credentials.json')
 
     with redirect_exception((IndexError, "A token is required"), cls=RuntimeError):
         token = credentials.pop('token', None) or sys.argv[1]
