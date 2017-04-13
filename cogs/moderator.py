@@ -9,7 +9,7 @@ from .utils import checks
 from .utils.database import Database
 from .utils.errors import InvalidUserArgument
 from .utils.aitertools import aiterable
-from .utils.misc import duration_units, nice_time, parse_int, try_async_call, usage
+from .utils.misc import duration_units, nice_time, parse_int, try_call, try_async_call, usage
 
 from collections import Counter, defaultdict, namedtuple
 from discord.ext import commands
@@ -270,6 +270,7 @@ class Moderator:
         result = try_call(lambda: self.slowonlys[channel].pop(user),
                           on_success=f"{user} is no longer in slow mode, I think. :sweat_smile:",
                           exception_alts={KeyError: f"{user} was never in slowmode, I think"})
+        await self.bot.say(result.message)
 
     async def update_slowmode(self, message):
         author = message.author
