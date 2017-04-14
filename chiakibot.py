@@ -170,10 +170,7 @@ class ChiakiBot(commands.Bot):
         self.persistent_counter.update(self.counter)
         await super().logout()
 
-    def add_cog(self, cog, *aliases, hidden=False):
-        if hasattr(cog, '__hidden__'):
-            raise discord.ClientException("__hidden__ attribute can't be defined")
-
+    def add_cog(self, cog):
         members = inspect.getmembers(cog)
         for name, member in members:
             # add any databases
@@ -181,14 +178,13 @@ class ChiakiBot(commands.Bot):
                 self.add_database(member)
 
         # cog aliases
-        cog_name = type(cog).__name__
-        for alias in aliases:
+        for alias in getattr(cog, '__aliases__', ()):
             if alias in self.cog_aliases:
                 raise discord.ClientException(f'"{alias}" already has a cog registered')
-            self.cog_aliases[alias] = cog_name
+            self.cog_aliases[alias] = cog
 
         # add to namespace
-        cog.__hidden__ = hidden
+        cog.__hidden__ = getattr(cog, '__hidden__', False)
         super().add_cog(cog)
 
     def remove_cog(self, cog_name):
@@ -204,7 +200,7 @@ class ChiakiBot(commands.Bot):
                 self.remove_database(member)
 
         # remove cog aliases
-        self.cog_aliases = {alias: real for alias, real in self.cog_aliases.items() if real != cog_name}
+        self.cog_aliases = {alias: real for alias, real in self.cog_aliases.items() if real is not cog}
 
     def load_extension(self, name):
         try:

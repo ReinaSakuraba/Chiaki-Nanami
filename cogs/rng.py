@@ -74,6 +74,8 @@ _available_distributions = {
     }
 
 class RNG:
+    __aliases__ = "Random",
+
     def __init__(self, bot):
         self.bot = bot
 
@@ -230,4 +232,4 @@ class RNG:
             await ctx.send(f"The maze you've generated (**{w}** by **{h}**) is too large")
 
 def setup(bot):
-    bot.add_cog(RNG(bot), "Random")
+    bot.add_cog(RNG(bot))

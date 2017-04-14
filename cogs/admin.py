@@ -11,6 +11,7 @@ from .utils.misc import multi_replace, nice_time, ordinal, str_join
 
 class Admin:
     """Admin-only commands"""
+    __aliases__ = "Administrator", "Administration"
 
     def __init__(self, bot):
         self.bot = bot
@@ -424,4 +425,4 @@ class Admin:
         await ctx.send(f"Done. **{ctx.guild}** no longer has any custom prefixes")
 
 def setup(bot):
-    bot.add_cog(Admin(bot), "Administrator", "Administration")
+    bot.add_cog(Admin(bot))

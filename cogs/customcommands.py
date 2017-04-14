@@ -24,6 +24,8 @@ def global_cc_check():
 
 MAX_ALIAS_WORDS = 20
 class CustomCommands:
+    __aliases__ = "CustomReactions",
+
     def __init__(self, bot):
         self.bot = bot
         self.custom_reactions = Database("customcommands.json", default_factory=dict)
@@ -181,4 +183,4 @@ class CustomCommands:
         await self.check_alias(message)
 
 def setup(bot):
-    bot.add_cog(CustomCommands(bot), "CustomReactions")
+    bot.add_cog(CustomCommands(bot))

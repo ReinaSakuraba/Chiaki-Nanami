@@ -16,7 +16,8 @@ from .utils.misc import code_msg
 
 class Owner:
     """Owner-only commands"""
-    __prefix__ = ">>>"
+    __hidden__ = True
+
     def __init__(self, bot):
         self.bot = bot
 
@@ -157,4 +158,4 @@ class Owner:
                 await asyncio.sleep(1)
 
 def setup(bot):
-    bot.add_cog(Owner(bot), hidden=True)
+    bot.add_cog(Owner(bot))

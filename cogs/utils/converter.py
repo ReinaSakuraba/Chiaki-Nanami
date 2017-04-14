@@ -75,13 +75,11 @@ class BotCogConverter(commands.Converter):
         bot = self.ctx.bot
         lowered = self.argument.lower()
 
-        result = discord.utils.find(lambda s: s[0].lower() == lowered, bot.all_cogs.items())
+        result = discord.utils.find(lambda k: k.lower() == lowered, bot.all_cogs)
         if result is None:
             raise commands.BadArgument(f"Module {lowered} not found")
 
-        cog = result[1]
-        # figure out if the key is from bot.cog_aliases or bot.cogs
-        return bot.get_cog(cog) if isinstance(cog, str) else cog
+        return bot.all_cogs[result]
 
 class BotCommand(commands.Converter):
     def __init__(self, *, recursive=False):
@@ -158,7 +156,7 @@ def duration(string):
             # cannot use commands.BadArgument because on_command_error will say the command's __cause__
             # rather than the actual error.
             raise InvalidUserArgument(f'{string} is not a valid time.') from e
-        no_nones = list(filter(None, match.groups()))
+        no_nones = filter(None, match.groups())
         return sum(float(amount) * DURATION_MULTIPLIERS[unit] for amount, unit in pairwise(no_nones))
 
 class union(commands.Converter):
