@@ -70,7 +70,8 @@ class CustomCommands:
     @global_cc_check()
     async def remove_custom_command(self, ctx, trigger_id):
         """Removes a custom trigger by id."""
-        if self._all_reactions(ctx.guild or 'global').pop(trigger_id, None):
+        server_reactions = self._all_reactions(ctx.guild or 'global')
+        if any(reaction.pop(trigger_id, None) for reaction in server_reactions):
             await ctx.send(f'Successfully removed **"{trigger_id}"**.')
         else:
             await ctx.send(f'{trigger_id} was never a trigger, I think.')
