@@ -234,7 +234,10 @@ class Meta:
     async def botinfo(self, ctx):
         bot = self.bot
         user = bot.user
-        appinfo = await bot.application_info()
+        try:
+            appinfo = self._appinfo
+        except AttributeError:
+            self._appinfo = appinfo = await bot.application_info()
 
         discord_lib = "{0.__title__}.py {0.__version__}".format(discord)
         app_icon_url = appinfo.icon_url
@@ -327,7 +330,7 @@ class Meta:
                    f"\n```diff\n{diff_mapper}```"
                    )
         await self.bot.say(message)
-        
+
     @commands.command(pass_context=True, aliases=['perms'])
     async def permissions(self, ctx, *, member_or_role: multi_converter(discord.Member, discord.Role)=None):
         """Shows either a member's Permissions, or a role's Permissions"""
@@ -335,7 +338,7 @@ class Meta:
             member_or_role = ctx.message.author
         permissions = getattr(member_or_role, 'permissions', None) or member_or_role.server_permissions
         await self.display_permissions(member_or_role, permissions)
-        
+
     @commands.command(pass_context=True, aliases=['permsin'])
     async def permissionsin(self, ctx, *, member: discord.Member=None):
         """Shows either a member's Permissions *in the channel*"""
