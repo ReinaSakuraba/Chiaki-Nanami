@@ -4,6 +4,7 @@ import os
 import uuid
 
 from discord.ext import commands
+from io import BytesIO
 # someone make this standard plz
 try:
     from aiocache import cached as async_cache
@@ -64,26 +65,17 @@ except ImportError:
     ColorThief = None
 
 _chunk_size = 1024
-async def _write_from_url(url, filename):
+async def read_url(url):
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as resp:
-            with open(filename, 'wb') as fd:
-                # TODO: Is there a way to make an async functools.partial?
-                while True:
-                    chunk = await resp.content.read(_chunk_size)
-                    if not chunk:
-                        break
-                    fd.write(chunk)
+            return await resp.read()
 
 @async_cache(maxsize=_chunk_size * 8)
-async def _dominant_color_from_url(url, tmp_file='tmp.jpg'):
+async def _dominant_color_from_url(url):
     '''Downloads ths image file and analyzes the dominant color'''
-    tmp_file = f'{uuid.uuid4()}{tmp_file}'
-    await _write_from_url(url, tmp_file)
-    color_thief = ColorThief(tmp_file)
-    dominant_color = color_thief.get_color(quality=1)
-    os.remove(tmp_file)
-    return dominant_color
+    with BytesIO(await read_url(url)) as bio:
+        color_thief = ColorThief(bio)
+        return color_thief.get_color(quality=1)
 
 # Let's hope Danny makes an extension for this
 def _color_from_rgb(r, g, b):
