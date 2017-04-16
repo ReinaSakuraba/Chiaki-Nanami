@@ -1,6 +1,5 @@
 import argparse
 import asyncio
-import copy
 import discord
 import inspect
 import importlib
@@ -19,10 +18,11 @@ class Owner:
     __hidden__ = True
 
     def __init__(self, bot):
+        # We don't do the owner_check right away - it's in setup()
+        # The reason why we do this is so that Bot Owner will show up as a requirement
+        # As __local_check isn't shown in the actual command
+        # TODO: Work with __local_check
         self.bot = bot
-
-    async def __local_check(self, ctx):
-        return await checks.is_owner_predicate(ctx)
 
     async def _load(self, ctx, ext):
         try:
@@ -59,34 +59,15 @@ class Owner:
         else:
             await ctx.send(code_msg(result, 'py'))
 
-    @commands.command(hidden=True, enabled=False)
-    async def editbot(self, ctx, *args: str):
-        """Edits the bot's profile"""
-        parser = argparse.ArgumentParser(description="Edit me in cool ways")
-        bot_user = self.bot.user
-        parser.add_argument('--avatar', '--av', nargs='?', default=None)
-        parser.add_argument('--name', '-n', nargs='?', default=bot.user.name)
-        try:
-            namespace = parser.parse_args(args)
-        except (Exception, SystemExit) as e:
-            return await ctx.send(f"Failed to parse args. Exception:\n```py\n{type(e).__name__}: {e}```")
-
-        if args.avatar:
-            with open(args.avatar, 'rb') as f:
-                namespace['avatar'] = f.read()
-        else:
-            namespace['avatar'] = bot_user.avatar
-
-        user_edit_namespace = {k: namespace[k] for k in ['avatar', 'name']}
-        try:
-            await bot_user.edit(**user_edit_namespace)
-        except Exception as e:
-            pass
-        else:
-            await ctx.send(":ok_hand:")
+    @commands.command(hidden=True)
+    async def botav(self, ctx, *, avatar):
+        with open(avatar, 'rb') as f:
+            await self.bot.user.edit(avatar=f.read())
+        await ctx.send('\N{OK HAND SIGN}')
 
     @commands.command(hidden=True)
     async def reload(self, ctx, cog: str):
+        """Reloads a bot-extension (one with a setup method)"""
         self.bot.unload_extension(cog)
         await self._load(ctx, cog)
 
@@ -102,29 +83,45 @@ class Owner:
 
     @commands.command(hidden=True)
     async def reloadext(self, ctx, module: item_converter(sys.modules)):
+        """Attempts to reload a non-extension module (one that doesn't have a setup method)
+
+        Do note that just because you successfully reload the module,
+        extensions that have imported said module will not automatically have the new one.
+        Make sure you reload them as well.
+        """
         await self._attempt_external_import(ctx, 'reload', module, message='reload')
 
     @commands.command(hidden=True)
     async def loadext(self, ctx, module):
+        """Attempts to load a non-extension module (one that doesn't have a setup method)
+
+        Do note that just because you successfully reload the module,
+        extensions that have imported said module will not automatically have the new one.
+        Make sure you reload them as well.
+        """
         await self._attempt_external_import(ctx, 'import_module', module, message='import')
 
     @commands.command(hidden=True)
     async def load(self, ctx, cog: str):
+        """Loads a bot-extension (one with a setup method)"""
         await self._load(ctx, cog)
 
     @commands.command(hidden=True)
     async def unload(self, ctx, cog: str):
+        """Unloads a bot-extension (one with a setup method)"""
         self.bot.unload_extension(cog)
         await ctx.send(f'```Unloaded {cog}```')
 
     @commands.command(hidden=True, aliases=['kys'])
-    async def die(self):
-        await self.bot.logout()
+    async def die(self, ctx):
+        """Shuts the bot down"""
+        await ctx.bot.logout()
 
     @commands.command(hidden=True, aliases=['restart'])
-    async def reset(self):
-        self.bot.reset_requested = True
-        await self.bot.logout()
+    async def reset(self, ctx):
+        """Restarts the bot"""
+        ctx.bot.reset_requested = True
+        await ctx.bot.logout()
 
     @commands.command(hidden=True)
     async def say(self, ctx, *, msg):
@@ -132,19 +129,22 @@ class Owner:
         await ctx.send(f"\u200b{msg}")
 
     @commands.command(hidden=True)
-    async def announce(self, *, msg):
+    async def announce(self, ctx, *, msg):
+        """Makes an announcement to all the servers that the bot is in"""
         owner = (await self.bot.application_info()).owner
         for guild in bot.guilds:
             await guild.default_channel.send(server, f"@everyone **Announcement from {owner}\n\"{msg}\"")
 
     @commands.command(name="sendmessage", hidden=True)
-    async def send_message(self, channel: discord.TextChannel, *, msg):
+    async def send_message(self, ctx, channel: discord.TextChannel, *, msg):
+        """Sends a message to a particular channel"""
         owner = (await self.bot.application_info()).owner
         await channel.send(f"Message from {owner}:\n{msg}")
         await ctx.send(f"Successfully sent message in {channel}: {msg}")
 
     @commands.command(hidden=True)
     async def do(self, ctx, num: int, *, command):
+        """Repeats a command a given amount of times"""
         with temp_attr(ctx.message, 'content', command):
             for i in range(num):
                 await self.bot.process_commands(ctx.message)
@@ -158,4 +158,10 @@ class Owner:
                 await asyncio.sleep(1)
 
 def setup(bot):
-    bot.add_cog(Owner(bot))
+    owner = Owner(bot)
+    local_check = checks.ChiakiCheck(checks.is_owner_predicate, role="Bot Owner")
+    for name, member in inspect.getmembers(owner):
+        if isinstance(member, commands.Command):
+            member.checks.append(local_check)
+
+    bot.add_cog(owner)
