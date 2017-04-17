@@ -44,11 +44,11 @@ async def is_owner_predicate(ctx):
 def is_owner():
     return commands.check(ChiakiCheck(is_owner_predicate, role="Bot Owner"))
 
-def server_owner_predicate(guild, author):
-    return author.id == guild.owner.id
+def server_owner_predicate(ctx):
+    return ctx.author.id == ctx.guild.owner.id
 
 def is_server_owner():
-    return commands.check(ChiakiCheck(lambda ctx: server_owner_predicate(ctx.guild, ctx.author), role="Server Owner"))
+    return commands.check(ChiakiCheck(server_owner_predicate, role="Server Owner"))
 
 async def permissions_predicate(ctx, **perms):
     if await is_owner_predicate(ctx):
@@ -64,9 +64,8 @@ async def role_predicate(role_key, ctx):
     if not server:
         return False
     role_id = get_role(server, role_key)
-    role = discord.utils.get(author.roles, id=role_id)
-    role_name = discord.utils.get(author.roles, name=DEFAULT)
-    return role is not None or role_name is not None
+    getter = functools.partial(discord.utils.get, author.roles)
+    return getter(id=role_id) is not None or getter(name=DEFAULT) is not None
 
 async def role_or_perms_predicate(ctx, role, **perms):
     return await role_predicate(ctx, role) or await permissions_predicate(ctx, **perms)
