@@ -68,9 +68,6 @@ class ApproximateRole(commands.RoleConverter):
         return super().convert()
 
 class BotCogConverter(commands.Converter):
-    def __init__(self):
-        super().__init__()
-
     def convert(self):
         bot = self.ctx.bot
         lowered = self.argument.lower()
