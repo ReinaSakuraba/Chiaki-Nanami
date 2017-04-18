@@ -2,6 +2,7 @@ import aiohttp
 import discord
 import inspect
 import json
+import random
 import sys
 
 from collections import defaultdict, deque
@@ -18,9 +19,6 @@ from .utils.converter import BotCommand, union
 from .utils.errors import InvalidUserArgument, ResultsNotFound
 from .utils.misc import str_join, nice_time, ordinal
 from .utils.paginator import iterable_limit_say, iterable_say
-
-def _ilen(gen):
-    return sum(1 for _ in gen)
 
 def _icon_embed(idable, url, name):
     embed = (discord.Embed(title=f"{idable.name}'s {name}")
@@ -178,8 +176,9 @@ class Meta:
         members_comment = f"{member_count} members {is_large}"
         icon = server.icon_url
         highest_role = server.role_hierarchy[0]
-        nice_created_at = nice_time(server.created_at)
-        footer = f"Created at: {nice_created_at} | ID: {server.id}"
+        features = '\n'.join(server.features) or 'None'
+
+        descrption = f"Owned by {server.owner}"
         prefix = self.bot.str_prefix(ctx.message)
 
         if member_count < 20:
@@ -189,13 +188,18 @@ class Meta:
             member_field_name = f"Members"
             member_field_value = f"{member_count} (use '{prefix}info server members' to figure out the members)"
 
-        server_embed = (discord.Embed(title=server.name, description=members_comment)
-                       .add_field(name="Owner", value=server.owner)
+        server_embed = (discord.Embed(title=server.name, description=descrption, timestamp=server.created_at)
+                       .add_field(name="Default Channel", value=server.default_channel.mention)
                        .add_field(name="Highest Role", value=highest_role)
+                       .add_field(name="Region", value=server.region)
                        .add_field(name="Channel Count", value=len(server.channels))
                        .add_field(name="Role Count", value=len(server.roles))
-                       .add_field(name=member_field_name, value=member_field_value)
-                       .set_footer(text=footer))
+                       .add_field(name="Custom Emoji Count", value=len(server.emojis))
+                       .add_field(name="Verification Level", value=server.verification_level)
+                       .add_field(name="Explicit Content Filter", value=server.explicit_content_filter)
+                       .add_field(name="Special Features", value=features)
+                       .add_field(name=member_field_name, value=member_field_value, inline=False)
+                       .set_footer(text=f'ID: {server.id}'))
         if icon:
             server_embed.set_thumbnail(url=icon)
             server_embed.colour = await url_color(icon)
@@ -227,6 +231,13 @@ class Meta:
     @server.command()
     async def roles(self, ctx):
         await iterable_say(ctx.guild.role_hierarchy, ', ', ctx=ctx)
+
+    @server.command()
+    async def emojis(self, ctx):
+        if not ctx.guild.emojis:
+            return await ctx.send("This server doesn't have any custom emojis. :'(")
+        emojis = map('{0} = {0.name}'.format, ctx.guild.emojis)
+        await iterable_say(emojis, ctx=ctx)
 
     @commands.command()
     @commands.guild_only()
@@ -262,7 +273,6 @@ class Meta:
     async def inrole(self, ctx, *, role: discord.Role):
         """
         Checks which members have a given role
-
         The role is case sensitive.
         Only one role can be specified. To look at multiple, use `{prefix}inanyrole` or `{prefix}inallrole`.
         """
@@ -384,7 +394,7 @@ class Meta:
         await ctx.send(message)
 
     async def on_member_join(self, member):
-        self.last_members[member.server].append(member)
+        self.last_members[member.guild].append(member)
 
 def setup(bot):
     bot.add_cog(Meta(bot))
