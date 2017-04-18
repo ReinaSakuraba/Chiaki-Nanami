@@ -1,252 +1,239 @@
+import contextlib
 import discord
 import enum
+import itertools
 
-from collections import defaultdict
+from collections import namedtuple
 from discord.ext import commands
-from itertools import chain
+from operator import attrgetter
 
 from .utils import checks, errors
-from .utils.converter import BotCogConverter, BotCommandsConverter
+from .utils.compat import always_iterable, iterate
+from .utils.converter import item_converter, BotCommand, BotCogConverter
 from .utils.database import Database
-from .utils.misc import str_join, usage
+from .utils.misc import str_join
 
-_sign = lambda x: (x > 0) - (x < 0)
-# If anyone can make a prettier way of making this,
-# Don't hesitate to make a pull request...
-_default_perm = {
-        "global": None,
-        "server": {},
-        "channel": {},
-        "role": {},
-        "user": {},
-        "userglobal": {},
-        }
+def walk_parents(command):
+    return itertools.takewhile(bool, iterate(attrgetter('parent'), command))
 
-_level_explanation = """
-A {thing} can be allowed or blocked on one of 6 levels:
-    global     = Affects all servers (owner-only)
+def walk_parent_names(command):
+    return map(attrgetter('qualified_name'), walk_parents(command))
+
+def first_non_none(iterable, default=None):
+    return next(filter(lambda x: x is not None, iterable), default)
+
+class Idable(namedtuple('Idable', 'original id')):
+    def __new__(cls, original):
+        return super().__new__(cls, original, original.id)
+
+permissions_doc = """
+    Sets the permissions for a particular {thing}.
+
+    A {thing} can be allowed or blocked on one of 4 levels:
     server     = Affects this particular server
     channel    = Affects the channels specified, or the current channel if not specified
     role       = Affects the roles specified (at least one must be specified)
-    user       = Affects the users specified on this server
-    userglobal = Affects the users specified for all servers (owner-only)
+    user       = Affects the users specified on *this server only*
+
+    {extra}
 """
 
-def _explain_levels(thing):
-    import re
+def make_doc(thing, extra=''):
     def wrapper(func):
-        func.__doc__ = re.sub("(?<=\n)( *)", '', func.__doc__)
-        func.__doc__ += _level_explanation.format(thing=thing)
+        func.__doc__ = permissions_doc.format(extra=extra, thing=thing)
         return func
     return wrapper
 
-class PermAction(enum.Enum):
-    ALLOW = (True, 'allow', 'enabled', ':white_check_mark:' )
-    NONE =  (None, 'none', 'reset', ':arrows_counterclockwise:' )
-    DENY =  (False, 'deny', 'disabled', ':no_entry_sign:')
-
-    def __init__(self, val, mode, action, emoji):
-        self.value_ = val
-        self.mode = mode
-        self.action = action
-        self.emoji = emoji
-
-    def __str__(self):
-        return self.mode
-
-    @classmethod
-    def convert(cls, arg):
-        mode = arg.lower()
-        if mode in ('allow', 'unlock', 'enable', ):
-            return cls.ALLOW
-        elif mode in ('none', 'reset', 'null', ):
-            return cls.NONE
-        elif mode in ('deny', 'lock', 'disable', ):
-            return cls.DENY
-        raise commands.BadArgument(f"Don't know what to do with {arg}.")
-
-def _assert_no_args(*args, name=""):
-    if args:
-        raise commands.TooManyArguments(f"There shouldn't be any arguments for the {name} level, I think")
-
-def _server_swallow(ctx, *args):
-    _assert_no_args(*args, name="server")
-    return [ctx.message.server]
-
-def _global_swallow(ctx, *args):
-    _assert_no_args(*args, name="global")
-
-def _convert_args(converter, default=None):
-    def convert(ctx, *args):
-        if args:
-            return [converter(ctx, arg).convert() for arg in args]
-        elif default:
-            return [default(ctx)]
-        raise commands.MissingRequiredArgument()
-    return convert
-
-def _role_getter(d, ctx):
-    roles = sorted(getattr(ctx.message.server, "roles", []), reverse=True)
-    mapper = {True: 1, False: -1, None: 0}
-    score = sum(mapper[d.get(role.id)] for role in roles)
-    return [None, True, False][_sign(score)]
-
-def _safe_server_id(ctx):
-    return getattr(ctx.message.server, 'id', '')
-
 class PermLevel(enum.Enum):
-    GLOBAL = (_global_swallow, lambda d, ctx: d)
-    SERVER = (_server_swallow, lambda d, ctx: d.get(_safe_server_id(ctx)))
-    CHANNEL = (_convert_args(commands.ChannelConverter, lambda ctx: ctx.message.channel),
-               lambda d, ctx: d.get(ctx.message.channel.id))
-    ROLE = (_convert_args(commands.RoleConverter), _role_getter)
-    USER = (_convert_args(commands.MemberConverter),
-            lambda d, ctx: d.setdefault(_safe_server_id(ctx), {}).get(ctx.message.author.id))
-    USERGLOBAL = (_convert_args(commands.UserConverter),
-                  lambda d, ctx: d.get(ctx.message.author.id))
+    user        = (discord.Member, '({0.guild.id}, {0.author.id})'.format, False, )
+    server      = (discord.Guild, attrgetter('guild.id'), True, )
+    channel     = (discord.TextChannel, attrgetter('channel.id'), None, )
+    # higher roles should be prioritised
+    role        = (discord.Role, lambda ctx: reversed([role.id for role in ctx.author.roles]), False, )
 
-    def __init__(self, arg_parser, getter):
-        self.arg_parser = arg_parser
-        self.getter = getter
+    def __init__(self, type_, ctx_key, require_ctx):
+        # True: Requires no args
+        # False: Requires args
+        # None: Falls back to ctx if no args are specified
+        self.type = type_
+        self.ctx_key = ctx_key
+        self.require_ctx = require_ctx
 
     def __str__(self):
         return self.name.lower()
 
-    @classmethod
-    def convert(cls, level):
-        try:
-            return cls[level.upper()]
-        except KeyError:
-            raise commands.BadArgument(f"Unrecognized level: {level}")
+    async def parse_args(self, ctx, *args):
+        if self.require_ctx and args:
+            raise errors.InvalidUserArgument(f"{self.name} level requires that no arguments are passed.")
+        elif self.require_ctx is False and not args:
+            raise errors.InvalidUserArgument(f'Arguments are required for the {self.name} level.')
 
-def _all_cmd_names(cmd):
-    return [cmd.qualified_name.split()[0], *cmd.aliases]
+        if args:
+            # This wastes memory, but I don't have much of a choice here
+            # because using () produces an async generator, which isn't iterable.
+            args = [await ctx.command.do_conversion(ctx, self.type, arg) for arg in args]
+            return map(Idable, args)
+        # Context objects don't have a "server" attribute, they have a "guild" attribute
+        # The only reason why server is used in the enum is because of convenience for the user
+        # As they'll be more familiar with the term "server" than "guild"
+        attr = 'guild' if self == PermLevel.server else self.name
+        # using a 1-elem tuple is faster than making a 1-elem list O.o
+        return Idable(getattr(ctx, attr)),
 
-class Permissions:
-    __prefix__ = ';_;'
+level_getter = item_converter(PermLevel, key=str.lower, error_msg="Unrecognized level: {arg}")
 
-    def __init__(self, bot):
-        self.bot = bot
-        self.permissions = Database.from_json('permissions2.json', default_factory=_default_perm.copy)
-
-    def _restricted_commands(self):
-        b = self.bot
-        commands = chain.from_iterable(b.cog_command_namespace[k]['commands'] for k in self._restricted_cogs)
-        return set(chain.from_iterable(map(_all_cmd_names, commands))) | {'help'}
+class PermAction(namedtuple('PermAction', 'value action emoji colour')):
+    def __new__(cls, arg):
+        mode = arg.lower()
+        if mode in ('allow', 'unlock', 'enable', ):
+            return super().__new__(cls, value=True,  action='enabled',  emoji='\U00002705', colour=0x00ff00)
+        elif mode in ('none', 'reset', 'null', ):
+            return super().__new__(cls, value=None,  action='reset',    emoji='\U0001f504', colour=0 )
+        elif mode in ('deny', 'lock', 'disable', ):
+            return super().__new__(cls, value=False, action='disabled', emoji='\U000026d4', colour=0xff0000)
+        raise commands.BadArgument(f"Don't know what to do with {arg}.")
 
     @property
-    def _restricted_cogs(self):
-        return {'Owner', 'Help', 'Permissions'}
+    def emoji_url(self):
+        return f'https://twemoji.maxcdn.com/2/72x72/{hex(ord(self.emoji))[2:]}.png'
 
-    def _assert_is_valid(self, cmds):
-        cmd = cmds if isinstance(cmds, str) else cmds[0]
-        if cmd in self._restricted_commands():
-            raise errors.InvalidUserArgument(f"This command ({cmd}) cannot have its permissions modified")
-        elif cmd in self._restricted_cogs:
-            raise errors.InvalidUserArgument(f"Module ({cmd}) cannot be disabled")
+command_perm_default = {i: {} for i in map(str, PermLevel)}
 
-    def _get_cmddbs(self, cmds):
-        self._assert_is_valid(cmds)
-        return (self.permissions[name] for name in cmds)
+DENIED_KEY, ALLOWED_KEY = 'blacklist', 'whitelist'
+class Permissions:
+    def __init__(self):
+        self.permissions = Database('permissions.json', default_factory=command_perm_default.copy)
+        self.other_permissions = Database('permissions2.json', default_factory=list)
+        # Because checking a command's permissions will most likely be meaningless or unhelpful,
+        # (since all it would return is whether or not a user can use a command)
+        # a history is probably the best way to see the what has been inputted
+        # This approach is taken by nadeko and is probably the best one here...
+        self.permissions_history = Database('permissionshistory.json', default_factory=list)
 
-    def _perm_reset(self, ctx, level, cmd, *ids):
-        for db in self._get_cmddbs(cmd):
-            for id in ids:
-                db[str(level)].pop(id, None)
+    def __global_check(self, ctx):
+        user_id = ctx.author.id
+        if user_id in self.other_permissions[DENIED_KEY]:
+            return False
+        if user_id in self.other_permissions[ALLOWED_KEY]:
+            return True
 
-    async def _perm_set(self, ctx, level, mode, cmd, *idables):
-        # Couldn't think of a prettier way
-        if level == PermLevel.GLOBAL:
-            if not checks.is_owner_predicate(ctx):
-                raise commands.CheckFailure("GLOBAL level is owner-only")
-            for cmddb in self._get_cmddbs(cmd):
-                # By default, global must be set to None
-                # Otherwise it will terminate the check early
-                cmddb[str(level)] = False if mode == PermAction.DENY else None
-        else:
-            if level == PermLevel.USERGLOBAL and not checks.is_owner_predicate(ctx):
-                raise commands.CheckFailure("USERGLOBAL level is owner-only")
-            ids = [idable.id for idable in idables]
-            if mode == PermAction.NONE:
-                self._perm_reset(ctx, level, cmd, *ids)
-            elif level == PermLevel.SERVER and mode != PermAction.DENY:
-                # Wouldn't make sense to "allow" it
-                self._perm_reset(ctx, level, cmd, *ids)
-            else:
-                for cmddb in self._get_cmddbs(cmd):
-                    cmddb[str(level)].update(dict.fromkeys(ids, mode.value_))
-
-        await self.bot.say(f"{mode.emoji} Successfully {mode.action} **\"{', '.join(cmd)}\"**"
-                           f" on the **{level}** level, I think.\n"
-                           f"Affected {level}s: ```{str_join(', ', idables)}```")
-
-    def _perm_iterator(self, ctx, cmd):
-        cmddb = self.permissions[cmd]
-        return ((level.getter(cmddb[str(level)], ctx), level) for level in reversed(PermLevel))
-
-    def __check(self, ctx):
-        #if checks.is_owner_predicate(ctx):
-            #return True
-        cmd = ctx.command
-        name = cmd.qualified_name.split(' ')[0]
         try:
-            self._assert_is_valid(name)
+            self._assert_is_valid_cog(ctx.command)
         except errors.InvalidUserArgument:
             return True
 
-        for result, _ in self._perm_iterator(ctx, name):
-            if result is not None:
-                return result
+        cmd = ctx.command
+        names = itertools.chain(walk_parent_names(cmd), (cmd.cog_name, ))
+        results = (self._first_non_none_perm(name, ctx) for name in names)
+        return first_non_none(results, True)
 
-        cog_name = cmd.cog_name or "No Category"
-        for result, _ in self._perm_iterator(ctx, cog_name):
-            if result is not None:
-                return result
-        return True
+    @staticmethod
+    def _context_attribute(level, ctx):
+        return map(str, always_iterable(level.ctx_key(ctx)))
 
-    def _perms(self, ctx, name):
-        perm_mapper = {True: '+', None: ' ', False: '-'}
-        return [f"{perm_mapper[res]} {level}" for res, level in self._perm_iterator(ctx, name)]
+    @staticmethod
+    def _cog_name(thing):
+        return getattr(thing, 'cog_name', type(thing).__name__)
 
-    def _perm_str(self, ctx, name):
-        perms = '\n'.join(self._perms(ctx, name))
-        return f'There are the perms for **{name}**```diff\n{perms}```'
+    def _assert_is_valid_cog(self, thing):
+        name = self._cog_name(thing)
+        if name in {'Owner', 'Help', 'Permissions'}:
+            raise errors.InvalidUserArgument(f"I can't modify permissions from the module {name}.")
 
-    @commands.command(name='permcmd', pass_context=True, no_pm=True, aliases=['pcmd'])
-    async def perm_command(self, ctx, cmd_name):
-        """Returns the permissions for each level for a given command"""
-        cmd = self.bot.get_command(cmd_name)
-        if cmd is None:
-            raise ResultsNotFound(f"I don't recognise command \"{cmd_name}\"")
-        await self.bot.say(self._perm_str(ctx, cmd.qualified_name.split()[0]))
+    def _perm_iterator(self, name, ctx):
+        perms = self.permissions[name]
+        for level in PermLevel:
+            level_perms = perms[str(level)]
+            try:
+                ctx_attr = self._context_attribute(level, ctx)
+            except AttributeError:      # ctx_attr was probably None
+                continue
+            yield first_non_none(map(level_perms.get, ctx_attr))
 
-    @commands.command(name='permmod', pass_context=True, no_pm=True, aliases=['permcog', 'pmod'])
-    async def perm_module(self, ctx, module: BotCogConverter):
-        """Returns the permissions for each level for a given module"""
-        await self.bot.say(self._perm_str(ctx, module.name))
+    def _first_non_none_perm(self, name, ctx):
+        return first_non_none(self._perm_iterator(name, ctx))
 
-    @commands.command(name='psetcommand', pass_context=True, no_pm=True, aliases=['psc'])
+    @staticmethod
+    def _perm_result_embed(ctx, level, mode, name, *args, thing):
+        return (discord.Embed(colour=mode.colour, timestamp=ctx.message.created_at)
+               .set_author(name=f'{thing} {mode.action}!', icon_url=mode.emoji_url)
+               .add_field(name=thing, value=name)
+               .add_field(name=level.name.title(), value=str_join(', ', map(attrgetter('original'), args)), inline=False)
+               )
+
+    async def _perm_set(self, ctx, level, mode, name, *args, thing):
+        self.set_perms(level, mode, name, *args)
+        await ctx.send(embed=self._perm_result_embed(ctx, level, mode, name, *args, thing=thing))
+
+    def set_perms(self, level, mode, name, *args):
+        level_perms = self.permissions[name][str(level)]
+        # members require a special key - a tuple of (server_id, member_id)
+        fmt = '({0.original.guild.id}, {0.id})' if level == PermLevel.user else '{0.id}'
+        level_perms.update(zip(map(fmt.format, args), itertools.repeat(mode.value)))
+
+    # We could make this function take a union of Commands and cogs.
+    # This would greatly reduce the amount of repetition.
+    # However, because of the case insensitivity of the cog converter,
+    # commands will inevitably clash with cogs of the same name, creating confusion.
+    # This is also why the default help command only takes commands, as opposed to either a command or cog.
+    @commands.command(name='permsetcommand', aliases=['psc'])
     @checks.is_admin()
-    @_explain_levels("command")
-    @usage("psc channel lock cp #general", "psc server allow salt")
-    async def perm_set_command(self, ctx, level: PermLevel.convert, mode: PermAction.convert,
-                               cmd: BotCommandsConverter, *idables):
-        """Sets a command's permissions. For convenience (and to prevent loopholes),
-        this will also lock its aliases as well.
-        """
-        # There is however, no easy way to lock just a particular subcommand...
-        idables = level.arg_parser(ctx, *idables)
-        await self._perm_set(ctx, level, mode, cmd.name, *idables)
+    @commands.guild_only()
+    @make_doc('command', extra=('This will affect aliases as well. If a command group is blocked, '
+                                'its subcommands are blocked as well.'))
+    async def perm_set_command(self, ctx, level: level_getter, mode: PermAction,
+                               command: BotCommand(recursive=True), *args):
+        self._assert_is_valid_cog(command)
+        ids = await level.parse_args(ctx, *args)
+        await self._perm_set(ctx, level, mode, command.qualified_name, *ids, thing='Command')
 
-    @commands.command(name='psetmodule', pass_context=True, no_pm=True, aliases=['psm'])
+    @commands.command(name='permsetmodule', aliases=['psm'])
     @checks.is_admin()
-    @_explain_levels("module")
-    @usage("psm user lock trivia @SomeGuy @SomeGirl @SomeThing", "psc server allow NSFW")
-    async def perm_set_module(self, ctx, level: PermLevel.convert, mode: PermAction.convert,
-                           cog: BotCogConverter, *idables):
-        """Sets a module's permissions. The module is case insensitive."""
-        idables = level.arg_parser(ctx, *idables)
-        await self._perm_set(ctx, level, mode, [cmd], *idables)
+    @commands.guild_only()
+    @make_doc('module')
+    async def perm_set_module(self, ctx, level: level_getter, mode: PermAction,
+                              module: BotCogConverter, *args):
+        self._assert_is_valid_cog(module)
+        ids = await level.parse_args(ctx, *args)
+        await self._perm_set(ctx, level, mode, type(module).__name__, *ids, thing='Module')
+
+    async def modify_command(self, ctx, command, bool_):
+        command.enabled = bool_
+        await ctx.send(f"**{command}** is now {DEins[bool_::2]}abled!")
+
+    @commands.command()
+    @commands.is_owner()
+    async def disable(self, ctx, *, command: BotCommand(recursive=True)):
+        """Globally disables a command."""
+        await self.modify_command(ctx, command, False)
+
+    @commands.command()
+    @commands.is_owner()
+    async def enable(self, ctx, *, command: BotCommand(recursive=True)):
+        """Globally enables a command."""
+        await self.modify_command(ctx, command, True)
+
+    async def modify_black_white_lists(self, ctx, addee, removee, user):
+        addee_, removee_ = map(self.other_permissions.__getitem__, (addee, removee))
+        if user.id in addee_:
+            raise errors.InvalidUserArgument(f'**{user}** has now been {addee}ed, I think...')
+
+        addee_.append(user.id)
+        with contextlib.suppress(ValueError):
+            removee_.remove(user.id)
+        await ctx.send(f'**{user}** has now been {addee}ed!')
+
+    @commands.command(aliases=['bl'])
+    @commands.is_owner()
+    async def blacklist(self, ctx, *, user: discord.User):
+        """Blacklists a user. This prevents them from ever using the bot, regardless of other permissions."""
+        await self.modify_black_white_lists(ctx, DENIED_KEY, ALLOWED_KEY, user)
+
+    @commands.command(aliases=['wl'])
+    @commands.is_owner()
+    async def whitelist(self, ctx, *, user: discord.User):
+        """Whitelists a user. This makes them always able to use the bot, regardless of other permissions."""
+        await self.modify_black_white_lists(ctx, ALLOWED_KEY, DENIED_KEY, user)
 
 def setup(bot):
-    bot.add_cog(Permissions(bot))
+    bot.add_cog(Permissions())
