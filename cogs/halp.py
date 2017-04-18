@@ -10,6 +10,7 @@ from discord.ext import commands
 from functools import partial
 
 from .utils import checks, errors
+from .utils.compat import always_iterable
 from .utils.converter import BotCogConverter, BotCommand
 from .utils.database import Database
 from .utils.misc import multi_replace, nice_time, truncate
@@ -50,12 +51,11 @@ class ProblemMessage:
     @property
     def embed(self):
         author = self.author
-        description = f"Sent on {self.nice_timestamp}"
         author_avatar = author.avatar_url_as(format=None)
         content = self.content.replace('->contact', '', 1)
         id_fmt = "{0}\n({0.id})"
         server_fmt = id_fmt.format(self.server) if self.server else "No server"
-        return (discord.Embed(description=description)
+        return (discord.Embed(timestamp=self.timestamp)
                 .set_author(name=str(author), icon_url=author_avatar)
                 .set_thumbnail(url=author_avatar)
                 .add_field(name="Channel:", value=id_fmt.format(self.channel))
@@ -193,13 +193,14 @@ class Help:
             doc = cog.__doc__ or 'No description... yet.'
             modules_embed.add_field(name=name, value=truncate(doc.splitlines()[0], 20, '...'))
 
-        modules_embed.set_footer(text='Type "{prefix}commands {{module_name}}" for all the commands on a module')
+        modules_embed.set_footer(text=f'Type "{prefix}commands {{module_name}}" for all the commands on a module')
         await ctx.send(embed=modules_embed)
 
     @commands.command(aliases=['cmds'])
     async def commands(self, ctx, cog: BotCogConverter):
-        commands_embed = await self.bot.formatter.format_help_for(ctx, cog)
-        await ctx.send(embed=commands_embed)
+        commands_embeds = await self.bot.formatter.format_help_for(ctx, cog)
+        for embed in commands_embeds:
+            await ctx.send(embed=embed)
 
 def setup(bot):
     bot.add_cog(Help(bot))

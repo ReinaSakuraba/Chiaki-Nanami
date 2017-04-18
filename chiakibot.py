@@ -61,7 +61,8 @@ class ChiakiFormatter(commands.HelpFormatter):
 
     @property
     def description(self):
-        return (self.command.help if not self.is_cog() else inspect.getdoc(self.command)) or 'No description'
+        description = (self.command.help if not self.is_cog() else inspect.getdoc(self.command)) or 'No description'
+        return description.format(prefix=self.prefix)
 
     @property
     def command_usage(self):
@@ -80,6 +81,17 @@ class ChiakiFormatter(commands.HelpFormatter):
         chiaki_checks = [check for check in self.command.checks if isinstance(check, ChiakiCheck)]
         return {key: ', '.join(filter(None, map(operator.attrgetter(key), chiaki_checks))) or 'None' for key in ['roles', 'perms'] }
 
+    def paginate_cog_commands(self, cog_name):
+        paginator = commands.Paginator(prefix='', suffix='', max_size=2048)
+        paginator.add_line(self.description, empty=True)
+        paginator.add_line('**List of commands:**')
+
+        for command in sorted(self.context.bot.get_cog_commands(cog_name), key=operator.attrgetter('name')):
+            name, aliases = command.name, ', '.join(command.aliases)
+            paginator.add_line(f'`{name}` {f"| `{aliases}`" * bool(aliases)}')
+
+        return paginator
+
     @property
     def clean_prefix(self):
         ctx = self.context
@@ -92,21 +104,19 @@ class ChiakiFormatter(commands.HelpFormatter):
         return func(result)
 
     async def cog_embed(self):
-        cog, ctx, prefix = self.command, self.context, self.prefix
+        bot, cog = self.context.bot, self.command
         cog_name = type(cog).__name__
-        bot = ctx.bot
-        description = inspect.getdoc(cog) or 'No description... yet.'
+        paginated_commands = self.paginate_cog_commands(cog_name)
 
-        commands = bot.get_cog_commands(cog_name)
-        if not commands:
-            raise commands.BadArgument(f"Module {cog_name} has no visible commands.")
+        embeds = []
+        for i, page in enumerate(paginated_commands.pages):
+            module_embed = discord.Embed(description=page, colour=bot.colour)
+            if i == 0:
+                module_embed.title = f"{cog_name} ({self.prefix})"
+            embeds.append(module_embed)
 
-        module_embed = discord.Embed(title=f"List of my commands in {cog_name}",
-                                     description=description, colour=bot.colour)
-        for name, *aliases in (cmd.all_names for cmd in sorted(commands, key=operator.attrgetter('name'))):
-            trunc_alias = truncate(', '.join(aliases) or '\u200b', 30, '...')
-            module_embed.add_field(name=prefix + name, value=trunc_alias)
-        return module_embed.set_footer(text=ctx.bot.formatter.get_ending_note())
+        embeds[-1].set_footer(text=self.get_ending_note())
+        return embeds
 
     async def command_embed(self):
         command, ctx, func = self.command, self.context, self.apply_function
@@ -121,7 +131,7 @@ class ChiakiFormatter(commands.HelpFormatter):
         cmd_name = f"`{self.prefix}{command.full_parent_name} {' / '.join(command.all_names)}`"
         footer = '"{0}" is in the module *{0.cog_name}*'.format(command)
 
-        cmd_embed = discord.Embed(title=func(cmd_name), description=func(self.command.help), colour=bot.colour)
+        cmd_embed = discord.Embed(title=func(cmd_name), description=func(self.description), colour=bot.colour)
 
         if self.has_subcommands():
             command_names = sorted(cmd.name for cmd in command.commands)
@@ -144,10 +154,9 @@ class ChiakiFormatter(commands.HelpFormatter):
     async def format(self):
         if self.is_bot():
             return await self.bot_help()
-        with temp_attr(self.command, 'help', self.description.format(prefix=self.prefix)):
-            if self.is_cog():
-                return await self.cog_embed()
-            return await self.command_embed()
+        elif self.is_cog():
+            return await self.cog_embed()
+        return await self.command_embed()
 
 class ChiakiBot(commands.Bot):
     def __init__(self, command_prefix, formatter=None, description=None, pm_help=False, **options):
@@ -165,10 +174,11 @@ class ChiakiBot(commands.Bot):
         if self._config['restart_code'] == 0:
             raise RuntimeError("restart_code cannot be zero")
 
-    async def logout(self):
+    async def close(self):
         self.counter.update(self.persistent_counter)
         self.persistent_counter.update(self.counter)
-        await super().logout()
+        await self.dump_databases()
+        await super().close()
 
     def add_cog(self, cog):
         members = inspect.getmembers(cog)
@@ -243,12 +253,6 @@ class ChiakiBot(commands.Bot):
             await self.change_presence(game=discord.Game(name=name))
             await asyncio.sleep(random.uniform(0.5, 10) * 60)
 
-    async def dump_db_cycle(self):
-        while not self.is_closed():
-            await asyncio.sleep(60)
-            await self.dump_databases()
-            print('all databases successfully dumped')
-
     async def update_official_invite(self):
         await self.wait_until_ready()
         self.invites_by_bot = [inv for inv in await self.official_guild.invites() if inv.inviter.id == self.user.id]
@@ -256,7 +260,7 @@ class ChiakiBot(commands.Bot):
             self.invites_by_bot.append(await official_guild.create_invite())
 
     def str_prefix(self, message):
-        return ', '.join(self.prefix_function(message))
+        return random.choice(self.prefix_function(message))
 
     async def ping(self, times=1):
         async def pinger():
