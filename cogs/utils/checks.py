@@ -36,7 +36,7 @@ class ChiakiCheck(namedtuple('ChiakiCheck', 'predicate roles perms')):
         return await discord.utils.maybe_coroutine(self.predicate, ctx)
 
 def _format_perms(**perms):
-    return [f"{'Not' * (not v)} {k.replace('_', ' ').title()}" for k, v in perms.items()]
+    return ', '.join([f"{'Not' * (not v)} {k.replace('_', ' ').title()}" for k, v in perms.items()])
 
 async def is_owner_predicate(ctx):
     return await ctx.bot.is_owner(ctx.author)
