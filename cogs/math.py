@@ -396,23 +396,26 @@ def convert_unit(from_unit_type, to_unit_type, value):
 
     return str(round(new_value, 3)) + to_unit_type
 
-def _result_embed(ctx, input, output):
-    return (discord.Embed(colour=0x00FF00, timestamp=ctx.message.created_at)
-           .add_field(name='Input', value=f'`{input}`')
-           .add_field(name='Result', value=f'{output}', inline=False)
-           )
 
 class Math:
     def __init__(self, bot):
         self.bot = bot
 
+    @staticmethod
+    def _result_embed(ctx, input, output):
+        return (discord.Embed(colour=0x00FF00, timestamp=ctx.message.created_at)
+               .add_field(name='Input', value=f'```{input}```')
+               .add_field(name='Result', value=f'{output}', inline=False)
+               )
+
     async def _result_say(self, ctx, input, output, *, output_as_code=True):
         try:
-            return await ctx.send(embed=_result_embed(ctx, input, f'```\n{output}```' if output_as_code else output))
+            return await ctx.send(embed=self._result_embed(ctx, Input, f'```\n{output}```' if output_as_code else output))
         except discord.HTTPException:
             return await ctx.send(f"Resulting message is too big for viewing.")
 
-    def _calculate(self, fn_str, sanitizer):
+    @staticmethod
+    def _calculate(fn_str, sanitizer):
         try:
             fn = sanitizer(fn_str)
         except (ValueError, SyntaxError) as e:
@@ -452,12 +455,6 @@ class Math:
         output = str(await self._async_calculate(expr, _sanitize))
         if '^' in expr:
             output += "\nNote: '^' is the XOR operator. Use '**' for exponentation."
-        await self._result_say(ctx, expr, output)
-
-    @commands.command(aliases=['leval'])
-    async def literaleval(self, ctx, *, expr: str):
-        """Basically a "safe" eval"""
-        output = await self._async_calculate(expr, lambda s: lambda: ast.literal_eval(s))
         await self._result_say(ctx, expr, output)
 
     @commands.command(aliases=['vectorcalculate'])
