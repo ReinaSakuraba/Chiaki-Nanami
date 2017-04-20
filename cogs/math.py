@@ -410,7 +410,7 @@ class Math:
 
     async def _result_say(self, ctx, input, output, *, output_as_code=True):
         try:
-            return await ctx.send(embed=self._result_embed(ctx, Input, f'```\n{output}```' if output_as_code else output))
+            return await ctx.send(embed=self._result_embed(ctx, input, f'```\n{output}```' if output_as_code else output))
         except discord.HTTPException:
             return await ctx.send(f"Resulting message is too big for viewing.")
 
