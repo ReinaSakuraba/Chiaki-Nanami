@@ -79,7 +79,8 @@ class ChiakiFormatter(commands.HelpFormatter):
 
     def command_requirements(self):
         chiaki_checks = [check for check in self.command.checks if isinstance(check, ChiakiCheck)]
-        return {key: ', '.join(filter(None, map(operator.attrgetter(key), chiaki_checks))) or 'None' for key in ['roles', 'perms'] }
+        return {key: ', '.join(filter(None, map(operator.attrgetter(key), chiaki_checks))) or 'None' 
+                for key in ['roles', 'perms'] }
 
     def paginate_cog_commands(self, cog_name):
         paginator = commands.Paginator(prefix='', suffix='', max_size=2048)
@@ -288,6 +289,7 @@ class ChiakiBot(commands.Bot):
     @discord.utils.cached_property
     def oauth_url(self):
         return discord.utils.oauth_url(self.user.id, self.permissions)
+    invite_url = oauth_url
 
     @property
     def default_prefix(self):
