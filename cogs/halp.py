@@ -186,14 +186,13 @@ class Help:
     @commands.command(aliases=['cogs'])
     async def modules(self, ctx):
         modules_embed = discord.Embed(title="List of my modules", colour=self.bot.colour)
-        prefix = await self.bot.get_prefix(ctx.message)
 
         visible_cogs =  ((name, cog) for name, cog in self.bot.cogs.items() if name and not cog.__hidden__)
         for name, cog in sorted(visible_cogs, key=operator.itemgetter(0)):
             doc = cog.__doc__ or 'No description... yet.'
             modules_embed.add_field(name=name, value=truncate(doc.splitlines()[0], 20, '...'))
 
-        modules_embed.set_footer(text=f'Type "{prefix}commands {{module_name}}" for all the commands on a module')
+        modules_embed.set_footer(text=f'Type "{ctx.prefix}commands {{module_name}}" for all the commands on a module')
         await ctx.send(embed=modules_embed)
 
     @commands.command(aliases=['cmds'])

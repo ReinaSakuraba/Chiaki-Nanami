@@ -56,22 +56,22 @@ def _all_qualified_names(command):
 
 class ChiakiFormatter(commands.HelpFormatter):
     def get_ending_note(self):
-        command_name = self.context.invoked_with
         return f"Type {self.clean_prefix}help command for more info on a command."
 
     @property
     def description(self):
         description = (self.command.help if not self.is_cog() else inspect.getdoc(self.command)) or 'No description'
-        return description.format(prefix=self.prefix)
+        return description.format(prefix=self.context.prefix)
 
     @property
     def command_usage(self):
-        cmd, ctx = self.command, self.context
+        cmd = self.command
+        prefix = self.context.prefix
         qualified_names = _all_qualified_names(cmd)
         if cmd.clean_params:
             usage = cmd.usage
             if isinstance(usage, Sequence):
-                return '\n'.join([f'`{self.prefix}{random.choice(qualified_names)} {u}`' for u in always_iterable(usage)])
+                return '\n'.join([f'`{prefix}{random.choice(qualified_names)} {u}`' for u in always_iterable(usage)])
             # Assume it's invalid; usage must be a sequence (either a tuple, list, or str)
             return 'No example... yet'
         # commands that don't take any arguments don't really need an example generated manually....
@@ -93,11 +93,6 @@ class ChiakiFormatter(commands.HelpFormatter):
 
         return paginator
 
-    @property
-    def clean_prefix(self):
-        ctx = self.context
-        return (super().clean_prefix if self.is_bot() or self.is_cog() else self.prefix)
-
     async def bot_help(self):
         bot, func = self.context.bot, self.apply_function
         default_help = bot.default_help
@@ -105,7 +100,8 @@ class ChiakiFormatter(commands.HelpFormatter):
         return func(result)
 
     async def cog_embed(self):
-        bot, cog = self.context.bot, self.command
+        ctx = self.context
+        bot, cog = ctx.bot, self.command
         cog_name = type(cog).__name__
         paginated_commands = self.paginate_cog_commands(cog_name)
 
@@ -113,7 +109,7 @@ class ChiakiFormatter(commands.HelpFormatter):
         for i, page in enumerate(paginated_commands.pages):
             module_embed = discord.Embed(description=page, colour=bot.colour)
             if i == 0:
-                module_embed.title = f"{cog_name} ({self.prefix})"
+                module_embed.title = f"{cog_name} ({ctx.prefix})"
             embeds.append(module_embed)
 
         embeds[-1].set_footer(text=self.get_ending_note())
@@ -129,7 +125,7 @@ class ChiakiFormatter(commands.HelpFormatter):
             signature = command.signature
 
         requirements = self.command_requirements()
-        cmd_name = f"`{self.prefix}{command.full_parent_name} {' / '.join(command.all_names)}`"
+        cmd_name = f"`{ctx.prefix}{command.full_parent_name} {' / '.join(command.all_names)}`"
         footer = '"{0}" is in the module *{0.cog_name}*'.format(command)
 
         cmd_embed = discord.Embed(title=func(cmd_name), description=func(self.description), colour=bot.colour)
@@ -149,7 +145,6 @@ class ChiakiFormatter(commands.HelpFormatter):
 
     async def format_help_for(self, ctx, command, func=lambda s: s):
         self.apply_function = func
-        self.prefix = ctx.bot.str_prefix(ctx.message)
         return await super().format_help_for(ctx, command)
 
     async def format(self):
@@ -260,16 +255,14 @@ class ChiakiBot(commands.Bot):
         if not self.invites_by_bot:
             self.invites_by_bot.append(await official_guild.create_invite())
 
-    def str_prefix(self, message):
-        return random.choice(self.prefix_function(message))
-
     async def ping(self, times=1):
-        async def pinger():
-            start = time.perf_counter()
-            await (await self.ws.ping())
-            end = time.perf_counter()
-            return (end - start) * 1000
-        return sum(pinger() for _ in range(times)) / times
+        # I prefer using time.perf_counter()
+        # Some people use time.monotonic(), 
+        # but time.perf_counter() is literally made for timing things.
+        start = time.perf_counter()
+        await (await self.ws.ping())
+        end = time.perf_counter()
+        return (end - start) * 1000
 
     # ------ Config-related properties ------
 

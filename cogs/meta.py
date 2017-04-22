@@ -133,7 +133,6 @@ class Meta:
     @info.command()
     async def role(self, ctx, *, role: converter.ApproximateRole):
         server = ctx.guild
-        prefix = self.bot.str_prefix(ctx.message)
 
         def bool_as_answer(b):
             return "YNeos"[not b::2]
@@ -142,7 +141,7 @@ class Meta:
         member_amount = len(has_roles)
         if member_amount > 20:
             members_name = "Members"
-            members_value = f"{member_amount} (use {prefix}inrole '{role}' to figure out who's in that role)"
+            members_value = f"{member_amount} (use {ctx.prefix}inrole '{role}' to figure out who's in that role)"
         else:
             members_name = f"Members ({member_amount})"
             members_value = str_join(", ", has_roles) or '-no one is in this role :(-'
@@ -179,14 +178,13 @@ class Meta:
         features = '\n'.join(server.features) or 'None'
 
         descrption = f"Owned by {server.owner}"
-        prefix = self.bot.str_prefix(ctx.message)
 
         if member_count < 20:
             member_field_name = f"Members ({member_count})"
             member_field_value = ', '.join([mem.mention for mem in server.members])
         else:
             member_field_name = f"Members"
-            member_field_value = f"{member_count} (use '{prefix}info server members' to figure out the members)"
+            member_field_value = f"{member_count} (use '{ctx.prefix}info server members' to figure out the members)"
 
         server_embed = (discord.Embed(title=server.name, description=descrption, timestamp=server.created_at)
                        .add_field(name="Default Channel", value=server.default_channel.mention)
