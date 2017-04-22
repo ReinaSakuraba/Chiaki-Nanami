@@ -16,10 +16,10 @@ def word_count(s):
 
 # Only the owner can add commands in the global scope.
 def global_cc_check():
-    def predicate(ctx):
+    async def predicate(ctx):
         if ctx.guild:
             return True
-        return is_owner_predicate(ctx.author)
+        return await checks.is_owner_predicate(ctx)
     return commands.check(predicate)
 
 MAX_ALIAS_WORDS = 20
