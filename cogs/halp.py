@@ -115,16 +115,16 @@ class Help:
     @commands.command()
     async def invite(self, ctx):
         """...it's an invite"""
-        await ctx.send(textwrap.dedent(f"""\
-        I am not a not a public bot yet... but here's the invite link just in case:
-        {self.bot.invite_url}
-
-        But in the meantime, here's a link to the offical Chiaki Nanami server:
-        {self.bot.official_server_invite}
-
-        And here's the source code if you want it:
-        https://github.com/Ikusaba-san/Chiaki-Nanami
-        """))
+        invite = (discord.Embed(description=self.bot.description, title=str(self.bot.user), colour=self.bot.colour)
+                 .set_thumbnail(url=self.bot.user.avatar_url_as(format=None))
+                 .add_field(name="Want me in your server?",
+                            value=f'[Invite me here!]({self.bot.invite_url})', inline=False)
+                 .add_field(name="Need help with using me?",
+                            value=f"[Here's the official server!]( {self.bot.official_server_invite})", inline=False)
+                 .add_field(name="If you're curious about how I work...",
+                            value="[Check out the source code!](https://github.com/Ikusaba-san/Chiaki-Nanami/tree/rewrite)", inline=False)
+                 )
+        await ctx.send(embed=invite)
 
     @commands.command()
     async def contact(self, ctx, *, problem: str):
