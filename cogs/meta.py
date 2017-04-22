@@ -274,7 +274,7 @@ class Meta:
         """
         Checks which members have a given role
         The role is case sensitive.
-        Only one role can be specified. To look at multiple, use `{prefix}inanyrole` or `{prefix}inallrole`.
+        Only one role can be specified. For multiple roles, use `{prefix}inanyrole` or `{prefix}inallrole`.
         """
         await self._inrole(ctx, role, predicate=lambda m, r: r in m.roles)
 
