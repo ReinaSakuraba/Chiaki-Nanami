@@ -98,7 +98,7 @@ class OtherStuffs:
 
 
     @commands.command()
-    async def slap(ctx, target: discord.Member=None):
+    async def slap(self, ctx, target: discord.Member=None):
         """Slaps a user"""
         # This can be refactored somehow...
         slapper = ctx.author

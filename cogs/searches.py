@@ -186,7 +186,7 @@ class Searching:
         pass
 
     @commands.command(aliases=['longurl'])
-    async def urlex(ctx, *, url: str):
+    async def urlex(self, ctx, *, url: str):
         """Expands a shortened url into it's final form"""
         async with _static_session.head(url, allow_redirects=True) as resp:
             await ctx.send(f'<{resp.url}>')
