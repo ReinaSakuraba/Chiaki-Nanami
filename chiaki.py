@@ -49,7 +49,7 @@ initial_extensions = (
     'cogs.halp',
     'cogs.math',
     'cogs.meta',
-#   'cogs.moderator',
+    'cogs.moderator',
 #   'cogs.music',
 #   'cogs.otherstuff',
     'cogs.owner',
@@ -76,10 +76,21 @@ async def on_ready():
     print(bot.user.name)
     print(bot.user.id)
     print('------')
+
     if bot.official_guild is None:
         warnings.warn("Your bot is not in the server you've set for 'official_guild' in config.json. "
                       "Either your ID is isn't an integer, or you haven't invited your bot to that server. "
                      f"Use this link to invite it: {bot.oauth_url}")
+
+    if not hasattr(bot, 'appinfo'):
+        bot.appinfo = (await bot.application_info())
+
+    if bot.owner_id is None:
+        bot.owner = bot.appinfo.owner
+        bot.owner_id = bot.owner.id
+    else:
+        bot.owner = bot.get_user(bot.owner_id)
+
     bot.loop.create_task(bot.change_game())
     bot.loop.create_task(bot.update_official_invite())
 
@@ -103,47 +114,6 @@ async def on_command_error(error, ctx):
     if cause:
         traceback.print_tb(cause.__traceback__)
 
-
-#-----------------MISC COMMANDS--------------
-
-@bot.command(aliases=['longurl'])
-async def urlex(ctx, *, url: str):
-    """Expands a shortened url into it's final form"""
-    async with bot.http.session.head(url, allow_redirects=True) as resp:
-        await ctx.send(resp.url)
-
-@bot.command()
-async def slap(ctx, target: discord.User=None):
-    """Slaps a user"""
-    # This can be refactored somehow...
-    slapper = ctx.author
-    if target is None:
-        msg1 = f"{slapper.mention} is just flailing their arms around, I think."
-        slaps = ["http://media.tumblr.com/tumblr_lw6rfoOq481qln7el.gif",
-                 "http://i46.photobucket.com/albums/f104/Anime_Is_My_Anti-Drug/KururuFlail.gif",
-                 ]
-        msg2 = "(Hint: specify a user.)"
-    elif target == slapper:
-        msg1 = f"{slapper.mention} is slapping themself, I think."
-        slaps = ["https://media.giphy.com/media/rCftUAVPLExZC/giphy.gif"]
-        msg2 = f"I wonder why they would do that..."
-    elif target == bot.user:
-        msg1 = f"{slapper.mention} is trying to slap me, I think."
-        slaps = ["http://i.imgur.com/K420Qey.gif"]
-        msg2 =  "(Please don't do that.)"
-    else:
-        target = target.mention
-        slaps = ["https://media.giphy.com/media/jLeyZWgtwgr2U/giphy.gif",
-                 "http://i.imgur.com/dzefPFL.gif",
-                 "https://s-media-cache-ak0.pinimg.com/originals/fc/e1/2d/fce12d3716f05d56549cc5e05eed5a50.gif",
-                 ]
-        msg1 = f"{target} was slapped by {slapper.mention}."
-        msg2 = f"I wonder what {target} did to deserve such violence..."
-
-    slap_image = random.choice(slaps)
-    await ctx.send(msg1 + f"\n{slap_image}")
-    await asyncio.sleep(random.uniform(0.5, 2.3))
-    await ctx.send(msg2)
 
 #--------------MAIN---------------
 

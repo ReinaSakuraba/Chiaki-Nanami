@@ -43,7 +43,6 @@ class TagSearch(enum.Enum):
     def url(self, search):
         return self.url_format.format(search=search.replace(' ', self.delim))
 
-    # TODO: caching.
     @async_cache(maxsize=2 ** 20, key=lambda args, kwargs, typed: pickle.dumps(args, 1) + pickle.dumps(kwargs, 1))
     async def search(self, search, *, fmt='txt', params=None):
         if params is None:
@@ -185,6 +184,12 @@ class Searching:
 
     async def wikipedia(self, ctx, *, title):
         pass
+
+    @commands.command(aliases=['longurl'])
+    async def urlex(ctx, *, url: str):
+        """Expands a shortened url into it's final form"""
+        async with _static_session.head(url, allow_redirects=True) as resp:
+            await ctx.send(f'<{resp.url}>')
 
 def setup(bot):
     bot.add_cog(Searching(bot))
