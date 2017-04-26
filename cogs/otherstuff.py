@@ -103,17 +103,17 @@ class OtherStuffs:
         # This can be refactored somehow...
         slapper = ctx.author
         if target is None:
-            msg1 = f"{slapper.mention} is just flailing their arms around, I think."
+            msg1 = f"{slapper} is just flailing their arms around, I think."
             slaps = ["http://media.tumblr.com/tumblr_lw6rfoOq481qln7el.gif",
                      "http://i46.photobucket.com/albums/f104/Anime_Is_My_Anti-Drug/KururuFlail.gif",
                      ]
             msg2 = "(Hint: specify a user.)"
         elif target.id == slapper.id:
-            msg1 = f"{slapper.mention} is slapping themself, I think."
+            msg1 = f"{slapper} is slapping themself, I think."
             slaps = ["https://media.giphy.com/media/rCftUAVPLExZC/giphy.gif"]
             msg2 = f"I wonder why they would do that..."
-        elif target.id == bot.user.id:
-            msg1 = f"{slapper.mention} is trying to slap me, I think."
+        elif target.id == self.bot.user.id:
+            msg1 = f"{slapper} is trying to slap me, I think."
             slaps = ["http://i.imgur.com/K420Qey.gif"]
             msg2 =  "(Please don't do that.)"
         else:
@@ -122,10 +122,10 @@ class OtherStuffs:
                      "http://i.imgur.com/dzefPFL.gif",
                      "https://s-media-cache-ak0.pinimg.com/originals/fc/e1/2d/fce12d3716f05d56549cc5e05eed5a50.gif",
                      ]
-            msg1 = f"{target} was slapped by {slapper.mention}."
+            msg1 = f"{target} was slapped by {slapper}."
             msg2 = f"I wonder what {target} did to deserve such violence..."
 
-        slap_embed = (discord.Embed(colour=bot.colour)
+        slap_embed = (discord.Embed(colour=self.bot.colour)
                      .set_author(name=msg1)
                      .set_image(url=random.choice(slaps))
                      .set_footer(text=msg2)
