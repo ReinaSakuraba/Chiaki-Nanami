@@ -1,3 +1,4 @@
+import contextlib
 import discord
 import enum
 
@@ -128,6 +129,7 @@ class Permissions:
     def __init__(self, bot):
         self.bot = bot
         self.permissions = Database.from_json('permissions2.json', default_factory=_default_perm.copy)
+        self.blacklists = Database.from_json('specialuserperms.json', default_factory=list)
 
     def _restricted_commands(self):
         b = self.bot
@@ -187,6 +189,9 @@ class Permissions:
     def __check(self, ctx):
         #if checks.is_owner_predicate(ctx):
             #return True
+        if ctx.message.author.id in self.blacklists['blacklist']:
+            return False
+
         cmd = ctx.command
         name = cmd.qualified_name.split(' ')[0]
         try:
@@ -247,6 +252,21 @@ class Permissions:
         """Sets a module's permissions. The module is case insensitive."""
         idables = level.arg_parser(ctx, *idables)
         await self._perm_set(ctx, level, mode, [cmd], *idables)
+
+    @commands.command(no_pm=True, aliases=['bl'])
+    @checks.is_owner()
+    async def blacklist(self, *, user: discord.User):
+        """Blacklists a user from using the bot"""
+        self.blacklists['blacklist'].append(user.id)
+        await self.bot.say(f'\N{THUMBS UP SIGN} {user} has been blacklisted')
+
+    @commands.command(no_pm=True, aliases=['wl'])
+    @checks.is_owner()
+    async def whitelist(self, *, user: discord.User):
+        """Whitelists a user from the blacklist. This doesn't make them immune to other checks."""
+        with contextlib.suppress(ValueError):
+            self.blacklists['blacklist'].remove(user.id)
+        await self.bot.say(f'\N{THUMBS UP SIGN} {user} has been removed from the blacklist!')
 
 def setup(bot):
     bot.add_cog(Permissions(bot))
