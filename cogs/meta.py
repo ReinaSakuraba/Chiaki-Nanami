@@ -148,9 +148,9 @@ class Meta:
         hex_role_color = str(role.colour).upper()
         permissions = role.permissions.value
         permission_binary = "{0:32b}".format(permissions)
-        str_position = ordinal(role.position)
+        str_position = ordinal(role.position + 1)
         nice_created_at = nice_time(role.created_at)
-        description = f"Just chilling as {server}'s {str_position + 1} role"
+        description = f"Just chilling as {server}'s {str_position} role"
         footer = f"Created at: {nice_created_at} | ID: {role.id}"
 
         # I think there's a way to make a solid color thumbnail, idk though
