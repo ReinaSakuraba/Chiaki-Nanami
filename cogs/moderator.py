@@ -238,7 +238,7 @@ class Moderator:
     async def slowonly(self, ctx, user: discord.Member, secs: int):
         """Puts a user in a certain channel in slowmode"""
         if secs <= 0:
-            raise errors.InvalidUserArgument(f"How can I put someone in slowmode for {secs} seconds...?")
+            raise InvalidUserArgument(f"How can I put someone in slowmode for {secs} seconds...?")
 
         channel = ctx.message.channel
         slowonly_channel = self.slowonlys[channel]

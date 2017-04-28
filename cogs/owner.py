@@ -68,7 +68,7 @@ class Owner:
     async def botav(self, *, new_avatar: str):
         with open(new_avatar, 'rb') as f:
             await self.bot.edit_profile(avatar=f.read())
-            
+
     async def _attempt_external_import(self, func, module, *, message):
         try:
             getattr(importlib, func)(module)
@@ -76,36 +76,52 @@ class Owner:
             await self.bot.say(f"Failed to {message} module")
             raise
         else:
-            await self.bot.say("\N{THUMBS UP SIGN}")    
-        
+            await self.bot.say("\N{THUMBS UP SIGN}")
+
     @commands.command(hidden=True)
     async def reloadext(self, module: item_converter(sys.modules)):
+        """Attempts to reload a non-extension module (one that doesn't have a setup method)
+
+        Do note that just because you successfully reload the module,
+        extensions that have imported said module will not automatically have the new one.
+        Make sure you reload them as well.
+        """
         await self._attempt_external_import('reload', module, message='reload')
-            
+
     @commands.command(hidden=True)
     async def loadext(self, module):
+        """Attempts to load a non-extension module (one that doesn't have a setup method)
+
+        Do note that just because you successfully reload the module,
+        extensions that have imported said module will not automatically have the new one.
+        Make sure you reload them as well.
+        """
         await self._attempt_external_import('import_module', module, message='import')
-        
+
     @commands.command(hidden=True)
     @checks.is_owner()
     async def reload(self, cog: str):
+        """Reloads a bot-extension (one with a setup method)"""
         self.bot.unload_extension(cog)
         await self._load(cog)
 
     @commands.command(hidden=True)
     @checks.is_owner()
     async def load(self, cog: str):
+        """Loads a bot-extension (one with a setup method)"""
         await self._load(cog)
 
     @commands.command(hidden=True)
     @checks.is_owner()
     async def unload(self, cog: str):
+        """Unloads a bot-extension (one with a setup method)"""
         self.bot.unload_extension(cog)
 
     @commands.command(hidden=True, aliases=['kys'])
     @checks.is_owner()
     async def die(self):
-        raise KeyboardInterrupt("Chiaki shut down from command")
+        """Shuts the bot down"""
+        await self.bot.logout()
 
     @commands.command(hidden=True)
     @checks.is_owner()
@@ -116,17 +132,19 @@ class Owner:
     @commands.command(hidden=True)
     @checks.is_owner()
     async def announce(self, *, msg):
+        """Makes an announcement to all the servers that the bot is in"""
         owner = (await self.bot.application_info()).owner
         for server in bot.servers:
             await self.bot.send_message(server, f"@everyone **Announcement from {owner}\n\"{msg}\"")
-            
+
     @commands.command(name="sendmessage", hidden=True)
     @checks.is_owner()
     async def send_message(self, channel: discord.Channel, *, msg):
+        """Sends a message to a particular channel"""
         owner = (await self.bot.application_info()).owner
         await self.bot.send_message(channel, f"Message from {owner}:\n{msg}")
         await self.bot.say(f"Successfully sent message in {channel}: {msg}")
-        
+
     @commands.command(name='testcommands', pass_context=True, aliases=['tcmd'])
     async def test_commands(self, ctx):
         message = copy.copy(ctx.message)
