@@ -1,5 +1,6 @@
 import aiohttp
 import discord
+import functools
 import inspect
 import json
 import random
@@ -9,7 +10,7 @@ from collections import defaultdict, deque
 from contextlib import redirect_stdout
 from discord.ext import commands
 from io import StringIO
-from itertools import islice
+from itertools import chain, islice
 from operator import attrgetter
 
 from .utils import converter
@@ -34,22 +35,13 @@ async def _mee6_stats(session, member):
             return user_stats
     raise ResultsNotFound(f"{member} does not have a mee6 level. :frowning:")
 
-async def _user_embed(member):
-    avatar_url = member.avatar_url_as(format=None)
-    playing = f"Playing **{member.game}**"
-    roles = sorted(member.roles[1:], reverse=True)
-    server = member.guild
-    colour = await user_color(member)
-    return  (discord.Embed(colour=colour, description=playing)
-            .set_thumbnail(url=avatar_url)
-            .set_author(name=member.display_name, icon_url=avatar_url)
-            .add_field(name="Real Name", value=str(member))
-            .add_field(name=f"Joined {server} at", value=nice_time(member.joined_at))
-            .add_field(name="Created at", value=nice_time(member.created_at))
-            .add_field(name="Highest role", value=member.top_role)
-            .add_field(name="Roles", value=str_join(', ', roles) or "-no roles-", inline=False)
-            .set_footer(text=f"ID: {member.id}")
-            )
+_status_colors = {
+    discord.Status.online    : discord.Colour.green(),
+    discord.Status.idle      : discord.Colour.orange(),
+    discord.Status.dnd       : discord.Colour.red(),
+    discord.Status.offline   : discord.Colour.default(),
+    discord.Status.invisible : discord.Colour.default(),
+}
 
 def default_last_n(n=50): return lambda: deque(maxlen=n)
 class Meta:
@@ -83,6 +75,24 @@ class Meta:
         roles = str_join(', ', reversed(user.roles[1:]))
         await ctx.send("```\n{}\n```".format(fmt.format(user, roles)))
 
+    @staticmethod
+    async def _user_embed(member):
+        avatar_url = member.avatar_url_as(format=None)
+        playing = f"Playing **{member.game}**" if member.game else "Not playing anything..."
+        roles = sorted(member.roles[1:], reverse=True)
+        server = member.guild
+
+        return  (discord.Embed(colour=_status_colors[member.status], description=playing)
+                .set_thumbnail(url=avatar_url)
+                .set_author(name=member.display_name, icon_url=avatar_url)
+                .add_field(name="Real Name", value=str(member))
+                .add_field(name=f"Joined {server} at", value=nice_time(member.joined_at))
+                .add_field(name="Created at", value=nice_time(member.created_at))
+                .add_field(name="Highest role", value=member.top_role)
+                .add_field(name="Roles", value=str_join(', ', roles) or "-no roles-", inline=False)
+                .set_footer(text=f"ID: {member.id}")
+                )
+
     @commands.group()
     async def info(self, ctx):
         """Super-command for all info-related commands"""
@@ -109,7 +119,8 @@ class Meta:
             member = ctx.author
         avatar_url = member.avatar_url_as(format=None)
 
-        with ctx.typing(), redirect_exception((json.JSONDecodeError, "No stats found. You don't have mee6 in this server... I think.")):
+        no_mee6_in_server = "No stats found. You don't have mee6 in this server... I think."
+        with ctx.typing(), redirect_exception((json.JSONDecodeError, no_mee6_in_server)):
             async with temp_message(ctx, "Fetching data, please wait...") as message:
                 stats = await _mee6_stats(self.session, member)
 
@@ -137,21 +148,20 @@ class Meta:
         def bool_as_answer(b):
             return "YNeos"[not b::2]
 
-        has_roles = [mem for mem in server.members if role in mem.roles]
-        member_amount = len(has_roles)
+        member_amount = len(role.members)
         if member_amount > 20:
             members_name = "Members"
             members_value = f"{member_amount} (use {ctx.prefix}inrole '{role}' to figure out who's in that role)"
         else:
             members_name = f"Members ({member_amount})"
-            members_value = str_join(", ", has_roles) or '-no one is in this role :(-'
+            members_value = str_join(", ", role.members) or '-no one is in this role :(-'
 
         hex_role_color = str(role.colour).upper()
         permissions = role.permissions.value
         permission_binary = "{0:32b}".format(permissions)
-        str_position = ordinal(role.position)
+        str_position = ordinal(role.position + 1)
         nice_created_at = nice_time(role.created_at)
-        description = f"Just chilling as {server}'s {str_position + 1} role"
+        description = f"Just chilling as {server}'s {str_position} role"
         footer = f"Created at: {nice_created_at} | ID: {role.id}"
 
         # I think there's a way to make a solid color thumbnail, idk though
@@ -168,48 +178,37 @@ class Meta:
 
         await ctx.send(embed=role_embed)
 
-    async def _default_server_info(self, ctx, server):
-        channel_count = len(server.channels)
-        member_count = len(server.members)
-        is_large = "(Very large!)" * bool(server.large)
-        members_comment = f"{member_count} members {is_large}"
-        icon = server.icon_url
+    @staticmethod
+    async def _server_embed(server):
         highest_role = server.role_hierarchy[0]
+        description = f"Owned by {server.owner}"
+        counts = (f'{len(getattr(server, thing))} {thing}' for thing in ('members', 'channels', 'roles', 'emojis'))
         features = '\n'.join(server.features) or 'None'
 
-        descrption = f"Owned by {server.owner}"
-
-        if member_count < 20:
-            member_field_name = f"Members ({member_count})"
-            member_field_value = ', '.join([mem.mention for mem in server.members])
-        else:
-            member_field_name = f"Members"
-            member_field_value = f"{member_count} (use '{ctx.prefix}info server members' to figure out the members)"
-
-        server_embed = (discord.Embed(title=server.name, description=descrption, timestamp=server.created_at)
+        server_embed = (discord.Embed(title=server.name, description=description, timestamp=server.created_at)
                        .add_field(name="Default Channel", value=server.default_channel.mention)
                        .add_field(name="Highest Role", value=highest_role)
-                       .add_field(name="Region", value=server.region)
-                       .add_field(name="Channel Count", value=len(server.channels))
-                       .add_field(name="Role Count", value=len(server.roles))
-                       .add_field(name="Custom Emoji Count", value=len(server.emojis))
+                       .add_field(name="Region", value=server.region.value.title())
                        .add_field(name="Verification Level", value=server.verification_level)
                        .add_field(name="Explicit Content Filter", value=server.explicit_content_filter)
                        .add_field(name="Special Features", value=features)
-                       .add_field(name=member_field_name, value=member_field_value, inline=False)
-                       .set_footer(text=f'ID: {server.id}'))
+                       .add_field(name='Counts', value='\n'.join(counts))
+                       .set_footer(text=f'ID: {server.id}')
+                       )
+
+        icon = server.icon_url
         if icon:
             server_embed.set_thumbnail(url=icon)
             server_embed.colour = await url_color(icon)
-        await ctx.send(embed=server_embed)
+        return server_embed
 
-    @info.group(aliases=['guild'], invoke_without_command=True)
+    @info.group(aliases=['guild'])
     @commands.guild_only()
     async def server(self, ctx):
         if ctx.subcommand_passed in ['server', 'guild']:
-            await self._default_server_info(ctx, ctx.guild)
+            await ctx.send(embed=await self._server_embed(ctx.guild))
         elif ctx.invoked_subcommand is None:
-            subcommands = '\n'.join(ctx.command.commands)
+            subcommands = '\n'.join(ctx.command.all_commands)
             await ctx.send(f"```\nAvailable server commands:\n{subcommands}```")
 
     @server.command()
@@ -243,7 +242,7 @@ class Meta:
         """Gets some userful info because why not"""
         if member is None:
             member = ctx.author
-        await ctx.send(embed=await _user_embed(member))
+        await ctx.send(embed=await self._user_embed(member))
 
     @commands.command(name="you")
     async def botinfo(self, ctx):
@@ -259,11 +258,10 @@ class Meta:
         # TODO: use GitHub
         await self._source(ctx, cmd.callback)
 
-    async def _inrole(self, ctx, *roles, predicate):
-        has_roles = [mem for mem in ctx.guild.members if predicate(mem, *roles)]
+    async def _inrole(self, ctx, *roles, members):
         joined_roles = str_join(', ', roles)
-        msg = (f"Here are the members who have the {joined_roles} role. ```css\n{str_join(', ', has_roles)}```"
-               if has_roles else f"There are no members who have the {joined_roles} role. \U0001f641")
+        msg = (f"Here are the members who have the {joined_roles} role. ```css\n{str_join(', ', members)}```"
+               if members else f"There are no members who have the {joined_roles} role. \U0001f641")
         await ctx.send(msg)
 
     @commands.command()
@@ -274,7 +272,7 @@ class Meta:
         The role is case sensitive.
         Only one role can be specified. For multiple roles, use `{prefix}inanyrole` or `{prefix}inallrole`.
         """
-        await self._inrole(ctx, role, predicate=lambda m, r: r in m.roles)
+        await self._inrole(ctx, role, members=role.members)
 
     @commands.command()
     @commands.guild_only()
@@ -286,7 +284,7 @@ class Meta:
         If you don't want to mention a role, please put it in quotes,
         especially if there's a space in the role name
         """
-        await self._inrole(ctx, *roles, predicate=lambda m, *r: any(r in m.roles for r in roles))
+        await self._inrole(ctx, *roles, members=set(chain.from_iterable(map(attrgetter('members'), roles))))
 
     @commands.command()
     @commands.guild_only()
@@ -298,7 +296,7 @@ class Meta:
         If you don't want to mention a role, please put it in quotes,
         especially if there's a space in the role name
         """
-        await self._inrole(ctx, *roles, predicate=lambda m, *r: all(r in m.roles for r in roles))
+        await self._inrole(ctx, *roles, members=functools.reduce(set.intersection, map(set, map(attrgetter('members'), roles))))
 
     @commands.command()
     @commands.guild_only()
@@ -320,7 +318,7 @@ class Meta:
 
         message = (f"The permissions {extra} for **{thing}** is **{value}**."
                    f"\nIn binary it's {bin(value)[2:]}"
-                   f"\nThis implies the following values:"
+                    "\nThis implies the following values:"
                    f"\n```diff\n{diff_mapper}```"
                    )
         await ctx.send(message)
@@ -376,6 +374,7 @@ class Meta:
         (or any sort of function, for that matter)
         """
         # Someone told me a "lib" already does this. Is that true? If so, what lib is it?
+        # TODO: Only get the docstring
         with StringIO() as output, redirect_stdout(output):
             help(thing)
             help_lines = output.getvalue().splitlines()
