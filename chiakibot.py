@@ -25,7 +25,7 @@ default_bot_help = """\
 *{0.description}*
 
 To invite me to your server, use `->invite`, or just use this link:
-{0.invite_url}
+<{0.invite_url}>
 
 If you need help with something, or there's some weird issue with me, which will usually happen
 (since the owners don't tend to test me a lot), use this link to join the **Official** Chiaki Nanami Server:
@@ -249,7 +249,7 @@ class ChiakiBot(commands.Bot):
     async def dump_db_cycle(self):
         await self.wait_until_ready()
         while not self.is_closed:
-            await asyncio.sleep(60)
+            await asyncio.sleep(3600 * 2)
             await self.dump_databases()
             print('all databases successfully dumped')
 
