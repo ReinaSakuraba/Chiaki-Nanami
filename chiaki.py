@@ -15,6 +15,13 @@ from cogs.utils.compat import user_colour
 from cogs.utils.misc import file_handler, nice_time
 from discord.ext import commands
 
+try:
+    import uvloop
+except ImportError:
+    pass
+else:
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+
 logger = logging.getLogger('discord')
 logger.setLevel(logging.INFO)
 logger.addHandler(file_handler('discord'))
@@ -39,8 +46,8 @@ initial_extensions = (
     'cogs.quotes',
     'cogs.rng',
     'cogs.searches',
-    'cogs.diepio.partylink',
-    'cogs.diepio.wr',
+#   'cogs.diepio.partylink',
+#   'cogs.diepio.wr',
 #   'cogs.games.eventhost',
 #   'cogs.games.fizzbuzz',
 #   'cogs.games.hangman',
