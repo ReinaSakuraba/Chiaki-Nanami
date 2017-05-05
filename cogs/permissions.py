@@ -5,7 +5,7 @@ import itertools
 
 from collections import namedtuple
 from discord.ext import commands
-from operator import attrgetter
+from operator import attrgetter, contains
 
 from .utils import checks, errors
 from .utils.compat import always_iterable, iterate
@@ -82,24 +82,39 @@ class PermLevel(enum.Enum):
 
 level_getter = item_converter(PermLevel, key=str.lower, error_msg="Unrecognized level: {arg}")
 
+def _emoji_url(emoji):
+    return f'https://twemoji.maxcdn.com/2/72x72/{hex(ord(emoji))[2:]}.png'
+
+dc = discord.Colour
 class PermAction(namedtuple('PermAction', 'value action emoji colour')):
     def __new__(cls, arg):
         mode = arg.lower()
         if mode in ('allow', 'unlock', 'enable', ):
-            return super().__new__(cls, value=True,  action='enabled',  emoji='\U00002705', colour=0x00ff00)
+            return super().__new__(cls, value=True,  action='enabled',  emoji='\U00002705', colour=dc.green() )
         elif mode in ('none', 'reset', 'null', ):
-            return super().__new__(cls, value=None,  action='reset',    emoji='\U0001f504', colour=0 )
+            return super().__new__(cls, value=None,  action='reset',    emoji='\U0001f504', colour=dc.default() )
         elif mode in ('deny', 'lock', 'disable', ):
-            return super().__new__(cls, value=False, action='disabled', emoji='\U000026d4', colour=0xff0000)
+            return super().__new__(cls, value=False, action='disabled', emoji='\U000026d4', colour=dc.red())
         raise commands.BadArgument(f"Don't know what to do with {arg}.")
 
-    @property
-    def emoji_url(self):
-        return f'https://twemoji.maxcdn.com/2/72x72/{hex(ord(self.emoji))[2:]}.png'
+class BlockType(enum.Enum):
+    blacklist = (dc.red(),   '\U000026d4')
+    whitelist = (dc.green(), '\U00002705')
+
+    def __init__(self, colour, emoji):
+        self.colour = colour
+        self.emoji = emoji
+
+    def embed(self, user):
+        return (discord.Embed(colour=self.colour)
+               .set_author(name=f'User {self.name}ed', icon_url=_emoji_url(self.emoji))
+               .add_field(name='User', value=str(user))
+               .add_field(name='ID', value=user.id)
+               )
+del dc
 
 command_perm_default = {i: {} for i in map(str, PermLevel)}
 
-DENIED_KEY, ALLOWED_KEY = 'blacklist', 'whitelist'
 class Permissions:
     def __init__(self):
         self.permissions = Database('permissions.json', default_factory=command_perm_default.copy)
@@ -112,10 +127,8 @@ class Permissions:
 
     def __global_check(self, ctx):
         user_id = ctx.author.id
-        if user_id in self.other_permissions[DENIED_KEY]:
+        if user_id in self.blacklisted_users:
             return False
-        if user_id in self.other_permissions[ALLOWED_KEY]:
-            return True
 
         try:
             self._assert_is_valid_cog(ctx.command)
@@ -126,6 +139,10 @@ class Permissions:
         names = itertools.chain(walk_parent_names(cmd), (cmd.cog_name, ))
         results = (self._first_non_none_perm(name, ctx) for name in names)
         return first_non_none(results, True)
+
+    @property
+    def blacklisted_users(self):
+        return self.other_permissions[BlockType.blacklist.name]
 
     @staticmethod
     def _context_attribute(level, ctx):
@@ -156,7 +173,7 @@ class Permissions:
     @staticmethod
     def _perm_result_embed(ctx, level, mode, name, *args, thing):
         return (discord.Embed(colour=mode.colour, timestamp=ctx.message.created_at)
-               .set_author(name=f'{thing} {mode.action}!', icon_url=mode.emoji_url)
+               .set_author(name=f'{thing} {mode.action}!', icon_url=_emoji_url(mode.emoji))
                .add_field(name=thing, value=name)
                .add_field(name=level.name.title(), value=str_join(', ', map(attrgetter('original'), args)), inline=False)
                )
@@ -213,27 +230,29 @@ class Permissions:
         """Globally enables a command."""
         await self.modify_command(ctx, command, True)
 
-    async def modify_black_white_lists(self, ctx, addee, removee, user):
-        addee_, removee_ = map(self.other_permissions.__getitem__, (addee, removee))
-        if user.id in addee_:
-            raise errors.InvalidUserArgument(f'**{user}** has now been {addee}ed, I think...')
+    async def _modify_blacklist(self, ctx, user, list_attr, *, contains_op, block_type):
+        blacklist = self.blacklisted_users
+        if contains_op(blacklist, user.id):
+            raise errors.InvalidUserArgument(f'**{user}** has already been {block_type.name}ed, I think...')
 
-        addee_.append(user.id)
-        with contextlib.suppress(ValueError):
-            removee_.remove(user.id)
-        await ctx.send(f'**{user}** has now been {addee}ed!')
+        getattr(blacklist, list_attr)(user.id)
+        await ctx.send(embed=block_type.embed(user))
 
     @commands.command(aliases=['bl'])
     @commands.is_owner()
     async def blacklist(self, ctx, *, user: discord.User):
         """Blacklists a user. This prevents them from ever using the bot, regardless of other permissions."""
-        await self.modify_black_white_lists(ctx, DENIED_KEY, ALLOWED_KEY, user)
+        await self._modify_blacklist(ctx, user, 'append', contains_op=contains, 
+                                     block_type=BlockType.blacklist)
 
     @commands.command(aliases=['wl'])
     @commands.is_owner()
     async def whitelist(self, ctx, *, user: discord.User):
-        """Whitelists a user. This makes them always able to use the bot, regardless of other permissions."""
-        await self.modify_black_white_lists(ctx, ALLOWED_KEY, DENIED_KEY, user)
+        """Whitelists a user, removing the from the blacklist.
 
+        This doesn't make them immune to any other checks.
+        """
+        await self._modify_blacklist(ctx, user, 'remove', contains_op=lambda a, b: not b in a, 
+                                     block_type=BlockType.whitelist)
 def setup(bot):
     bot.add_cog(Permissions())
