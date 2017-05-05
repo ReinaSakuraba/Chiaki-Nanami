@@ -85,19 +85,21 @@ class RNG:
         if not question.endswith('?'):
             raise InvalidUserArgument(f"{ctx.author.mention}, that's not a question, I think.")
 
-        msg = await ctx.send(f"{ctx.author.mention}\n:question:: **{question}**\n")
+        msg = await ctx.send(f"{ctx.author.mention}\n"
+                             f"\N{BLACK QUESTION MARK ORNAMENT}: **{question}**\n")
         await asyncio.sleep(random.uniform(0.5, 1.5))
+
         with ctx.typing():
-            await msg.edit(content=f"{msg.content}\n:8ball:: ... :thinking:")
+            await msg.edit(content=f"{msg.content}\n\N{BILLIARDS}: ... \N{THINKING FACE}")
             await asyncio.sleep(random.uniform(0.75, 1.25) * 2)
             answer = random.choice(BALL_ANSWERS)
-            await msg.edit(content=msg.content.replace(':thinking:', f'***__{answer}.__***'))
+            await msg.edit(content=msg.content.replace('\N{THINKING FACE}', f'***__{answer}.__***'))
 
     @commands.command(usage='Nadeko;Salt;PvPCraft;mee6;Chiaki Nanami')
     async def choose(self, ctx, *, choices: str):
         """Chooses between a list of choices separated by semicolons"""
         with ctx.channel.typing():
-            msg = await ctx.send(':thinking:')
+            msg = await ctx.send('\N{THINKING FACE}')
             await asyncio.sleep(random.uniform(0.25, 1))
             await msg.edit(content=random.choice(choices.split(';')))
 
@@ -107,9 +109,11 @@ class RNG:
         distribution = _available_distributions.get(dist)
         if distribution is None:
             raise commands.BadArgument(f"{dist} is not a distribution for random numbers")
+
         if hi is None:
             lo, hi = 0, lo
         result = distribution(lo, hi)
+
         msg = await ctx.send(f"Your random {distribution.__name__} number between is...")
         await asyncio.sleep(random.uniform(0, 1))
         await msg.edit(msg.content + f'**{result}!!**')
@@ -177,19 +181,17 @@ class RNG:
     @random.command(aliases=['color'])
     async def colour(self, ctx):
         """Generates a random colo(u)r."""
-        colour_long = random.randrange(255 ** 3)
-        colour = discord.Colour(colour_long)
-        r, g, b = colour.to_tuple()
-        h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
-        hsv = round(h * 360, 3), round(s * 100, 3), round(v * 100, 3)
+        colour = discord.Colour(random.randint(0, 0xFFFFFF))
+        rgb = colour.to_tuple()
+        h, s, v = colorsys.rgb_to_hsv(*(v / 255 for v in rgb))
+        hsv = h * 360, s * 100, v * 100
 
         colour_embed = (discord.Embed(title=str(colour), colour=colour)
-                       .add_field(name="RGB", value=str_join(', ', (r, g, b)))
-                       .add_field(name="HSV", value=str_join(', ', hsv))
+                       .add_field(name="RGB", value='%d, %d, %d' % rgb)
+                       .add_field(name="HSV", value='%.03f, %.03f, %.03f' % hsv)
                        )
         if webcolors:
-            actual_name, closest_name = get_colour_name((r, g, b))
-            colour_embed.description = actual_name or closest_name
+            colour_embed.description = get_colour_name(rgb)
         await ctx.send(embed=colour_embed)
 
     @commands.cooldown(rate=10, per=5, type=commands.BucketType.guild)
