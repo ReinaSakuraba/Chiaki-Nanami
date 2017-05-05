@@ -37,10 +37,7 @@ def pairwise(t):
     return zip(it, it)
 
 def nice_time(time):
-    # Hopefully I can get a timezone-specific version.
-    # I don't think that's possible though.
-    new_time = time.replace(tzinfo=timezone.utc)
-    return new_time.strftime("%Y/%m/%d %r (%Z)")
+    return time.strftime("%d/%m/%Y %H:%M")
 
 def parse_int(maybe_int, base=10):
     try:
@@ -66,3 +63,7 @@ def file_handler(name, path='./logs', *, format='%(asctime)s/%(levelname)s: %(na
     handler = logging.FileHandler(filename=f'{path}/{name}{now : %Y-%m-%d %H.%M.%S.%f.txt}.log', encoding='utf-8', mode='w')
     handler.setFormatter(logging.Formatter(format))
     return handler
+
+def base_filename(name):
+    return os.path.splitext(os.path.basename("/a/b/c.txt"))[0]
+

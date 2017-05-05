@@ -1,4 +1,5 @@
 import aiohttp
+import collections
 import discord
 import functools
 import inspect
@@ -6,11 +7,10 @@ import json
 import random
 import sys
 
-from collections import defaultdict, deque
 from contextlib import redirect_stdout
 from discord.ext import commands
 from io import StringIO
-from itertools import chain, islice
+from itertools import chain, islice, starmap
 from operator import attrgetter
 
 from .utils import converter
@@ -43,14 +43,15 @@ _status_colors = {
     discord.Status.invisible : discord.Colour.default(),
 }
 
-def default_last_n(n=50): return lambda: deque(maxlen=n)
+def default_last_n(n=50): return lambda: collections.deque(maxlen=n)
 class Meta:
     """Info related commands"""
 
     def __init__(self, bot):
         self.bot = bot
-        self.cmd_history = defaultdict(default_last_n())
-        self.last_members = defaultdict(default_last_n())
+        self.cmd_history = collections.defaultdict(default_last_n())
+        self.last_members = collections.defaultdict(default_last_n())
+        self.command_counter = collections.Counter()
         self.session = aiohttp.ClientSession()
 
     def __unload(self):
@@ -79,17 +80,16 @@ class Meta:
     async def _user_embed(member):
         avatar_url = member.avatar_url_as(format=None)
         playing = f"Playing **{member.game}**" if member.game else "Not playing anything..."
-        roles = sorted(member.roles[1:], reverse=True)
-        server = member.guild
+        roles = sorted(member.roles, reverse=True)[:-1]  # last role is @everyone
 
         return  (discord.Embed(colour=_status_colors[member.status], description=playing)
                 .set_thumbnail(url=avatar_url)
-                .set_author(name=member.display_name, icon_url=avatar_url)
-                .add_field(name="Real Name", value=str(member))
-                .add_field(name=f"Joined {server} at", value=nice_time(member.joined_at))
+                .set_author(name=str(member))
+                .add_field(name="Nickname", value=member.display_name)
                 .add_field(name="Created at", value=nice_time(member.created_at))
-                .add_field(name="Highest role", value=member.top_role)
-                .add_field(name="Roles", value=str_join(', ', roles) or "-no roles-", inline=False)
+                .add_field(name=f"Joined server at", value=nice_time(member.joined_at))
+                .add_field(name=f"Avatar link", value=f'[Click Here!](avatar_url)')
+                .add_field(name=f"Roles - {len(roles)}", value=', '.join([role.mention for role in roles]) or "-no roles-", inline=False)
                 .set_footer(text=f"ID: {member.id}")
                 )
 
@@ -365,8 +365,21 @@ class Meta:
                if history else "You have not input any commands...")
         await ctx.send(msg)
 
+    @commands.command(name='cmdranks')
+    async def commandranks(self, ctx, n=10):
+        """Shows the most common commands"""
+        if not 3 <= n <= 50:
+            raise InvalidUserArgument("I can only show the top 3 to the top 50 commands... sorry...")
+
+        format_map = starmap(f'`{ctx.prefix}{{0}}` = {{1}}'.format, self.command_counter.most_common(n))
+        embed = (discord.Embed(description='\n'.join(format_map), colour=self.bot.colour)
+                .set_author(name=f'Top {n} used commands')
+                )
+        await ctx.send(embed=embed)
+
     async def on_command(self, ctx):
         self.cmd_history[ctx.author].append(ctx.message.content)
+        self.command_counter[ctx.command] += 1
 
     @commands.command(usage=['pow', 'os.system'], aliases=['pyh'])
     async def pyhelp(self, ctx, thing):
