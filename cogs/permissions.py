@@ -1,6 +1,7 @@
 import contextlib
 import discord
 import enum
+import functools
 import itertools
 
 from collections import namedtuple
@@ -17,7 +18,7 @@ def walk_parents(command):
     return itertools.takewhile(bool, iterate(attrgetter('parent'), command))
 
 def walk_parent_names(command):
-    return map(attrgetter('qualified_name'), walk_parents(command))
+    return (cmd.qualified_name for cmd in walk_parents(command))
 
 def first_non_none(iterable, default=None):
     return next(filter(lambda x: x is not None, iterable), default)
@@ -26,7 +27,7 @@ class Idable(namedtuple('Idable', 'original id')):
     def __new__(cls, original):
         return super().__new__(cls, original, original.id)
 
-permissions_doc = """
+_permissions_help = """
     Sets the permissions for a particular {thing}.
 
     A {thing} can be allowed or blocked on one of 4 levels:
@@ -38,11 +39,10 @@ permissions_doc = """
     {extra}
 """
 
-def make_doc(thing, extra=''):
-    def wrapper(func):
-        func.__doc__ = permissions_doc.format(extra=extra, thing=thing)
-        return func
-    return wrapper
+def _make_doc(thing, extra=''):
+    return _permissions_help.format(thing=thing, extra=extra)
+_perm_set_command_help = _make_doc('command', extra=('This will affect aliases as well. If a command group is blocked, '
+                                                      'its subcommands are blocked as well.'))
 
 class PermLevel(enum.Enum):
     user        = (discord.Member, '({0.guild.id}, {0.author.id})'.format, False, )
@@ -85,21 +85,22 @@ level_getter = item_converter(PermLevel, key=str.lower, error_msg="Unrecognized 
 def _emoji_url(emoji):
     return f'https://twemoji.maxcdn.com/2/72x72/{hex(ord(emoji))[2:]}.png'
 
-dc = discord.Colour
 class PermAction(namedtuple('PermAction', 'value action emoji colour')):
     def __new__(cls, arg):
         mode = arg.lower()
+        action = functools.partial(super().__new__, cls)
+
         if mode in ('allow', 'unlock', 'enable', ):
-            return super().__new__(cls, value=True,  action='enabled',  emoji='\U00002705', colour=dc.green() )
+            return action(value=True,  action='enabled',  emoji='\U00002705', colour=discord.Colour.green())
         elif mode in ('none', 'reset', 'null', ):
-            return super().__new__(cls, value=None,  action='reset',    emoji='\U0001f504', colour=dc.default() )
+            return action(value=None,  action='reset',    emoji='\U0001f504', colour=discord.Colour.default())
         elif mode in ('deny', 'lock', 'disable', ):
-            return super().__new__(cls, value=False, action='disabled', emoji='\U000026d4', colour=dc.red())
+            return action(value=False, action='disabled', emoji='\U000026d4', colour=discord.Colour.red())
         raise commands.BadArgument(f"Don't know what to do with {arg}.")
 
 class BlockType(enum.Enum):
-    blacklist = (dc.red(),   '\U000026d4')
-    whitelist = (dc.green(), '\U00002705')
+    blacklist = (discord.Colour.red(),   '\U000026d4')
+    whitelist = (discord.Colour.green(), '\U00002705')
 
     def __init__(self, colour, emoji):
         self.colour = colour
@@ -111,7 +112,6 @@ class BlockType(enum.Enum):
                .add_field(name='User', value=str(user))
                .add_field(name='ID', value=user.id)
                )
-del dc
 
 command_perm_default = {i: {} for i in map(str, PermLevel)}
 
@@ -172,10 +172,11 @@ class Permissions:
 
     @staticmethod
     def _perm_result_embed(ctx, level, mode, name, *args, thing):
-        return (discord.Embed(colour=mode.colour, timestamp=ctx.message.created_at)
+        originals = ', '.join(str(arg.original) for arg in args)
+        return (discord.Embed(colour=mode.colour, timestamp=ctx.message.created_at) 
                .set_author(name=f'{thing} {mode.action}!', icon_url=_emoji_url(mode.emoji))
                .add_field(name=thing, value=name)
-               .add_field(name=level.name.title(), value=str_join(', ', map(attrgetter('original'), args)), inline=False)
+               .add_field(name=level.name.title(), value=originals, inline=False)
                )
 
     async def _perm_set(self, ctx, level, mode, name, *args, thing):
@@ -193,21 +194,18 @@ class Permissions:
     # However, because of the case insensitivity of the cog converter,
     # commands will inevitably clash with cogs of the same name, creating confusion.
     # This is also why the default help command only takes commands, as opposed to either a command or cog.
-    @commands.command(name='permsetcommand', aliases=['psc'])
+    @commands.command(name='permsetcommand', aliases=['psc'], help=_perm_set_command_help)
     @checks.is_admin()
     @commands.guild_only()
-    @make_doc('command', extra=('This will affect aliases as well. If a command group is blocked, '
-                                'its subcommands are blocked as well.'))
     async def perm_set_command(self, ctx, level: level_getter, mode: PermAction,
                                command: BotCommand(recursive=True), *args):
         self._assert_is_valid_cog(command)
         ids = await level.parse_args(ctx, *args)
         await self._perm_set(ctx, level, mode, command.qualified_name, *ids, thing='Command')
 
-    @commands.command(name='permsetmodule', aliases=['psm'])
+    @commands.command(name='permsetmodule', aliases=['psm'], help=_make_doc('module'))
     @checks.is_admin()
     @commands.guild_only()
-    @make_doc('module')
     async def perm_set_module(self, ctx, level: level_getter, mode: PermAction,
                               module: BotCogConverter, *args):
         self._assert_is_valid_cog(module)
@@ -216,16 +214,16 @@ class Permissions:
 
     async def modify_command(self, ctx, command, bool_):
         command.enabled = bool_
-        await ctx.send(f"**{command}** is now {DEins[bool_::2]}abled!")
+        await ctx.send(f"**{command}** is now {'deins'[bool_::2]}abled!")
 
     @commands.command()
-    @commands.is_owner()
+    @checks.is_owner()
     async def disable(self, ctx, *, command: BotCommand(recursive=True)):
         """Globally disables a command."""
         await self.modify_command(ctx, command, False)
 
     @commands.command()
-    @commands.is_owner()
+    @checks.is_owner()
     async def enable(self, ctx, *, command: BotCommand(recursive=True)):
         """Globally enables a command."""
         await self.modify_command(ctx, command, True)
@@ -239,14 +237,14 @@ class Permissions:
         await ctx.send(embed=block_type.embed(user))
 
     @commands.command(aliases=['bl'])
-    @commands.is_owner()
+    @checks.is_owner()
     async def blacklist(self, ctx, *, user: discord.User):
         """Blacklists a user. This prevents them from ever using the bot, regardless of other permissions."""
         await self._modify_blacklist(ctx, user, 'append', contains_op=contains, 
                                      block_type=BlockType.blacklist)
 
     @commands.command(aliases=['wl'])
-    @commands.is_owner()
+    @checks.is_owner()
     async def whitelist(self, ctx, *, user: discord.User):
         """Whitelists a user, removing the from the blacklist.
 
