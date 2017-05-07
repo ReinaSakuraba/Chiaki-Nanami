@@ -229,6 +229,11 @@ class Permissions:
         await self.modify_command(ctx, command, True)
 
     async def _modify_blacklist(self, ctx, user, list_attr, *, contains_op, block_type):
+        if await ctx.bot.is_owner(user):
+            raise errors.InvalidUserArgument(f"No. You can't {block_type.name} the Bot Owner")
+        if ctx.bot.user.id == user.id:
+            raise errors.InvalidUserArgument(f"Hey hey, why are you {block_type.name}ing me?")
+
         blacklist = self.blacklisted_users
         if contains_op(blacklist, user.id):
             raise errors.InvalidUserArgument(f'**{user}** has already been {block_type.name}ed, I think...')
