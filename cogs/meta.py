@@ -253,7 +253,7 @@ class Meta:
         await iterable_limit_say(lines, '', ctx=ctx, prefix='```py\n', escape_code=True)
 
     @commands.command()
-    async def source(self, ctx, *, cmd: BotCommand(recursive=True)):
+    async def source(self, ctx, *, cmd: BotCommand):
         """Displays the source code for a particular command"""
         # TODO: use GitHub
         await self._source(ctx, cmd.callback)

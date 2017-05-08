@@ -15,10 +15,10 @@ from .utils.database import Database
 from .utils.misc import str_join
 
 def walk_parents(command):
-    return itertools.takewhile(bool, iterate(attrgetter('parent'), command))
+    return iter(iterate(attrgetter('parent'), command).__next__, None)
 
 def walk_parent_names(command):
-    return (cmd.qualified_name for cmd in walk_parents(command))
+    return (cmd.qualified_name for cmd in walk_parents(command)) 
 
 def first_non_none(iterable, default=None):
     return next(filter(lambda x: x is not None, iterable), default)
@@ -198,7 +198,7 @@ class Permissions:
     @checks.is_admin()
     @commands.guild_only()
     async def perm_set_command(self, ctx, level: level_getter, mode: PermAction,
-                               command: BotCommand(recursive=True), *args):
+                               command: BotCommand, *args):
         self._assert_is_valid_cog(command)
         ids = await level.parse_args(ctx, *args)
         await self._perm_set(ctx, level, mode, command.qualified_name, *ids, thing='Command')
@@ -218,13 +218,13 @@ class Permissions:
 
     @commands.command()
     @checks.is_owner()
-    async def disable(self, ctx, *, command: BotCommand(recursive=True)):
+    async def disable(self, ctx, *, command: BotCommand):
         """Globally disables a command."""
         await self.modify_command(ctx, command, False)
 
     @commands.command()
     @checks.is_owner()
-    async def enable(self, ctx, *, command: BotCommand(recursive=True)):
+    async def enable(self, ctx, *, command: BotCommand):
         """Globally enables a command."""
         await self.modify_command(ctx, command, True)
 

@@ -18,7 +18,7 @@ from .utils.misc import multi_replace, nice_time, truncate
 from .utils.paginator import iterable_limit_say
 
 def default_help_command(func=lambda s: s, **kwargs):
-    async def help_command(self, ctx, *, command: BotCommand(recursive=True)=None):
+    async def help_command(self, ctx, *, command: BotCommand=None):
         await default_help(ctx, command, func=func)
     return commands.command(help=func("Shows this message and stuff"), **kwargs)(help_command)
 

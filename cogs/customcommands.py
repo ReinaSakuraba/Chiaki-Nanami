@@ -7,7 +7,6 @@ from itertools import chain, starmap
 
 from .utils import checks, errors
 from .utils.context_managers import temp_attr
-from .utils.converter import make_converter, BotCommand
 from .utils.database import Database
 from .utils.paginator import DelimPaginator, iterable_limit_say
 
@@ -105,13 +104,8 @@ class CustomCommands:
         return discord.utils.find(message.content.startswith, prefix)
 
     @staticmethod
-    async def is_part_of_existing_command(ctx, arg):
-        try:
-            await ctx.command.do_conversion(ctx, BotCommand(recursive=True), arg)
-        except commands.BadArgument as e:
-            return False
-        else:
-            return True
+    def is_part_of_existing_command(ctx, arg):
+        return ctx.bot.get_command(arg) is not None
 
     @commands.group()
     async def alias(self, ctx):
@@ -122,8 +116,8 @@ class CustomCommands:
         if len(alias.split()) > MAX_ALIAS_WORDS:
             raise errors.InvalidUserArgument(f"Your alias is too long to be practical. "
                                               "The limit is {MAX_ALIAS_WORDS}.")
-        if await self.is_part_of_existing_command(ctx, alias):
-            raise errors.InvalidUserArgument(f'\"{alias}\" is already an existing command')
+        if self.is_part_of_existing_command(ctx, alias):
+            raise errors.InvalidUserArgument(f'"{alias}" is already an existing command...')
 
         self.aliases[ctx.guild][alias] = real
         await ctx.send(f"Successfully added a new alias: **{alias} => {real}**!")

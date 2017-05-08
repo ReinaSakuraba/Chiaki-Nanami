@@ -79,26 +79,11 @@ class BotCogConverter(commands.Converter):
         return bot.all_cogs[result]
 
 class BotCommand(commands.Converter):
-    def __init__(self, *, recursive=False):
-        self.convert = self._recursive_convert if recursive else self._convert
-
-    def _convert(self):
+    def convert(self):
         cmd = self.ctx.bot.get_command(self.argument)
         if cmd is None:
             raise commands.BadArgument(f"I don't recognized the {self.argument} command")
         return cmd
-
-    def _recursive_convert(self):
-        cmd_path = self.argument
-        obj = bot = self.ctx.bot
-        for cmd in cmd_path.split() if isinstance(cmd_path, str) else cmd_path:
-            try:
-                obj = obj.get_command(cmd)
-                if obj is None:
-                    raise commands.BadArgument(bot.command_not_found.format(cmd_path))
-            except AttributeError:
-                raise commands.BadArgument(bot.command_has_no_subcommands.format(obj))
-        return obj
 
 def non_negative(num):
     num = parse_int(num)
