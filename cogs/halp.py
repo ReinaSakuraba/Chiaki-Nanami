@@ -11,6 +11,7 @@ from functools import partial
 
 from .utils import checks, errors
 from .utils.compat import always_iterable
+from .utils.context_managers import temp_attr
 from .utils.converter import BotCogConverter, BotCommand
 from .utils.database import Database
 from .utils.misc import multi_replace, nice_time, truncate
@@ -33,7 +34,7 @@ async def default_help(ctx, command=None, func=lambda s:s):
         await destination.send(page)
 
 
-_message_attrs = 'id author content channel server timestamp'.split()
+_message_attrs = 'id author content channel guild created_at'.split()
 DummyMessage = namedtuple('DummyMessage', _message_attrs)
 
 # Seriously, fuck JSONs. They can't do namedtuples
@@ -45,23 +46,19 @@ class ProblemMessage:
             setattr(self, attr, getattr(msg, attr))
 
     @property
-    def nice_timestamp(self):
-        return nice_time(self.timestamp)
-
-    @property
     def embed(self):
         author = self.author
         author_avatar = author.avatar_url_as(format=None)
-        content = self.content.replace('->contact', '', 1)
         id_fmt = "{0}\n({0.id})"
-        server_fmt = id_fmt.format(self.server) if self.server else "No server"
-        return (discord.Embed(timestamp=self.timestamp)
-                .set_author(name=str(author), icon_url=author_avatar)
-                .set_thumbnail(url=author_avatar)
-                .add_field(name="Channel:", value=id_fmt.format(self.channel))
-                .add_field(name="Server:", value=server_fmt)
-                .add_field(name="Message:", value=content, inline=False)
-                .set_footer(text=f"Message ID: {self.id}")
+        server_fmt = id_fmt.format(self.guild) if self.guild else "No server"
+
+        return (discord.Embed(timestamp=self.created_at)
+               .set_author(name=str(author), icon_url=author_avatar)
+               .set_thumbnail(url=author_avatar)
+               .add_field(name="Channel:", value=id_fmt.format(self.channel))
+               .add_field(name="Server:", value=server_fmt)
+               .add_field(name="Message:", value=self.content, inline=False)
+               .set_footer(text=f"Message ID: {self.id}")
                 )
 
 class ProblemEncoder(json.JSONEncoder):
@@ -73,37 +70,43 @@ class ProblemEncoder(json.JSONEncoder):
                 'author': o.author.id,
                 'content': o.content,
                 'channel': o.channel.id,
-                'server': getattr(o.server, "id", None),
-                'timestamp': str(o.timestamp),
+                'server': getattr(o.guild, "id", None),
+                'created_at': str(o.created_at),
                 }
         return super().default(o)
 
-def problem_hook(bot, dct):
-    if '__problem__' in dct:
+def problem_hook(bot, dict_):
+    if '__problem__' in dict_:
         kwargs = {
-            'id': dct['id'],
-            'author': discord.utils.get(bot.get_all_members(), id=dct['author']),
-            'content': dct['content'],
-            'channel': bot.get_channel(dct['channel']),
-            'server': bot.get_server(dct['server']),
-            'timestamp': datetime.strptime(dct['timestamp'], '%Y-%m-%d %H:%M:%S.%f'),
+            'id': dict_['id'],
+            'author': bot.get_user(dict_['author']),
+            'content': dict_['content'],
+            'channel': bot.get_channel(dict_['channel']),
+            'guild': bot.get_guild(dict_['server']),
+            'created_at': datetime.strptime(dict_['created_at'], '%Y-%m-%d %H:%M:%S.%f'),
             }
         return ProblemMessage(DummyMessage(**kwargs))
-    return dct
+    return dict_
 
-_bracket_repls = {'(': ')', ')': '(',
-                  '[': ']', ']': '[',
-                  '<': '>', '>': '<',
-                 }
+_bracket_repls = {
+    '(': ')', ')': '(',
+    '[': ']', ']': '[',
+    '<': '>', '>': '<',
+}
 
 class Help:
     def __init__(self, bot):
         self.bot = bot
         #self.bot.command(name='help', , aliases='h')(_default_help_command)
+        self.bot.loop.create_task(self.load_problems())
 
-    async def on_ready(self):
+    async def load_problems(self):
+        # because of the use of Client.get_* methods, we have to wait until the bot is logged in
+        # otherwise we'd just get Nones everywhere
+        await self.bot.wait_until_ready()
         self.problems = Database('issues.json', encoder=ProblemEncoder, load_later=True,
                                  object_hook=partial(problem_hook, self.bot))
+        self.blocked = self.problems.setdefault('blocked', [])
         self.bot.add_database(self.problems)
 
     help = default_help_command(name='help', aliases=['h'])
@@ -120,13 +123,14 @@ class Help:
                  .add_field(name="Want me in your server?",
                             value=f'[Invite me here!]({self.bot.invite_url})', inline=False)
                  .add_field(name="Need help with using me?",
-                            value=f"[Here's the official server!]( {self.bot.official_server_invite})", inline=False)
+                            value=f"[Here's the official server!]({self.bot.official_server_invite})", inline=False)
                  .add_field(name="If you're curious about how I work...",
                             value="[Check out the source code!](https://github.com/Ikusaba-san/Chiaki-Nanami/tree/rewrite)", inline=False)
                  )
         await ctx.send(embed=invite)
 
     @commands.command()
+    @commands.cooldown(rate=1, per=30, type=commands.BucketType.user)
     async def contact(self, ctx, *, problem: str):
         """Contacts the bot owner
 
@@ -134,21 +138,22 @@ class Help:
         """
         msg = ctx.message
         author = msg.author
-        if author.id in self.problems["blocked"]:
-            await self.bot.reply("You have been blocked from contacting the owner")
-            return
-        owner = (await self.bot.application_info()).owner
+        if author.id in self.blocked:
+            return await ctx.send("{ctx.author.mention}, you have been blocked from contacting the owner")
+
         # TODO, make this work with namedtuples
-        problem_message = ProblemMessage(msg)
+        with temp_attr(msg, 'content', msg.content.replace(f'{ctx.prefix}contact', '', 1)):
+            problem_message = ProblemMessage(msg)
+
         self.problems[msg] = problem_message
-        await self.bot.send_message(owner, f"**{owner.mention} New message from {author}!**",
-                                    embed=problem_message.embed)
+        await self.bot.owner.send(f"**{self.bot.owner.mention} New message from {author}!**",
+                                  embed=problem_message.embed)
 
     @commands.command()
     @checks.is_owner()
     @errors.private_message_only()
     async def contactblock(self, ctx, *, user: discord.User):
-        self.problems.setdefault('blocked', []).append(user.id)
+        self.blocked.append(user.id)
         await ctx.send(f"Blocked user {user} successfully!")
 
     @commands.command(hidden=True)
@@ -159,16 +164,12 @@ class Help:
         if problem_message is None:
             raise errors.ResultsNotFound(f"Message ID ***{id_}*** doesn't exist, I think")
 
-        appinfo = await self.bot.application_info()
-        owner = appinfo.owner
-        avatar = owner.avatar_url_as(format=None)
-        footer = f"Message sent on {ctx.message.timestamp}"
-        response_embed = (discord.Embed(colour=0x00FF00)
-                         .set_author(name=str(owner), icon_url=avatar)
-                         .set_thumbnail(url=appinfo.icon_url)
-                         .add_field(name="Response:", value=response)
-                         .set_footer(text=footer)
+        avatar = self.bot.owner.avatar_url_as(format=None)
+        response_embed = (discord.Embed(colour=0x00FF00, description=response, timestamp=ctx.message.created_at)
+                         .set_author(name=str(self.bot.owner), icon_url=avatar)
+                         .set_thumbnail(url=self.bot.appinfo.icon_url)
                          )
+
         msg = f"{problem_message.author.mention}, you have a response for message ***{id_}***:"
         await problem_message.author.send(msg, embed=response_embed)
         await problem_message.channel.send(msg, embed=response_embed)
@@ -183,20 +184,23 @@ class Help:
             await ctx.send(f"**Saved Message from {problem_message.author}:**", embed=problem_message.embed)
         raise errors.ResultsNotFound(f"ID {id_} doesn't exist, I think")
 
-    @commands.command(aliases=['cogs'])
+    @commands.command(aliases=['cogs', 'mdls'])
     async def modules(self, ctx):
-        modules_embed = discord.Embed(title="List of my modules", colour=self.bot.colour)
+        """Shows all the *visible* modules that I have loaded"""
+        visible_cogs =  ((name, cog.__doc__ or '\n') for name, cog in self.bot.cogs.items()
+                         if name and not cog.__hidden__)
+        formatted_cogs = [f'`{name}` => {truncate(doc.splitlines()[0], 20, "...")}' for name, doc in visible_cogs]
 
-        visible_cogs =  ((name, cog) for name, cog in self.bot.cogs.items() if name and not cog.__hidden__)
-        for name, cog in sorted(visible_cogs, key=operator.itemgetter(0)):
-            doc = cog.__doc__ or 'No description... yet.'
-            modules_embed.add_field(name=name, value=truncate(doc.splitlines()[0], 20, '...'))
-
-        modules_embed.set_footer(text=f'Type "{ctx.prefix}commands {{module_name}}" for all the commands on a module')
+        modules_embed = (discord.Embed(title="List of my modules",
+                                       description='\n'.join(formatted_cogs),
+                                       colour=self.bot.colour)
+                        .set_footer(text=f'Type `{ctx.prefix}help` for help.')
+                        )
         await ctx.send(embed=modules_embed)
 
     @commands.command(aliases=['cmds'])
     async def commands(self, ctx, cog: BotCogConverter):
+        """Shows all the *visible* commands I have in a given cog/module"""
         commands_embeds = await self.bot.formatter.format_help_for(ctx, cog)
         for embed in commands_embeds:
             await ctx.send(embed=embed)
