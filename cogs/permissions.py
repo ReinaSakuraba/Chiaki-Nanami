@@ -30,7 +30,7 @@ class Idable(namedtuple('Idable', 'original id')):
 _permissions_help = """
     Sets the permissions for {thing}.
 
-    A {thing} can be allowed or blocked on one of 4 levels:
+    {thing_cap} can be allowed or blocked on one of 4 levels:
     server     = Affects this particular server
     channel    = Affects the channels specified, or the current channel if not specified
     role       = Affects the roles specified (at least one must be specified)
@@ -40,7 +40,7 @@ _permissions_help = """
 """
 
 def _make_doc(thing, extra=''):
-    return _permissions_help.format(thing=thing, extra=extra)
+    return _permissions_help.format(thing=thing, thing_cap=thing.capitalize(), extra=extra)
 _perm_set_command_help = _make_doc('a command', extra=('This will affect aliases as well. If a command group is blocked, '
                                                       'its subcommands are blocked as well.'))
 
