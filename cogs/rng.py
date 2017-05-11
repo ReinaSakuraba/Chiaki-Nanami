@@ -85,15 +85,13 @@ class RNG:
         if not question.endswith('?'):
             raise InvalidUserArgument(f"{ctx.author.mention}, that's not a question, I think.")
 
-        msg = await ctx.send(f"{ctx.author.mention}\n"
-                             f"\N{BLACK QUESTION MARK ORNAMENT}: **{question}**\n")
-        await asyncio.sleep(random.uniform(0.5, 1.5))
-
-        with ctx.typing():
-            await msg.edit(content=f"{msg.content}\n\N{BILLIARDS}: ... \N{THINKING FACE}")
-            await asyncio.sleep(random.uniform(0.75, 1.25) * 2)
-            answer = random.choice(BALL_ANSWERS)
-            await msg.edit(content=msg.content.replace('\N{THINKING FACE}', f'***__{answer}.__***'))
+        # TODO: Embeds
+        question_fmt = f"{ctx.author.mention}\n\N{BLACK QUESTION MARK ORNAMENT}: **{question}**"
+        msg = await ctx.send(question_fmt)
+        async with ctx.typing():
+            for answer in ('...\N{THINKING FACE}', random.choice(BALL_ANSWERS)):
+                await asyncio.sleep(random.uniform(0.75, 1.25) * 2)
+                await msg.edit(content=f"{question_fmt}\n\N{BILLIARDS}: {answer}")
 
     @commands.command(usage='Nadeko;Salt;PvPCraft;mee6;Chiaki Nanami')
     async def choose(self, ctx, *, choices: str):
