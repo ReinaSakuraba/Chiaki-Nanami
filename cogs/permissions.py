@@ -28,7 +28,7 @@ class Idable(namedtuple('Idable', 'original id')):
         return super().__new__(cls, original, original.id)
 
 _permissions_help = """
-    Sets the permissions for a particular {thing}.
+    Sets the permissions for {thing}.
 
     A {thing} can be allowed or blocked on one of 4 levels:
     server     = Affects this particular server
@@ -41,15 +41,15 @@ _permissions_help = """
 
 def _make_doc(thing, extra=''):
     return _permissions_help.format(thing=thing, extra=extra)
-_perm_set_command_help = _make_doc('command', extra=('This will affect aliases as well. If a command group is blocked, '
+_perm_set_command_help = _make_doc('a command', extra=('This will affect aliases as well. If a command group is blocked, '
                                                       'its subcommands are blocked as well.'))
 
 class PermLevel(enum.Enum):
     user        = (discord.Member, '({0.guild.id}, {0.author.id})'.format, False, )
-    server      = (discord.Guild, attrgetter('guild.id'), True, )
-    channel     = (discord.TextChannel, attrgetter('channel.id'), None, )
     # higher roles should be prioritised
     role        = (discord.Role, lambda ctx: reversed([role.id for role in ctx.author.roles]), False, )
+    channel     = (discord.TextChannel, attrgetter('channel.id'), None, )
+    server      = (discord.Guild, attrgetter('guild.id'), True, )
 
     def __init__(self, type_, ctx_key, require_ctx):
         # True: Requires no args
@@ -91,11 +91,11 @@ class PermAction(namedtuple('PermAction', 'value action emoji colour')):
         action = functools.partial(super().__new__, cls)
 
         if mode in ('allow', 'unlock', 'enable', ):
-            return action(value=True,  action='enabled',  emoji='\U00002705', colour=discord.Colour.green())
+            return action(value=True,  action='enabled',  emoji='\U0001f513', colour=discord.Colour.green())
         elif mode in ('none', 'reset', 'null', ):
             return action(value=None,  action='reset',    emoji='\U0001f504', colour=discord.Colour.default())
         elif mode in ('deny', 'lock', 'disable', ):
-            return action(value=False, action='disabled', emoji='\U000026d4', colour=discord.Colour.red())
+            return action(value=False, action='disabled', emoji='\U0001f512', colour=discord.Colour.red())
         raise commands.BadArgument(f"Don't know what to do with {arg}.")
 
 class BlockType(enum.Enum):
@@ -114,6 +114,7 @@ class BlockType(enum.Enum):
                )
 
 command_perm_default = {i: {} for i in map(str, PermLevel)}
+ALL_MODULES_KEY = 'All Modules'
 
 class Permissions:
     def __init__(self):
@@ -136,7 +137,7 @@ class Permissions:
             return True
 
         cmd = ctx.command
-        names = itertools.chain(walk_parent_names(cmd), (cmd.cog_name, ))
+        names = itertools.chain(walk_parent_names(cmd), (cmd.cog_name, ALL_MODULES_KEY))
         results = (self._first_non_none_perm(name, ctx) for name in names)
         return first_non_none(results, True)
 
@@ -154,7 +155,7 @@ class Permissions:
 
     def _assert_is_valid_cog(self, thing):
         name = self._cog_name(thing)
-        if name in {'Owner', 'Help', 'Permissions'}:
+        if name in {'Owner', 'Permissions'}:
             raise errors.InvalidUserArgument(f"I can't modify permissions from the module {name}.")
 
     def _perm_iterator(self, name, ctx):
@@ -203,7 +204,7 @@ class Permissions:
         ids = await level.parse_args(ctx, *args)
         await self._perm_set(ctx, level, mode, command.qualified_name, *ids, thing='Command')
 
-    @commands.command(name='permsetmodule', aliases=['psm'], help=_make_doc('module'))
+    @commands.command(name='permsetmodule', aliases=['psm'], help=_make_doc('a module'))
     @checks.is_admin()
     @commands.guild_only()
     async def perm_set_module(self, ctx, level: level_getter, mode: PermAction,
@@ -211,6 +212,19 @@ class Permissions:
         self._assert_is_valid_cog(module)
         ids = await level.parse_args(ctx, *args)
         await self._perm_set(ctx, level, mode, type(module).__name__, *ids, thing='Module')
+
+    @commands.command(name='permsetall', aliases=['psall'], help=_make_doc('all modules'))
+    @checks.is_owner()
+    @commands.guild_only()
+    async def perm_set_all(self, ctx, level: level_getter, mode: PermAction, *args):
+        ids = await level.parse_args(ctx, *args)
+        self.set_perms(level, mode, ALL_MODULES_KEY, *ids)
+
+        # First field will be "name='All Modules', value='All Modules'""
+        embed = self._perm_result_embed(ctx, level, mode, ALL_MODULES_KEY, *ids, thing=ALL_MODULES_KEY)
+        embed.remove_field(0)
+        print(embed._fields)
+        await ctx.send(embed=embed)
 
     async def modify_command(self, ctx, command, bool_):
         command.enabled = bool_
