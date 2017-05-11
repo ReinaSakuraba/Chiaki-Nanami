@@ -28,7 +28,7 @@ default_bot_help = """\
 *{0.description}*
 
 To invite me to your server, use `->invite`, or just use this link:
-{0.invite_url}
+<{0.invite_url}>
 
 *Use `->modules` for all the modules with commands.
 Or `->commands "module"` for a list of commands for a particular module.*
