@@ -80,8 +80,8 @@ class Database(IDAbleDict):
             json.dump(self, f, indent=4, sort_keys=True, separators=(',', ' : '), cls=self.encoder)
 
     def _gzip_dump(self):
-        with atomic_temp_file(self.file_name, gzip.GzipFile, mode='w') as out:
-            out.write(json.dumps(self) + '\n')
+        with atomic_temp_file(self.file_name, gzip.GzipFile, mode='wb') as out:
+            out.write(json.dumps(self).encode('utf-8') + b'\n')
 
     async def dump(self):
         with await self.lock:
