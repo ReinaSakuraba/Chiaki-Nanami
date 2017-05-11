@@ -1,3 +1,4 @@
+import contextlib
 import discord
 
 from discord.ext import commands
@@ -28,7 +29,7 @@ class Admin:
     def _check_role_position(ctx, role, action):
         author = ctx.author
         top_role = author.top_role
-        if role >= top_role and not checks.is_owner_predicate(ctx):
+        if role >= top_role:
             raise errors.InvalidUserArgument(f"You can't {action} a role higher than or equal "
                                              f"to your highest role (**{top_role}**)")
 
@@ -126,10 +127,9 @@ class Admin:
         """
         self_roles_ids = self.self_roles[ctx.guild]
         self_roles = [discord.utils.get(ctx.guild.roles, id=id) for id in self_roles_ids]
-        str_self_roles = str_join(', ', self_roles)
-        with redirect_exception((discord.Forbidden, "I don't think I have the Manage Roles perm... or maybe the role is too high..."),
-                                (discord.HTTPException, "Hm, it seems like this didn't work...")):
-            await ctx.send(str_self_roles)
+        msg = (f'List of self-assignable roles: \n{str_join(", ", self_roles)}' 
+               if self_roles else 'There are no self-assignable roles...')
+        await ctx.send(msg)
 
     async def _self_role(self, role_action, role):
         self_roles = self.self_roles[role.guild]
@@ -171,7 +171,7 @@ class Admin:
         This role must be lower than both the bot's highest role and your highest role.
         """
         # This normally won't raise an exception, so we have to check for that
-        self._check_role_position(ctx, role, "add")
+        self._check_role_position(ctx, role, 'add')
         with redirect_exception((discord.Forbidden, f"I can't give {user} {role}. Either I don't have the right perms, "
                                                      "or you're trying to add a role that's higher than mine"),
                                 (discord.HTTPException, f"Giving {role} to {user} failed. Not sure why though...")):
@@ -186,7 +186,7 @@ class Admin:
         This role must be lower than both the bot's highest role and your highest role.
         Do not confuse this with `{prefix}deleterole`, which deletes a role from the server.
         """
-        self._check_role_position(ctx, role, "remove")
+        self._check_role_position(ctx, role, 'remove')
         with redirect_exception((discord.Forbidden, f"I can't remove **{role}** from {user}. Either I don't have the right perms, "
                                                      "or you're trying to remove a role that's higher than mine"),
                                 (discord.HTTPException, f"Removing {role} from {user} failed. Not sure why though...")):
@@ -225,7 +225,7 @@ class Admin:
 
         args = parser.parse_args(args)
 
-        colour = make_converter(commands.ColourConverter, ctx, args.color).convert()
+        colour = await ctx.command.do_conversion(ctx, discord.Colour, args.color)
 
         permissions = discord.Permissions(args.permissions)
         if permissions.administrator and not (author.permissions.administrator or author.id == guild.owner.id):
@@ -284,7 +284,8 @@ class Admin:
             raise errors.InvalidUserArgument("You are trying to edit a role to have administrator permissions "
                                              "as a non-administrator. Please don't do that.")
 
-        colour = make_converter(commands.ColourConverter, ctx, args.color).convert()
+        colour = await ctx.command.do_conversion(ctx, discord.Colour, args.color)
+
         fields = {
             'name': args.name,
             'colour': colour,
@@ -312,17 +313,19 @@ class Admin:
             await role.delete()
         await ctx.send(f"Successfully deleted **{role.name}**!")
 
+    # TODO: Allow embeds in welcome messages
+    # XXX: Should I actually do it though? It will be very complicated and Nadeko-like
     @commands.command()
     @checks.admin_or_permissions(manage_guild=True)
     async def welcome(self, ctx, *, message: str):
         """Sets the bot's message when a member joins this server.
 
         The following special formats can be in the message:
-        {user}     = the member that joined. If one isn't placed, it's placed at the beginning of the message.
-        {server}   = Optional, the name of the server.
-        {count}    = how many members are in the server now. ,
-        {countord} = like {count}, but as an ordinal.
-        {joinedat} = The date and time when the member joined
+        {{user}}     = the member that joined. If one isn't placed, it's placed at the beginning of the message.
+        {{server}}   = Optional, the name of the server.
+        {{count}}    = how many members are in the server now. ,
+        {{countord}} = like {{count}}, but as an ordinal.
+        {{joinedat}} = The date and time when the member joined
         """
         if "{user}" not in message:
             message = "{user} " + message
@@ -349,6 +352,7 @@ class Admin:
             '{server}': str(guild),
             '{count}': str(member_count),
             '{countord}': ordinal(member_count),
+            # TODO: Should I use %c...?
             '{joinedat}': nice_time(member.joined_at)
         }
 
@@ -358,7 +362,12 @@ class Admin:
     @commands.command()
     @checks.admin_or_permissions(manage_guild=True)
     async def byebye(self, ctx, *, message: str):
-        """Sets the bot's message when a member leaves this server"""
+        """Sets the bot's message when a member leaves this server
+
+        Unlike {prefix}welcome, the only prefix you can specify is {{user}}.
+        """
+        if "{user}" not in message:
+            message = "{user} " + message
         self.leave_messages[str(ctx.guild.id)] = message
         await ctx.send(f"Leave message has been set to *{message}*")
 
@@ -423,6 +432,10 @@ class Admin:
         with redirect_exception((KeyError, f"**{ctx.guild}** never had any custom prefixes...")):
             self.bot.custom_prefixes.pop(ctx.guild)
         await ctx.send(f"Done. **{ctx.guild}** no longer has any custom prefixes")
+
+    async def on_guild_role_delete(self, role):
+        with contextlib.suppress(ValueError):
+            self.self_roles[role.guild].remove(role.id)
 
 def setup(bot):
     bot.add_cog(Admin(bot))
