@@ -5,7 +5,7 @@ from discord.ext import commands
 from functools import partial
 
 from .utils import checks, errors
-from .utils.converter import ArgumentParser, make_converter
+from .utils.converter import ArgumentParser
 from .utils.context_managers import redirect_exception
 from .utils.database import Database
 from .utils.misc import multi_replace, nice_time, ordinal, str_join

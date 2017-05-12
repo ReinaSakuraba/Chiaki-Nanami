@@ -12,29 +12,17 @@ from .context_managers import redirect_exception
 from .errors import InvalidUserArgument
 from .misc import pairwise, parse_int
 
-# We need this because discord.py rewrite converters no longer puts ctx or arg in __init__
-# Thie makes one-lining it near-impossible.
-def make_converter(converter, ctx, arg, *converter_args, **converter_kwargs):
-    c = converter(*converter_args, **converter_kwargs)
-    c.prepare(ctx, arg)
-    return c
 
-def type_to_converter(type_):
-    """Returns the underlying converter that discord.py uses for converting arguments."""
-    if type_ is bool:
-        return commands.core._convert_to_bool
-    module = getattr(type_, '__module__', '')
-    return (getattr(commands, f'{type_.__name__}Converter', type_)
-            if module.startswith('discord') and not module.endswith('converter') else _type)
-
+# Custom ArgumentParser because the one in argparse raises SystemExit upon failure, 
+# which kills the bot
 class ArgumentParser(argparse.ArgumentParser):
     def error(self, message):
         raise commands.BadArgument(f'Failed to parse args.```\n{message}```')
 
+
 class ApproximateUser(commands.MemberConverter):
-    async def convert(self):
-        arg = self.argument
-        channel, guild = self.ctx.channel, self.ctx.guild
+    async def convert(self, ctx, arg):
+        channel, guild = ctx.channel, ctx.guild
         arg_lower = arg.lower()
 
         if guild:
@@ -50,11 +38,11 @@ class ApproximateUser(commands.MemberConverter):
                 return next_member
         return super().convert()
 
+
 # Is there any way to make this such that there's no repetition?
 class ApproximateRole(commands.RoleConverter):
-    async def convert(self):
-        arg = self.argument
-        channel, guild = self.ctx.channel, self.ctx.guild
+    async def convert(self, ctx, arg):
+        channel, guild = ctx.channel, ctx.guild
         arg_lowered = arg.lower()
 
         if guild:
@@ -67,10 +55,11 @@ class ApproximateRole(commands.RoleConverter):
                 return next_role
         return super().convert()
 
+
 class BotCogConverter(commands.Converter):
-    def convert(self):
-        bot = self.ctx.bot
-        lowered = self.argument.lower()
+    async def convert(self, ctx, arg):
+        bot = ctx.bot
+        lowered = arg.lower()
 
         result = discord.utils.find(lambda k: k.lower() == lowered, bot.all_cogs)
         if result is None:
@@ -78,12 +67,14 @@ class BotCogConverter(commands.Converter):
 
         return bot.all_cogs[result]
 
+
 class BotCommand(commands.Converter):
-    def convert(self):
-        cmd = self.ctx.bot.get_command(self.argument)
+    async def convert(self, ctx, arg):
+        cmd = ctx.bot.get_command(arg)
         if cmd is None:
-            raise commands.BadArgument(f"I don't recognized the {self.argument} command")
+            raise commands.BadArgument(f"I don't recognized the {arg} command")
         return cmd
+
 
 def non_negative(num):
     num = parse_int(num)
@@ -92,6 +83,7 @@ def non_negative(num):
     if num >= 0:
         return num
     raise commands.BadArgument(f'Number cannot be negatives')
+
 
 def attr_converter(obj, msg="Cannot find attribute {attr}."):
     def attrgetter(attr):
@@ -103,6 +95,7 @@ def attr_converter(obj, msg="Cannot find attribute {attr}."):
             raise commands.BadArgument(msg.format(attr=attr))
     return attrgetter
 
+
 def number(s):
     for typ in (int, float):
         try:
@@ -111,11 +104,13 @@ def number(s):
             continue
     raise commands.BadArgument(f"{s} is not a number.")
 
+
 def item_converter(d, *, key=lambda k: k, error_msg="Couldn't find key \"{arg}\""):
     def itemgetter(arg):
         with redirect_exception((Exception, error_msg.format(arg=arg)), cls=commands.BadArgument):
             return d[key(arg)]
     return itemgetter
+
 
 DURATION_MULTIPLIERS = {
     'y': 60 * 60 * 24 * 365, 'yr' : 60 * 60 * 24 * 365,
@@ -141,12 +136,12 @@ def duration(string):
         no_nones = filter(None, match.groups())
         return sum(float(amount) * DURATION_MULTIPLIERS[unit] for amount, unit in pairwise(no_nones))
 
+
 class union(commands.Converter):
     def __init__(self, *types):
         self.types = types
 
-    async def convert(self):
-        arg, ctx = self.argument, self.ctx
+    async def convert(self, ctx, arg):
         for type_ in self.types:
             try:
                 # small hack here because commands.Command.do_conversion expects a Command instance
@@ -156,6 +151,7 @@ class union(commands.Converter):
                 continue
         raise commands.BadArgument(f"I couldn't parse {arg} successfully, "
                                    f"given these types: {', '.join([t.__name__ for t in self.types])}")
+
 
 def in_(*choices):
     def in_converter(arg):
