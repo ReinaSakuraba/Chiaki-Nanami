@@ -57,8 +57,6 @@ initial_extensions = (
 #   'cogs.quotes',
     'cogs.rng',
     'cogs.searches',
-#   'cogs.diepio.partylink',
-    'cogs.diepio.wr',
 #   'cogs.games.eventhost',
 #   'cogs.games.fizzbuzz',
 #   'cogs.games.hangman',
@@ -95,7 +93,7 @@ async def on_ready():
     bot.loop.create_task(bot.update_official_invite())
 
 @bot.event
-async def on_command_error(error, ctx):
+async def on_command_error(ctx, error):
     cause =  error.__cause__
     if isinstance(error, errors.ChiakiException):
         await ctx.send(str(error))
