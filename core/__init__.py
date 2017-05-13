@@ -1,0 +1,1 @@
+from .bot import chiaki_bot
