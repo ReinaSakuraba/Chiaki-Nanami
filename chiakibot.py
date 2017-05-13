@@ -170,6 +170,13 @@ class ChiakiBot(commands.Bot):
         if self._config['restart_code'] == 0:
             raise RuntimeError("restart_code cannot be zero")
 
+        self.loop.create_task(self._set_colour())
+
+    # commands.ColourConverter.convert() is now a coro, 
+    # so we have to set the colour this way
+    async def _set_colour(self):
+        self.colour = await commands.ColourConverter().convert(None, self._config['colour'])
+
     async def close(self):
         self.counter.update(self.persistent_counter)
         self.persistent_counter.update(self.counter)
@@ -265,12 +272,6 @@ class ChiakiBot(commands.Bot):
         return (end - start) * 1000
 
     # ------ Config-related properties ------
-
-    @discord.utils.cached_property
-    def colour(self):
-        colour_converter = commands.ColourConverter()
-        colour_converter.prepare(None, self._config['colour'])
-        return colour_converter.convert()
 
     @discord.utils.cached_property
     def permissions(self):
