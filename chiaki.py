@@ -8,10 +8,10 @@ import re
 import sys
 import traceback
 
-from chiakibot import chiaki_bot
 from cogs.utils import errors
 from cogs.utils.context_managers import redirect_exception
 from cogs.utils.misc import file_handler
+from core import chiaki_bot
 from discord.ext import commands
 
 # use faster event loop, but fall back to default if on Windows or not installed

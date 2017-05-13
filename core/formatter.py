@@ -25,7 +25,7 @@ class ChiakiFormatter(commands.HelpFormatter):
     def command_usage(self):
         cmd = self.command
         prefix = self.context.prefix
-        qualified_names = [f"{cmd.full_parent_name} {name}" for name in command.all_names]
+        qualified_names = [f"{cmd.full_parent_name} {name}" for name in cmd.all_names]
         if cmd.clean_params:
             usage = cmd.usage
             if isinstance(usage, Sequence):
