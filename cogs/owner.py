@@ -11,7 +11,7 @@ import traceback
 
 from discord.ext import commands
 
-from .utils import checks
+from .utils.checks import OWNER_CHECK
 from .utils.converter import item_converter
 from .utils.context_managers import temp_attr
 from .utils.misc import code_msg
@@ -24,7 +24,7 @@ class Owner:
     def __init__(self, bot):
         self.bot = bot
         self._last_result = None
-        self.__local_check = checks.ChiakiCheck(checks.is_owner_predicate, role="Bot Owner")
+        self.__local_check = OWNER_CHECK
 
     async def _load(self, ctx, ext):
         try:

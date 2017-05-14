@@ -41,8 +41,10 @@ def _format_perms(**perms):
 async def is_owner_predicate(ctx):
     return await ctx.bot.is_owner(ctx.author)
 
+OWNER_CHECK = ChiakiCheck(is_owner_predicate, role="Bot Owner")
+
 def is_owner():
-    return commands.check(ChiakiCheck(is_owner_predicate, role="Bot Owner"))
+    return commands.check(OWNER_CHECK)
 
 def server_owner_predicate(ctx):
     return ctx.author.id == ctx.guild.owner.id
