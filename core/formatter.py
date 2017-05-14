@@ -7,7 +7,6 @@ from collections.abc import Sequence
 from discord.ext import commands
 from itertools import chain
 
-from cogs.utils.checks import ChiakiCheck
 from cogs.utils.context_managers import temp_attr
 from cogs.utils.misc import truncate
 from cogs.utils.paginator import DelimPaginator
@@ -41,7 +40,7 @@ class ChiakiFormatter(commands.HelpFormatter):
 
     def command_requirements(self):
         command = self.command
-        chiaki_checks = [check for check in command.checks if isinstance(check, ChiakiCheck)]
+        chiaki_checks = [check for check in command.checks if getattr(check, '__chiaki_check__', False)]
 
         try:
             local_check = getattr(command.instance, f'_{command.cog_name}__local_check')
@@ -51,7 +50,7 @@ class ChiakiFormatter(commands.HelpFormatter):
             if isinstance(local_check, ChiakiCheck):
                 chiaki_checks.append(local_check)
 
-        return {key: ', '.join(filter(None, map(operator.attrgetter(key), chiaki_checks))) 
+        return {key: ', '.join(filter(None, map(operator.attrgetter(key), chiaki_checks))) or 'None'
                 for key in ['roles', 'perms'] }
 
     def paginate_cog_commands(self, cog_name):
