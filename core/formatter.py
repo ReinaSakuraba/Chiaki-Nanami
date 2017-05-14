@@ -1,13 +1,16 @@
 import discord
+import functools
 import inspect
 import operator
 
 from collections.abc import Sequence
 from discord.ext import commands
+from itertools import chain
 
 from cogs.utils.checks import ChiakiCheck
 from cogs.utils.context_managers import temp_attr
 from cogs.utils.misc import truncate
+from cogs.utils.paginator import DelimPaginator
 
 # small hacks to make command display all their possible names
 commands.Command.all_names = property(lambda self: [self.name, *self.aliases])
@@ -29,27 +32,36 @@ class ChiakiFormatter(commands.HelpFormatter):
         if cmd.clean_params:
             usage = cmd.usage
             if isinstance(usage, Sequence):
-                return '\n'.join([f'`{prefix}{random.choice(qualified_names)} {u}`' for u in always_iterable(usage)])
+                return '\n'.join([f'`{prefix}{random.choice(qualified_names)} {u}`' 
+                                  for u in always_iterable(usage)])
             # Assume it's invalid; usage must be a sequence (either a tuple, list, or str)
             return 'No example... yet'
-        # commands that don't take any arguments don't really need an example generated manually....
+        # commands that don't take any arguments don't really need an example generated manually...
         return None
 
     def command_requirements(self):
-        chiaki_checks = [check for check in self.command.checks if isinstance(check, ChiakiCheck)]
-        return {key: ', '.join(filter(None, map(operator.attrgetter(key), chiaki_checks))) or 'None' 
+        command = self.command
+        chiaki_checks = [check for check in command.checks if isinstance(check, ChiakiCheck)]
+
+        try:
+            local_check = getattr(command.instance, f'_{command.cog_name}__local_check')
+        except AttributeError:
+            pass
+        else:
+            if isinstance(local_check, ChiakiCheck):
+                chiaki_checks.append(local_check)
+
+        return {key: ', '.join(filter(None, map(operator.attrgetter(key), chiaki_checks))) 
                 for key in ['roles', 'perms'] }
 
     def paginate_cog_commands(self, cog_name):
-        paginator = commands.Paginator(prefix='', suffix='', max_size=2048)
-        paginator.add_line(self.description, empty=True)
-        paginator.add_line('**List of commands:**')
+        sorted_commands = sorted(self.context.bot.get_cog_commands(cog_name), key=str)
+        formatted_names =  (map('`{}`'.format, cmd.all_names) for cmd in sorted_commands)
+        formatted_lines = map(' | '.join, formatted_names)
+        headers = (self.description, '', '**List of commands:**')
 
-        for command in sorted(self.context.bot.get_cog_commands(cog_name), key=operator.attrgetter('name')):
-            name, aliases = command.name, ', '.join(command.aliases)
-            paginator.add_line(f'`{name}` {f"| `{aliases}`" * bool(aliases)}')
-
-        return paginator
+        return DelimPaginator.from_iterable(chain(headers, formatted_lines), 
+                                            prefix='', suffix='', max_size=2048)
 
     async def bot_help(self):
         bot, func = self.context.bot, self.apply_function
@@ -63,12 +75,10 @@ class ChiakiFormatter(commands.HelpFormatter):
         cog_name = type(cog).__name__
         paginated_commands = self.paginate_cog_commands(cog_name)
 
-        embeds = []
-        for i, page in enumerate(paginated_commands.pages):
-            module_embed = discord.Embed(description=page, colour=bot.colour)
-            if i == 0:
-                module_embed.title = f"{cog_name} ({ctx.prefix})"
-            embeds.append(module_embed)
+        embed = functools.partial(discord.Embed, colour=bot.colour)
+        embeds = [embed(title=f'{cog_name} ({ctx.prefix})', description=page)
+                  if i == 0 else embed(description=page)
+                  for i, page in enumerate(paginated_commands.pages) ]
 
         embeds[-1].set_footer(text=self.get_ending_note())
         return embeds

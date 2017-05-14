@@ -22,12 +22,9 @@ class Owner:
     __hidden__ = True
 
     def __init__(self, bot):
-        # We don't do the owner_check right away - it's in setup()
-        # The reason why we do this is so that Bot Owner will show up as a requirement
-        # As __local_check isn't shown in the actual command
-        # TODO: Work with __local_check
         self.bot = bot
         self._last_result = None
+        self.__local_check = checks.ChiakiCheck(checks.is_owner_predicate, role="Bot Owner")
 
     async def _load(self, ctx, ext):
         try:
@@ -184,10 +181,4 @@ class Owner:
                 await asyncio.sleep(1)
 
 def setup(bot):
-    owner = Owner(bot)
-    local_check = checks.ChiakiCheck(checks.is_owner_predicate, role="Bot Owner")
-    for name, member in inspect.getmembers(owner):
-        if isinstance(member, commands.Command):
-            member.checks.append(local_check)
-
-    bot.add_cog(owner)
+    bot.add_cog(Owner(bot))
