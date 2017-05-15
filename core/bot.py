@@ -134,8 +134,7 @@ class ChiakiBot(commands.Bot):
         log.info(f"database {db.name} successfully removed")
 
     async def dump_databases(self):
-        for db in self.databases:
-            await db.dump()
+        await asyncio.gather(*(db.dump() for db in self.databases))
 
     # Just some looping functions
     async def change_game(self):
