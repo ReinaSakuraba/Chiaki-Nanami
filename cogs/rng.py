@@ -191,7 +191,7 @@ class RNG:
     async def colour(self, ctx):
         """Generates a random colo(u)r."""
         colour = discord.Colour(random.randint(0, 0xFFFFFF))
-        rgb = colour.to_grb()
+        rgb = colour.to_rgb()
         h, s, v = colorsys.rgb_to_hsv(*(v / 255 for v in rgb))
         hsv = h * 360, s * 100, v * 100
 
