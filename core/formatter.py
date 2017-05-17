@@ -47,7 +47,7 @@ class ChiakiFormatter(commands.HelpFormatter):
         except AttributeError:
             pass
         else:
-            if isinstance(local_check, ChiakiCheck):
+            if getattr(local_check, "__chiaki_check__", False):
                 chiaki_checks.append(local_check)
 
         return {key: ', '.join(filter(None, map(operator.attrgetter(key), chiaki_checks))) or 'None'
@@ -69,16 +69,14 @@ class ChiakiFormatter(commands.HelpFormatter):
         return func(result)
 
     async def cog_embed(self):
-        ctx = self.context
-        bot, cog = ctx.bot, self.command
+        ctx, cog = self.context, self.command
         cog_name = type(cog).__name__
         paginated_commands = self.paginate_cog_commands(cog_name)
 
-        embed = functools.partial(discord.Embed, colour=bot.colour)
-        embeds = [embed(title=f'{cog_name} ({ctx.prefix})', description=page)
-                  if i == 0 else embed(description=page)
-                  for i, page in enumerate(paginated_commands.pages) ]
+        embed = functools.partial(discord.Embed, colour=ctx.bot.colour)
+        embeds = [embed(description=page) for page in paginated_commands.pages]
 
+        embeds[0].title = f'{cog_name} ({ctx.prefix})'
         embeds[-1].set_footer(text=self.get_ending_note())
         return embeds
 
