@@ -12,7 +12,7 @@ from .utils import checks, errors
 from .utils.compat import always_iterable, iterate
 from .utils.converter import item_converter, BotCommand, BotCogConverter
 from .utils.database import Database
-from .utils.misc import str_join
+from .utils.misc import emoji_url, str_join
 
 def walk_parents(command):
     return iter(iterate(attrgetter('parent'), command).__next__, None)
@@ -82,9 +82,6 @@ class PermLevel(enum.Enum):
 
 level_getter = item_converter(PermLevel, key=str.lower, error_msg="Unrecognized level: {arg}")
 
-def _emoji_url(emoji):
-    return f'https://twemoji.maxcdn.com/2/72x72/{hex(ord(emoji))[2:]}.png'
-
 class PermAction(namedtuple('PermAction', 'value action emoji colour')):
     def __new__(cls, arg):
         mode = arg.lower()
@@ -108,7 +105,7 @@ class BlockType(enum.Enum):
 
     def embed(self, user):
         return (discord.Embed(colour=self.colour)
-               .set_author(name=f'User {self.name}ed', icon_url=_emoji_url(self.emoji))
+               .set_author(name=f'User {self.name}ed', icon_url=emoji_url(self.emoji))
                .add_field(name='User', value=str(user))
                .add_field(name='ID', value=user.id)
                )
@@ -175,7 +172,7 @@ class Permissions:
     def _perm_result_embed(ctx, level, mode, name, *args, thing):
         originals = ', '.join(str(arg.original) for arg in args)
         return (discord.Embed(colour=mode.colour, timestamp=ctx.message.created_at) 
-               .set_author(name=f'{thing} {mode.action}!', icon_url=_emoji_url(mode.emoji))
+               .set_author(name=f'{thing} {mode.action}!', icon_url=emoji_url(mode.emoji))
                .add_field(name=thing, value=name)
                .add_field(name=level.name.title(), value=originals, inline=False)
                )
