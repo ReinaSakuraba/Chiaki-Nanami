@@ -53,10 +53,7 @@ except ImportError:
                     return task
             return decorator
 
-        if callable(maxsize):
-            return wrapper(maxsize)
-        else:
-            return wrapper
+        return wrapper(maxsize) if callable(maxsize) else wrapper
 
 try:
     from colorthief import ColorThief
@@ -84,11 +81,8 @@ async def _dominant_color_from_url(url):
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, functools.partial(ColorThief(f).get_color, quality=1))
 
-def _color_from_rgb(r, g, b):
-    return discord.Colour(r << 16 | g << 8 | b)
-
 async def url_color(url):
-    return _color_from_rgb(*(await _dominant_color_from_url(url)))
+    return discord.Colour.from_rgb(*(await _dominant_color_from_url(url)))
 url_colour = url_color
 
 async def user_color(user):
