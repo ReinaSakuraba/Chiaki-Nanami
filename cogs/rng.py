@@ -85,13 +85,24 @@ class RNG:
         if not question.endswith('?'):
             raise InvalidUserArgument(f"{ctx.author.mention}, that's not a question, I think.")
 
-        # TODO: Embeds
-        question_fmt = f"{ctx.author.mention}\n\N{BLACK QUESTION MARK ORNAMENT}: **{question}**"
-        msg = await ctx.send(question_fmt)
+        eight_ball_field_name = '\N{BILLIARDS} 8-ball'
+        eight_ball_embed = (discord.Embed(colour=random.randint(0, 0xFFFFFF))
+                           .add_field(name='\N{BLACK QUESTION MARK ORNAMENT} Question', value=question)
+                           .add_field(name=eight_ball_field_name, value='\u200b', inline=False)
+                           )
+        msg = await ctx.send(content=ctx.author.mention, embed=eight_ball_embed)
         async with ctx.typing():
             for answer in ('...\N{THINKING FACE}', random.choice(BALL_ANSWERS)):
                 await asyncio.sleep(random.uniform(0.75, 1.25) * 2)
-                await msg.edit(content=f"{question_fmt}\n\N{BILLIARDS}: {answer}")
+                await msg.edit(embed=eight_ball_embed.set_field_at(-1, name=eight_ball_field_name, value=answer, inline=False))
+
+        # TODO: Embeds
+        # question_fmt = f"{ctx.author.mention}\n\N{BLACK QUESTION MARK ORNAMENT}: **{question}**"
+        # msg = await ctx.send(question_fmt)
+        # async with ctx.typing():
+        #     for answer in ('...\N{THINKING FACE}', random.choice(BALL_ANSWERS)):
+        #         await asyncio.sleep(random.uniform(0.75, 1.25) * 2)
+        #         await msg.edit(content=f"{question_fmt}\n\N{BILLIARDS}: {answer}")
 
     @commands.command(usage='Nadeko;Salt;PvPCraft;mee6;Chiaki Nanami')
     async def choose(self, ctx, *, choices: str):
