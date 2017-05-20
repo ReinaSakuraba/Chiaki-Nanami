@@ -50,10 +50,9 @@ class ChiakiBot(commands.Bot):
         self.remove_command('help')
 
         self._config = collections.ChainMap(options.get('config', {}), _default_config)
-        self.counter = collections.Counter()
-        self.persistent_counter = Database('stats.json')
+        self.message_counter = 0
         self.custom_prefixes = Database('customprefixes.json')
-        self.databases = [self.persistent_counter, self.custom_prefixes, ]
+        self.databases = [self.custom_prefixes, ]
         self.cog_aliases = {}
 
         self.reset_requested = False
@@ -68,8 +67,6 @@ class ChiakiBot(commands.Bot):
         self.colour = await commands.ColourConverter().convert(None, self._config['colour'])
 
     async def close(self):
-        self.counter.update(self.persistent_counter)
-        self.persistent_counter.update(self.counter)
         await self.dump_databases()
         await super().close()
 
@@ -152,6 +149,7 @@ class ChiakiBot(commands.Bot):
             self.invites_by_bot.append(await official_guild.create_invite())
 
     async def ping(self, times=1):
+        """Returns the ping in milliseconds"""
         # I prefer using time.perf_counter()
         # Some people use time.monotonic(), 
         # but time.perf_counter() is literally made for timing things.
@@ -190,7 +188,7 @@ class ChiakiBot(commands.Bot):
 
     @property
     def official_guild_invite(self):
-        return random.choice(self.invites_by_bot)
+        return self._config.get('official_server_invite') or random.choice(self.invites_by_bot)
     official_server_invite = official_guild_invite
 
     # ------ misc. properties ------
