@@ -126,7 +126,9 @@ class Admin:
         using `{prefix}iam` or `{prefix}selfrole`
         """
         self_roles_ids = self.self_roles[ctx.guild]
-        self_roles = [discord.utils.get(ctx.guild.roles, id=id) for id in self_roles_ids]
+        getter = partial(discord.utils.get, ctx.guild.roles)
+        self_roles = [getter(id=id) for id in self_roles_ids]
+
         msg = (f'List of self-assignable roles: \n{str_join(", ", self_roles)}' 
                if self_roles else 'There are no self-assignable roles...')
         await ctx.send(msg)
@@ -337,7 +339,7 @@ class Admin:
     async def remove_welcome(self, ctx):
         """Removes the bot's message when a member joins this server."""
         with redirect_exception((KeyError, 'This server never had a welcome message.')):
-             self.join_messages.pop(str(ctx.guild.id))
+            del self.join_messages[str(ctx.guild.id)]
         await ctx.send('Successfully removed the welcome message.')
 
     async def on_member_join(self, member):
@@ -376,7 +378,7 @@ class Admin:
     async def remove_byebye(self, ctx):
         """Removes the bot's message when a member leaves this server."""
         with redirect_exception((KeyError, 'This server never had a leave message.')):
-            self.leave_messages.pop(str(ctx.guild.id))
+            del self.leave_messages[str(ctx.guild.id)]
         await ctx.send('Successfully removed the leave message.')
 
     async def on_member_leave(self, member):
@@ -430,7 +432,7 @@ class Admin:
     async def reset_prefix(self, ctx):
         """Resets the server's custom prefixes back to the default prefix ({prefix})"""
         with redirect_exception((KeyError, f"**{ctx.guild}** never had any custom prefixes...")):
-            self.bot.custom_prefixes.pop(ctx.guild)
+            del self.bot.custom_prefixes[ctx.guild]
         await ctx.send(f"Done. **{ctx.guild}** no longer has any custom prefixes")
 
     async def on_guild_role_delete(self, role):
