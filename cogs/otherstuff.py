@@ -96,6 +96,12 @@ class OtherStuffs:
                      )
         await ctx.send(embed=ship_embed)
 
+    @commands.command()
+    async def ping(self, ctx):
+        """Your average ping command"""
+        time = await self.bot.ping()
+        print(time)
+        await ctx.send(f'Poing! ({time:.3f} ms)')
 
     @commands.command()
     async def slap(self, ctx, target: discord.Member=None):
