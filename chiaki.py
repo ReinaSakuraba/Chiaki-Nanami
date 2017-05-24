@@ -117,7 +117,10 @@ command_log.addHandler(file_handler('commands'))
 @bot.event
 async def on_message(message):
     bot.message_counter += 1
-    await bot.process_commands(message)
+
+    # prevent other bots from triggering commands
+    if not message.author.bot:
+        await bot.process_commands(message)
 
 @bot.event
 async def on_command(ctx):
