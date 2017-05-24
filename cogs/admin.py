@@ -307,7 +307,7 @@ class Admin:
     async def delete_role(self, ctx, *, role: discord.Role):
         """Deletes a role from the server
 
-        Do not confuse this with `{prefix}removerole`, which deletes a role from the server.
+        Do not confuse this with `{prefix}removerole`, which removes a role from a member.
         """
         self._check_role_position(ctx, role, "delete")
         with redirect_exception((discord.Forbidden, "I need the **Manage Roles** perm to delete roles, I think."),
