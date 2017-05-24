@@ -2,12 +2,14 @@ import discord
 import functools
 import inspect
 import operator
+import random
 
 from collections.abc import Sequence
 from discord.ext import commands
 from itertools import chain
 
 from cogs.utils.context_managers import temp_attr
+from cogs.utils.compat import always_iterable
 from cogs.utils.misc import truncate
 from cogs.utils.paginator import DelimPaginator
 
