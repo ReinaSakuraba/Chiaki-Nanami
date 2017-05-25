@@ -24,7 +24,7 @@ else:
     from sympy.parsing.sympy_parser import (
         parse_expr, standard_transformations, implicit_multiplication_application
     )
-    default_transformations = (implicit_multiplication_application, *standard_transformations)
+    default_transformations = standard_transformations + (implicit_multiplication_application,)
 
 def _get_context(obj):
     return {attr: func for attr, func in inspect.getmembers(obj) if not attr.startswith('_')}
@@ -526,7 +526,7 @@ class Math:
         # SymPy related commands
         # Use oo for infinity
         @commands.command(aliases=['derivative'])
-        async def differentiate(self, ctx, expr: str, n: int=1):
+        async def differentiate(self, ctx, *, expr: str):
             """Finds the derivative of an equation
 
             n is the nth derivative you wish to calcuate.
@@ -536,7 +536,7 @@ class Math:
             symbols = list(equation.free_symbols)
             if len(symbols) > 1:
                 raise InvalidUserArgument("You have too many symbols in your equation")
-            result = sympy.pretty(sympy.diff(equation, *(symbols * n)))
+            result = sympy.pretty(sympy.diff(equation, *symbols))
             await self._result_say(ctx, equation, result, output_as_code=True)
 
         @commands.command()
