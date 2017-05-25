@@ -173,10 +173,10 @@ class Trivia:
     @commands.group(invoke_without_command=True)
     async def trivia(self, ctx, category):
         """It's trivia..."""
-        category = await self._get_category(ctx, category)
         if self.manager.session_exists(ctx.channel):
              return await ctx.send("A trivia game is already running in this channel...")
 
+        category = await self._get_category(ctx, category)
         with self.manager.temp_session(ctx.channel, TriviaSession(ctx, category)) as inst:
             await inst.run()
             if inst.force_closed:
