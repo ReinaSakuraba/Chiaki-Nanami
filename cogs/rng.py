@@ -83,7 +83,7 @@ class RNG:
     async def ball(self, ctx, *, question: str):
         """...it's a 8-ball"""
         if not question.endswith('?'):
-            raise InvalidUserArgument(f"{ctx.author.mention}, that's not a question, I think.")
+            return await ctx.send(f"{ctx.author.mention}, that's not a question, I think.")
 
         eight_ball_field_name = '\N{BILLIARDS} 8-ball'
         eight_ball_embed = (discord.Embed(colour=random.randint(0, 0xFFFFFF))
@@ -168,7 +168,7 @@ class RNG:
         """Gives you a random build for the Smasher branch to try out
 
         If points is not provided, it defaults to a max-level build (33)"""
-        await ctx.send(self._build_str(points, True))
+        await ctx.send(self._build_str(points, smasher=True))
 
     def _class(self):
         return random.choice(self.bot.get_cog("WRA").all_tanks() or _back_up_tanks)
