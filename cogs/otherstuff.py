@@ -1,12 +1,13 @@
 import discord
-import hashlib
 import json
 import operator
 import functools
 import random
+import sys
 
 from collections import namedtuple
 from discord.ext import commands
+from PIL import Image
 
 from .utils import errors
 from .utils.converter import item_converter
@@ -14,30 +15,72 @@ from .utils.converter import item_converter
 with open(r'data\copypastas.json', encoding='utf-8') as f:
     _copypastas = json.load(f)
 
-UserInfoNums = namedtuple('UserInfo', ['id', 'discriminator', 'avatar', 'created_at'])
-UserInfoNums.rating = property(lambda self: sum(self))
 
-def _user_info(user):
-    return UserInfoNums(user.id,
-                        int(user.avatar or user.default_avatar.value, 16),
-                        int(hashlib.md5(str(user).encode('utf-8')).hexdigest(), 16),
-                        user.created_at.timestamp()
-                        )
+# ---------------- Ship-related utilities -------------------
 
-_special_pairs = {}
+def _lerp_color(c1, c2, interp):
+    return tuple(round((v2 - v1) * interp + v1) for v1, v2 in zip(c1, c2))
+
+_lerp_red = functools.partial(_lerp_color, (0, 0, 0), (255, 0, 0))
+
+class UserInfo(namedtuple('UserInfo', ['name', 'id', 'avatar', 'created_at'])):
+    @classmethod
+    def from_user(cls, user):
+        avatar = user.avatar or user.default_avatar.value
+        return cls(str(user), user.id, avatar, user.created_at)
+
+    @discord.utils.cached_property
+    def value(self):
+        return (int.from_bytes(self.name.encode('utf-8'), sys.byteorder) +
+                self.id +
+                int(self.avatar, 16) +
+                self.created_at.timestamp()
+                )
+
+_default_rating_comments = (
+    'There is no chance for this to happen.',
+    'No way, not happening.',
+    'Nope.',
+    'Maybe.',
+    'Woah this actually might happen.',
+    'owo what\'s this',
+    'You\'ve got a chance!',
+    'Definitely.',
+    'What are you waiting for?!',
+)
+
+def _scale(old_min, old_max, new_min, new_max, number):
+    return ((number - old_min) / (old_max - old_min)) * (new_max - new_min) + new_min
+
+_value_to_index = functools.partial(_scale, 0, 100, 0, len(_default_rating_comments) - 1)
+
+class ShipRating(namedtuple('ShipRating', 'value comment')):
+    def __new__(cls, value, comment=None):
+        if comment is None:
+            index = round(_value_to_index(value))
+            comment = _default_rating_comments[index]
+        return super().__new__(cls, value, comment) 
+
+_special_pairs = {
+    # frozenset((239110748180054017, 192060404501839872)) : ShipRating(100, 'testing special pairs')
+}
 
 @functools.lru_cache(maxsize=2 ** 20)
 def _calculate_compatibilty(info1, info2):
-    id_pair = frozenset((info1, info2))
+    id_pair = frozenset((info1.id, info2.id))
     if id_pair in _special_pairs:
         return _special_pairs[id_pair]
 
     # User inputted themself as the second argument
     if len(id_pair) == 1:
-        return 0
+        return ShipRating(0, f"RIP {info1.name}. They're forever alone.")
 
     r = random.randrange
-    return (round((info1.rating + info2.rating + r(10000))) >> r(25, 100)) % 100
+    value = (round((info1.value + info2.value + r(10000))) >> r(25, 100)) % 100
+    return ShipRating(value)
+
+#--------------- End ship stuffs ---------------------
+
 
 class OtherStuffs:
     def __init__(self, bot):
@@ -57,7 +100,7 @@ class OtherStuffs:
         try:
             pasta = copypastas[name.title()]
         except KeyError:
-            raise errors.InvalidUserArgument(f"Category \"{category}\" doesn't have pasta called \"{name}\"")
+            return await ctx.send(f"Category \"{category}\" doesn't have pasta called \"{name}\"")
         embed = discord.Embed(title=f"{category} {name}", description=pasta, colour=0x00FF00)
         await ctx.send(embed=embed)
 
@@ -89,11 +132,17 @@ class OtherStuffs:
         # we have to use a tuple of these stats.
         # Using the actual User object won't work if we're gonna take advantage of functools.lru_cache
         # Because a change in avatar or username won't create a new result
-        rating = _calculate_compatibilty(_user_info(user1), _user_info(user1))
+        rating = _calculate_compatibilty(UserInfo.from_user(user1), UserInfo.from_user(user2))
+
         # TODO: Use pillow to make an image out of the two users' thumbnails.
-        ship_embed = (discord.Embed(title='Ship', description=f'{user1.mention} x {user2.mention}?', colour=0xff80aa)
-                     .add_field(name='Test', value=str(rating))
+        field_name = 'I give it a...'       # In case I decide to have it choose between mulitiple field_names 
+        description =  f'{user1.mention} x {user2.mention}?'
+        colour = discord.Colour.from_rgb(*_lerp_red(rating.value / 100))
+        ship_embed = (discord.Embed(title='Ship', description=description, colour=colour)
+                     .add_field(name=field_name, value=f'{rating.value} / 100')
+                     .set_footer(text=rating.comment)
                      )
+
         await ctx.send(embed=ship_embed)
 
     @commands.command()
