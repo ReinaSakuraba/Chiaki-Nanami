@@ -55,14 +55,14 @@ class Admin:
         else:
             await self._set_chiaki_role(ctx, key, role, 'assign an {key} role to')
 
-    @commands.command(name='adminrole', aliases=['ar'])
+    @commands.command(name='adminrole', aliases=['adr'])
     @checks.is_admin()
     async def admin_role(self, ctx, *, role: discord.Role=None):
         """Sets a role for the 'Admin' role. If no role is specified, it shows what role is assigned as the Admin role.
 
         Admins are a special type of administrator. They have access to most of the permission-related
         or server-related commands.
-        Only one role can be assigned as Admin. Default role is Bot Admin.
+        Only one role can be assigned as Admin. Default role is a role named "Bot Admin".
         """
         await self._chiaki_role_command(ctx, checks.ChiakiRole.admin, role)
 
@@ -73,11 +73,11 @@ class Admin:
         If no role is specified, it shows what role is assigned as the Moderator role.
 
         Moderators mainly have access to most of the mod commands, such as mute, kick, and ban.
-        Only one role can be assigned as Moderator. Default role is Bot Admin.
+        Only one role can be assigned as Moderator. Default role is a role named "Bot Admin".
         """
         await self._chiaki_role_command(ctx, checks.ChiakiRole.mod, role)
 
-    @commands.command(name='resetadminrole', aliases=['rar'])
+    @commands.command(name='resetadminrole', aliases=['radr'])
     @checks.is_admin()
     async def reset_admin_role(self, ctx):
         """Resets the Admin role to the default role."""
@@ -165,7 +165,7 @@ class Admin:
         await self._self_role(role_action, role)
         await ctx.send(msg)
 
-    @commands.command(name='addrole', aliases=['adr'])
+    @commands.command(name='addrole', aliases=['ar'])
     @checks.admin_or_permissions(manage_roles=True)
     async def add_role(self, ctx, user: discord.Member, *, role: discord.Role):
         """Adds a role to a user
@@ -323,11 +323,11 @@ class Admin:
         """Sets the bot's message when a member joins this server.
 
         The following special formats can be in the message:
-        {{user}}     = the member that joined. If one isn't placed, it's placed at the beginning of the message.
-        {{server}}   = Optional, the name of the server.
-        {{count}}    = how many members are in the server now. ,
-        {{countord}} = like {{count}}, but as an ordinal.
-        {{joinedat}} = The date and time when the member joined
+        `{{user}}`     = the member that joined. If one isn't placed, it's placed at the beginning of the message.
+        `{{server}}`   = Optional, the name of the server.
+        `{{count}}`    = how many members are in the server now. ,
+        `{{countord}}` = like `{{count}}`, but as an ordinal.
+        `{{joinedat}}` = The date and time when the member joined
         """
         if "{user}" not in message:
             message = "{user} " + message
