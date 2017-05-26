@@ -1,5 +1,6 @@
 import ast
 import discord
+import functools
 import inspect
 import itertools
 import math
@@ -14,6 +15,7 @@ from operator import itemgetter
 from random import randrange
 
 from .utils.converter import item_converter
+from .utils.database import Database
 from .utils.errors import InvalidUserArgument
 
 try:
@@ -22,7 +24,8 @@ except ImportError:
     sympy = None
 else:
     from sympy.parsing.sympy_parser import (
-        parse_expr, standard_transformations, implicit_multiplication_application
+        parse_expr as parse_sympy_expr, 
+        standard_transformations, implicit_multiplication_application
     )
     default_transformations = standard_transformations + (implicit_multiplication_application,)
 
@@ -397,20 +400,39 @@ def convert_unit(from_unit_type, to_unit_type, value):
     return str(round(new_value, 3)) + to_unit_type
 
 
+_default_parse_settings = {
+    'e_as_E': True,
+    '^_as_pow': True,
+}
+_e_sub_pattern = re.compile('e(?!rf)')
+_default_parses = _default_parse_settings.copy
+parse_expr = functools.partial(parse_sympy_expr, evaluate=False,
+                               transformations=default_transformations)
+
+MAGIC_ERROR_THING = 'error:\x00' # prepend for any errors
+
 class Math:
     def __init__(self, bot):
         self.bot = bot
+        self.parsing_configs = Database('math-parsing.json', 
+                                        default_factory=_default_parses)
 
     @staticmethod
     def _result_embed(ctx, input, output):
-        return (discord.Embed(colour=0x00FF00, timestamp=ctx.message.created_at)
+        if output.startswith(MAGIC_ERROR_THING):
+            color = 0xFF0000
+            output = output.replace(MAGIC_ERROR_THING, '', 1)
+        else:
+            color = 0x00FF00
+
+        return (discord.Embed(colour=color, timestamp=ctx.message.created_at)
                .add_field(name='Input', value=f'```{input}```')
-               .add_field(name='Result', value=f'{output}', inline=False)
+               .add_field(name='Result', value=f'```{output}```', inline=False)
                )
 
     async def _result_say(self, ctx, input, output, *, output_as_code=True):
         try:
-            return await ctx.send(embed=self._result_embed(ctx, input, f'```\n{output}```' if output_as_code else output))
+            return await ctx.send(embed=self._result_embed(ctx, input, output))
         except discord.HTTPException:
             return await ctx.send(f"Resulting message is too big for viewing.")
 
@@ -419,12 +441,12 @@ class Math:
         try:
             fn = sanitizer(fn_str)
         except (ValueError, SyntaxError) as e:
-            output = f"{type(e).__name__}: {e}"
+            output = f"{MAGIC_ERROR_THING}{type(e).__name__}: {e}"
         else:
             try:
                 output = fn()
             except Exception as e:
-                output = f"{type(e).__name__}: {e}"
+                output = f"{MAGIC_ERROR_THING}{type(e).__name__}: {e}"
         return output
 
     async def _async_calculate(self, fn_str, sanitizer):
@@ -451,10 +473,11 @@ class Math:
 
     @commands.command(aliases=['calc'])
     async def calculate(self, ctx, *, expr: str):
-        """Calculates a mathematical expression"""
+        """Calculates a mathematical expression.
+
+        Use `**` for exponents, `^` is the XOR operator.
+        """
         output = str(await self._async_calculate(expr, _sanitize))
-        if '^' in expr:
-            output += "\nNote: '^' is the XOR operator. Use '**' for exponentation."
         await self._result_say(ctx, expr, output)
 
     @commands.command(aliases=['vectorcalculate'])
@@ -522,17 +545,22 @@ class Math:
             conversions_embed.add_field(name=k, value='\n'.join([t[1] for t in v]))
         await ctx.send(embed=conversions_embed)
 
+    def _transform_expr(self, ctx, expr):
+        config = self.parsing_configs[ctx.author]
+        if config.get('e_as_E'):
+            expr = _e_sub_pattern.sub('E', expr)
+        if config.get('^_as_pow'):
+            expr = expr.replace('^', '**')
+        return expr
+
     if sympy:
         # SymPy related commands
         # Use oo for infinity
         @commands.command(aliases=['derivative'])
         async def differentiate(self, ctx, *, expr: str):
-            """Finds the derivative of an equation
+            """Finds the derivative of an equation"""
 
-            n is the nth derivative you wish to calcuate.
-            The expression must be in quotes.
-            """
-            equation = parse_expr(expr, evaluate=False, transformations=default_transformations)
+            equation = parse_expr(self._transform_expr(ctx, expr))
             symbols = list(equation.free_symbols)
             if len(symbols) > 1:
                 raise InvalidUserArgument("You have too many symbols in your equation")
@@ -548,22 +576,45 @@ class Math:
 
             The expression must be in quotes.
             """
-            equation = parse_expr(expr, evaluate=False, transformations=default_transformations)
+            equation = parse_expr(self._transform_expr(ctx, expr))
             result = sympy.pretty(sympy.limit(expr, var, to, dir))
             await self._result_say(ctx, equation, result, output_as_code=True)
 
         @commands.command(aliases=['integral'])
         async def integrate(self, ctx, *, expr: str):
-            """Finds the indefinite integral (aka antiderivative of an equation)
-
-            Unlike derivative, the expression does not require quotes
-            """
-            equation = parse_expr(expr, evaluate=False, transformations=default_transformations)
+            """Finds the indefinite integral (aka antiderivative of an equation)"""
+            equation = parse_expr(self._transform_expr(ctx, expr))
             symbols = list(equation.free_symbols)
             if len(symbols) > 1:
                 raise InvalidUserArgument("You have too many symbols in your equation")
             result = sympy.pretty(sympy.integrate(equation, symbols[0]))
             await self._result_say(ctx, equation, result, output_as_code=True)
+
+    @commands.group()
+    async def mathconfig(self, ctx):
+        """Command group for all math related configs"""
+        pass
+
+    @mathconfig.command(name='e')
+    async def e_as_E(self, ctx, bool_: bool):
+        """Sets whether or not you want any e's in the expression to be parsed as E
+
+        By default this is True. If this is False, then `e` will not be valid 
+        and you have to use E for the constant.
+        """
+        thing = ['no longer', 'now'][bool_]
+        self.parsing_configs[ctx.author]['e_as_E'] = bool_
+        await ctx.send('`e` will {thing} be treated as the constant `e` for you.')
+
+    @mathconfig.command(name='pow')
+    async def pow_(self, ctx, bool_: bool=None):
+        """Sets whether or not you want any ^'s in the expression to be parsed as **
+
+        By default this is True. If this is False, then the ^'s will be treated as XOR.
+        """
+        thing = ['no longer', 'now'][bool_]
+        self.parsing_configs[ctx.author]['^_as_pow'] = bool_
+        await ctx.send('`^` will {thing} be treated as the power operator for you.')
 
 def setup(bot):
     bot.add_cog(Math(bot))
