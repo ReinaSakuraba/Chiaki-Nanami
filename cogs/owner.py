@@ -17,6 +17,7 @@ from .utils.context_managers import temp_attr
 from .utils.misc import code_msg
 from .utils.paginator import EmbedPages
 
+
 class Owner:
     """Owner-only commands"""
     __hidden__ = True
@@ -137,6 +138,7 @@ class Owner:
     @commands.command(hidden=True, aliases=['kys'])
     async def die(self, ctx):
         """Shuts the bot down"""
+        await ctx.send("Bye... Please don't forget about me.")
         await ctx.bot.logout()
 
     @commands.command(hidden=True, aliases=['restart'])
