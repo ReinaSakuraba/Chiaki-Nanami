@@ -13,6 +13,7 @@ from discord.ext import commands
 
 from .manager import SessionManager
 from ..utils.misc import base_filename, emoji_url
+from ..utils.paginator import EmbedFieldPages
 
 QUESTION_GAME_TIMEOUT = 60
 class TriviaSession:
@@ -130,11 +131,17 @@ class Trivia:
     def __init__(self, bot):
         self.bot = bot
         self.manager = SessionManager()
+        self.custom_categories = collections.defaultdict(dict)
+        self.default_categories = {}
         self.bot.loop.create_task(self._load_categories())
 
     def __unload(self):
         # stop running any currently running trivia games
         self.manager.cancel_all(loop=self.bot.loop)
+
+    def all_categories(self, guild):
+        # This will be ChainMapped with custom categories
+        return self.default_categories
 
     async def _load_categories(self):
         load_async = functools.partial(self.bot.loop.run_in_executor, None, _load_json)
@@ -142,13 +149,13 @@ class Trivia:
         load_tasks = (load_async(name) for name in files)
         file_names = (base_filename(name) for name in files)
 
-        self.default_catergories = dict(zip(file_names, await asyncio.gather(*load_tasks)))
+        self.default_categories.update(zip(file_names, await asyncio.gather(*load_tasks)))
         print('everything is ok now')
 
     async def _get_category(self, ctx, category):
         lowered = category.lower()
         with contextlib.suppress(KeyError):
-            return self.default_catergories[lowered]
+            return self.default_categories[lowered]
 
         custom_category = self.custom_categories[ctx.guild].get(lowered)
         if custom_category is None:
@@ -185,6 +192,14 @@ class Trivia:
             await asyncio.sleep(1.5)
             results_embed = self._leaderboard_embed(inst, 'Trivia Game Ended', 'Final Results', past=True)
             await ctx.send(embed=results_embed)
+
+    @trivia.command(name='categories')
+    async def trivia_categories(self, ctx):
+        pages = [(k, v.get('description', 'No description'))
+                 for k, v in self.all_categories(ctx.guild).items()]
+        embeds = EmbedFieldPages(ctx, pages, title=f'List of Categories for {ctx.guild}',
+                                 colour=discord.Colour.blurple())
+        await embeds.interact()
 
     @trivia.command(name='stop', aliases=['quit'])
     async def trivia_stop(self, ctx):
