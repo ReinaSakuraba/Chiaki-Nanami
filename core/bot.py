@@ -137,7 +137,7 @@ class ChiakiBot(commands.Bot):
     async def change_game(self):
         game_choices = cycle_shuffle(self._config['rotating_games'])
         await self.wait_until_ready()
-        while not self.is_closed():
+        while True:
             name = next(game_choices)
             await self.change_presence(game=discord.Game(name=name))
             await asyncio.sleep(random.uniform(0.5, 10) * 60)
