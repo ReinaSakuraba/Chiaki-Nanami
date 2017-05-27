@@ -149,7 +149,6 @@ class OtherStuffs:
     async def ping(self, ctx):
         """Your average ping command"""
         time = await self.bot.ping()
-        print(time)
         await ctx.send(f'Poing! ({time:.3f} ms)')
 
     @commands.command()
@@ -164,16 +163,24 @@ class OtherStuffs:
                      ]
             msg2 = "(Hint: specify a user.)"
         elif target.id == slapper.id:
-            msg1 = f"{slapper} is slapping themself, I think."
-            slaps = ["https://media.giphy.com/media/rCftUAVPLExZC/giphy.gif"]
+            msg21 = f"{slapper} is slapping themself, I think."
+            slaps = ["https://media.giphy.com/media/rCftUAVPLExZC/giphy.gif",
+                     "https://media.giphy.com/media/EQ85WxyAAwEaQ/giphy.gif",
+                     ]
             msg2 = f"I wonder why they would do that..."
         elif target.id == self.bot.user.id:
             msg1 = f"{slapper} is trying to slap me, I think."
-            slaps = ["http://i.imgur.com/K420Qey.gif"]
+            slaps = ["http://i.imgur.com/K420Qey.gif",
+                     "https://media.giphy.com/media/iUgoB9zOO0QkU/giphy.gif",
+                     "https://media.giphy.com/media/Kp4c6lf3oR7lm/giphy.gif",
+                     ]
             msg2 =  "(Please don't do that.)"
         else:
-            target = target.mention
             slaps = ["https://media.giphy.com/media/jLeyZWgtwgr2U/giphy.gif",
+                     "https://media.giphy.com/media/RXGNsyRb1hDJm/giphy.gif",
+                     "https://media.giphy.com/media/zRlGxKCCkatIQ/giphy.gif",
+                     "https://media.giphy.com/media/MelHtIx2kmZz2/giphy.gif",
+                     "https://media.giphy.com/media/147iq4Fk1IGvba/giphy.gif",
                      "http://i.imgur.com/dzefPFL.gif",
                      "https://s-media-cache-ak0.pinimg.com/originals/fc/e1/2d/fce12d3716f05d56549cc5e05eed5a50.gif",
                      ]
