@@ -563,7 +563,7 @@ class Math:
             equation = parse_expr(self._transform_expr(ctx, expr))
             symbols = list(equation.free_symbols)
             if len(symbols) > 1:
-                raise InvalidUserArgument("You have too many symbols in your equation")
+                return await ctx.send("You have too many symbols in your equation")
             result = sympy.pretty(sympy.diff(equation, *symbols))
             await self._result_say(ctx, equation, result, output_as_code=True)
 
@@ -586,7 +586,7 @@ class Math:
             equation = parse_expr(self._transform_expr(ctx, expr))
             symbols = list(equation.free_symbols)
             if len(symbols) > 1:
-                raise InvalidUserArgument("You have too many symbols in your equation")
+                return await ctx.send("You have too many symbols in your equation")
             result = sympy.pretty(sympy.integrate(equation, symbols[0]))
             await self._result_say(ctx, equation, result, output_as_code=True)
 
