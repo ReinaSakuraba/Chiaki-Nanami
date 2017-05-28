@@ -4,6 +4,7 @@ import discord
 import functools
 import inspect
 import json
+import psutil
 import random
 import sys
 
@@ -21,19 +22,23 @@ from .utils.errors import InvalidUserArgument, ResultsNotFound
 from .utils.misc import str_join, nice_time, ordinal
 from .utils.paginator import iterable_limit_say, iterable_say
 
+
 def _icon_embed(idable, url, name):
     embed = (discord.Embed(title=f"{idable.name}'s {name}")
             .set_footer(text=f"ID: {idable.id}"))
     return embed.set_image(url=url) if url else embed
 
+
 async def _mee6_stats(session, member):
     async with session.get(f"https://mee6.xyz/levels/{member.guild.id}?json=1&limit=-1") as r:
         levels = await r.json(content_type=None)
+    print(levels)
     for idx, user_stats in enumerate(levels['players'], start=1):
-        if user_stats.get("id") == member.id:
+        if user_stats.get("id") == str(member.id):
             user_stats["rank"] = idx
             return user_stats
     raise ResultsNotFound(f"{member} does not have a mee6 level. :frowning:")
+
 
 _status_colors = {
     discord.Status.online    : discord.Colour.green(),
@@ -43,6 +48,7 @@ _status_colors = {
     discord.Status.invisible : discord.Colour.default(),
 }
 
+
 def default_last_n(n=50): return lambda: collections.deque(maxlen=n)
 class Meta:
     """Info related commands"""
@@ -51,8 +57,8 @@ class Meta:
         self.bot = bot
         self.cmd_history = collections.defaultdict(default_last_n())
         self.last_members = collections.defaultdict(default_last_n())
-        self.command_counter = collections.Counter()
         self.session = aiohttp.ClientSession()
+        self.process = psutil.Process()
 
     def __unload(self):
         # Pray it closes
@@ -93,6 +99,35 @@ class Meta:
                 .set_footer(text=f"ID: {member.id}")
                 )
 
+    @commands.command(aliases=['you'])
+    async def about(self, ctx):
+        """Shows some info about me"""
+        bot = self.bot
+        command_stats = '\n'.join(starmap('{1} {0}'.format, bot.command_counter.most_common())) or 'No stats yet.'
+        extension_stats = '\n'.join(f'{len(set(getattr(bot, attr).values()))} {attr}' 
+                                    for attr in ('cogs', 'extensions'))
+        python_version = str_join('.', sys.version_info[:3])    
+
+        with self.process.oneshot():
+            memory_usage_in_mb = self.process.memory_full_info().uss / 1024**2
+            cpu_usage = self.process.cpu_percent() / psutil.cpu_count()
+
+        try:
+            creator = self._creator
+        except AttributeError:
+            creator = self._creator = await self.bot.get_user_info(239110748180054017)
+
+        chiaki_embed = (discord.Embed(description=bot.appinfo.description, colour=self.bot.colour)
+                       .set_author(name=str(creator), icon_url=creator.avatar_url_as(format=None))
+                       .add_field(name='Servers', value=len(self.bot.guilds))
+                       .add_field(name='Modules', value=extension_stats)
+                       .add_field(name='CPU Usage', value=f'{cpu_usage}%\n{memory_usage_in_mb: .2f}MB')
+                       .add_field(name='Commands', value=command_stats)
+                       .add_field(name='Uptime', value=self.bot.str_uptime.replace(', ', '\n'))
+                       .set_footer(text=f'Made with discord.py {discord.__version__} | Python {python_version}')
+                       )
+        await ctx.send(embed=chiaki_embed)
+
     @commands.group()
     async def info(self, ctx):
         """Super-command for all info-related commands"""
@@ -120,8 +155,8 @@ class Meta:
         avatar_url = member.avatar_url_as(format=None)
 
         no_mee6_in_server = "No stats found. You don't have mee6 in this server... I think."
-        with ctx.typing(), redirect_exception((json.JSONDecodeError, no_mee6_in_server)):
-            async with temp_message(ctx, "Fetching data, please wait...") as message:
+        with redirect_exception((json.JSONDecodeError, no_mee6_in_server)):
+            async with ctx.typing(), temp_message(ctx, "Fetching data, please wait...") as message:
                 stats = await _mee6_stats(self.session, member)
 
         description = f"Currently sitting at {stats['rank']}!"
@@ -193,7 +228,7 @@ class Meta:
                        .add_field(name="Explicit Content Filter", value=server.explicit_content_filter)
                        .add_field(name="Special Features", value=features)
                        .add_field(name='Counts', value='\n'.join(counts))
-                       .set_footer(text=f'ID: {server.id}')
+                       .set_footer(text=f'ID: {server.id} | Created')
                        )
 
         icon = server.icon_url
@@ -243,10 +278,6 @@ class Meta:
         if member is None:
             member = ctx.author
         await ctx.send(embed=await self._user_embed(member))
-
-    @commands.command(name="you")
-    async def botinfo(self, ctx):
-        pass
 
     async def _source(self, ctx, thing):
         lines = inspect.getsourcelines(thing)[0]
@@ -366,12 +397,13 @@ class Meta:
         await ctx.send(msg)
 
     @commands.command(name='cmdranks')
-    async def commandranks(self, ctx, n=10):
+    async def command_ranks(self, ctx, n=10):
         """Shows the most common commands"""
         if not 3 <= n <= 50:
             raise InvalidUserArgument("I can only show the top 3 to the top 50 commands... sorry...")
 
-        format_map = starmap(f'`{ctx.prefix}{{0}}` = {{1}}'.format, self.command_counter.most_common(n))
+        fmt = f'`{ctx.prefix}' + '{0}` = {1}'
+        format_map = starmap(fmt.format, self.bot.command_leaderboard.most_common(n))
         embed = (discord.Embed(description='\n'.join(format_map), colour=self.bot.colour)
                 .set_author(name=f'Top {n} used commands')
                 )
@@ -379,7 +411,7 @@ class Meta:
 
     async def on_command(self, ctx):
         self.cmd_history[ctx.author].append(ctx.message.content)
-        self.command_counter[ctx.command] += 1
+        self.bot.command_leaderboard[str(ctx.command)] += 1
 
     @commands.command(usage=['pow', 'os.system'], aliases=['pyh'])
     async def pyhelp(self, ctx, thing):
@@ -407,4 +439,8 @@ class Meta:
         self.last_members[member.guild].append(member)
 
 def setup(bot):
+    if not hasattr(bot, 'command_leaderboard'):
+        bot.command_leaderboard = collections.Counter()
     bot.add_cog(Meta(bot))
+
+

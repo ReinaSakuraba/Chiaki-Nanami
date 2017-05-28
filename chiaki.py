@@ -1,4 +1,5 @@
 import asyncio
+import collections
 import discord
 import json
 import logging
@@ -86,6 +87,9 @@ async def on_ready():
     bot.loop.create_task(bot.change_game())
     if not config.get('official_server_invite'):
         bot.loop.create_task(bot.update_official_invite())
+
+    if not hasattr(bot, 'command_counter'):
+        bot.command_counter = collections.Counter()
 
 @bot.event
 async def on_command_error(ctx, error):
