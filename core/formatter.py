@@ -4,17 +4,18 @@ import inspect
 import operator
 import random
 
+from collections import OrderedDict
 from collections.abc import Sequence
 from discord.ext import commands
 from itertools import chain
 
 from cogs.utils.context_managers import temp_attr
-from cogs.utils.compat import always_iterable
+from cogs.utils.compat import always_iterable, iterate
 from cogs.utils.misc import truncate
 from cogs.utils.paginator import DelimPaginator
 
-# small hacks to make command display all their possible names
-commands.Command.all_names = property(lambda self: [self.name, *self.aliases])
+def _unique(iterable):
+    return list(OrderedDict.fromkeys(iterable))
 
 class ChiakiFormatter(commands.HelpFormatter):
     def get_ending_note(self):
@@ -42,17 +43,13 @@ class ChiakiFormatter(commands.HelpFormatter):
 
     def command_requirements(self):
         command = self.command
-        chiaki_checks = [check for check in command.checks if getattr(check, '__chiaki_check__', False)]
+        chiaki_checks = [check for check in command.all_checks
+                         if getattr(check, '__chiaki_check__', False)]
 
-        try:
-            local_check = getattr(command.instance, f'_{command.cog_name}__local_check')
-        except AttributeError:
-            pass
-        else:
-            if getattr(local_check, "__chiaki_check__", False):
-                chiaki_checks.append(local_check)
-
-        return {key: ', '.join(filter(None, map(operator.attrgetter(key), chiaki_checks))) or 'None'
+        # We need the unique requirements. This is in case someone accidentally
+        # decorates a subcommand with the same check as their parent.
+        # Otherwise it would duplicate.
+        return {key: ', '.join(_unique(filter(None, map(operator.attrgetter(key), chiaki_checks)))) or 'None'
                 for key in ['roles', 'perms'] }
 
     def paginate_cog_commands(self, cog_name):
@@ -67,7 +64,7 @@ class ChiakiFormatter(commands.HelpFormatter):
     async def bot_help(self):
         bot, func = self.context.bot, self.apply_function
         default_help = bot.default_help
-        result = default_help.format(bot, bot=bot)
+        result = default_help.format(bot, bot=bot) 
         return func(result)
 
     async def cog_embed(self):

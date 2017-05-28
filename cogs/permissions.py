@@ -14,11 +14,6 @@ from .utils.converter import item_converter, BotCommand, BotCogConverter
 from .utils.database import Database
 from .utils.misc import emoji_url, str_join
 
-def walk_parents(command):
-    return iter(iterate(attrgetter('parent'), command).__next__, None)
-
-def walk_parent_names(command):
-    return (cmd.qualified_name for cmd in walk_parents(command)) 
 
 def first_non_none(iterable, default=None):
     return next(filter(lambda x: x is not None, iterable), default)
@@ -134,7 +129,7 @@ class Permissions:
             return True
 
         cmd = ctx.command
-        names = itertools.chain(walk_parent_names(cmd), (cmd.cog_name, ALL_MODULES_KEY))
+        names = itertools.chain(cmd.walk_parent_names(), (cmd.cog_name, ALL_MODULES_KEY))
         results = (self._first_non_none_perm(name, ctx) for name in names)
         return first_non_none(results, True)
 
