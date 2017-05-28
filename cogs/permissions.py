@@ -223,7 +223,7 @@ class Permissions:
         print(embed._fields)
         await ctx.send(embed=embed)
 
-    async def modify_command(self, ctx, command, bool_):
+    async def _modify_command(self, ctx, command, bool_):
         command.enabled = bool_
         await ctx.send(f"**{command}** is now {'deins'[bool_::2]}abled!")
 
@@ -231,13 +231,13 @@ class Permissions:
     @checks.is_owner()
     async def disable(self, ctx, *, command: BotCommand):
         """Globally disables a command."""
-        await self.modify_command(ctx, command, False)
+        await self._modify_command(ctx, command, False)
 
     @commands.command()
     @checks.is_owner()
     async def enable(self, ctx, *, command: BotCommand):
         """Globally enables a command."""
-        await self.modify_command(ctx, command, True)
+        await self._modify_command(ctx, command, True)
 
     async def _modify_blacklist(self, ctx, user, list_attr, *, contains_op, block_type):
         if await ctx.bot.is_owner(user):
@@ -266,7 +266,8 @@ class Permissions:
 
         This doesn't make them immune to any other checks.
         """
-        await self._modify_blacklist(ctx, user, 'remove', contains_op=lambda a, b: not b in a, 
+        await self._modify_blacklist(ctx, user, 'remove', contains_op=lambda a, b: b not in a, 
                                      block_type=BlockType.whitelist)
+
 def setup(bot):
     bot.add_cog(Permissions())
