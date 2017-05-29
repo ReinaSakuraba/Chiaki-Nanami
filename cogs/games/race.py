@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import discord
 import random
 import time
@@ -23,10 +24,13 @@ class RacingSession:
         self.current_embed = (discord.Embed(colour=self.ctx.bot.colour)
                              .set_author(name='Race has started!')
                              )
+        self._is_full = asyncio.Event()
         self.start = time.perf_counter()
 
     def add_member(self, m):
         self.positions[m] = 1
+        if len(self.positions) >= self.MAXIMUM_REQUIRED_MEMBERS:
+            self._is_full.set()
 
     def already_joined(self, m):
         return m in self.positions
@@ -52,6 +56,9 @@ class RacingSession:
     def winners(self):
         return [member for member, position in self.positions.items()
                 if round(position) >= self.TRACK_LENGTH + 1]
+
+    async def wait_until_full(self):
+        await self._is_full.wait()
 
     async def run(self):
         for kwargs in self._member_fields():
@@ -89,7 +96,7 @@ class Racing:
         self.manager = SessionManager()
 
     @commands.command()
-    async def race(self, ctx, bet=0):
+    async def race(self, ctx, bet: int=0):
         session = self.manager.get_session(ctx.channel)
         if session is not None:
             if session.running:
@@ -103,9 +110,13 @@ class Racing:
         with self.manager.temp_session(ctx.channel, RacingSession(ctx)) as inst:
             inst.add_member(ctx.author)
             await ctx.send(f'Race has started! Type {ctx.prefix}{ctx.invoked_with} to join!')
-            await asyncio.sleep(15)
+
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(inst.wait_until_full(), timeout=15)
+
             if not inst.has_enough_members():
                 return await ctx.send("Can't start race. Not enough people :(")
+            await asyncio.sleep(random.uniform(0.25, 0.75))
             await inst.run()
 
 def setup(bot):
