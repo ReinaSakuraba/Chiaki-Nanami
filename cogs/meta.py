@@ -49,7 +49,9 @@ _status_colors = {
 }
 
 
-def default_last_n(n=50): return lambda: collections.deque(maxlen=n)
+def default_last_n(n=50): 
+    return lambda: collections.deque(maxlen=n)
+
 class Meta:
     """Info related commands"""
 
@@ -217,9 +219,13 @@ class Meta:
     async def _server_embed(server):
         highest_role = server.role_hierarchy[0]
         description = f"Owned by {server.owner}"
-        counts = (f'{len(getattr(server, thing))} {thing}' for thing in ('members', 'channels', 'roles', 'emojis'))
         features = '\n'.join(server.features) or 'None'
-
+        counts = (f'{len(getattr(server, thing))} {thing}' for thing in ('channels', 'roles', 'emojis'))
+        
+        statuses = collections.OrderedDict.fromkeys(['online', 'idle', 'dnd', 'offline'], 0)
+        statuses.update(collections.Counter(m.status.name for m in server.members))
+        members = [*statuses.items()]
+        
         server_embed = (discord.Embed(title=server.name, description=description, timestamp=server.created_at)
                        .add_field(name="Default Channel", value=server.default_channel.mention)
                        .add_field(name="Highest Role", value=highest_role)
@@ -228,6 +234,7 @@ class Meta:
                        .add_field(name="Explicit Content Filter", value=server.explicit_content_filter)
                        .add_field(name="Special Features", value=features)
                        .add_field(name='Counts', value='\n'.join(counts))
+                       .add_field(name=f'{len(server.members)} Members', value='\n'.join(starmap('{1} {0}'.format, members)))
                        .set_footer(text=f'ID: {server.id} | Created')
                        )
 
