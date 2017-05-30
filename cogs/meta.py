@@ -224,7 +224,7 @@ class Meta:
         
         statuses = collections.OrderedDict.fromkeys(['online', 'idle', 'dnd', 'offline'], 0)
         statuses.update(collections.Counter(m.status.name for m in server.members))
-        members = [*statuses.items()]
+        member_stats = '\n'.join(starmap('{1} {0}'.format, statuses.items()))
         
         server_embed = (discord.Embed(title=server.name, description=description, timestamp=server.created_at)
                        .add_field(name="Default Channel", value=server.default_channel.mention)
@@ -234,7 +234,7 @@ class Meta:
                        .add_field(name="Explicit Content Filter", value=server.explicit_content_filter)
                        .add_field(name="Special Features", value=features)
                        .add_field(name='Counts', value='\n'.join(counts))
-                       .add_field(name=f'{len(server.members)} Members', value='\n'.join(starmap('{1} {0}'.format, members)))
+                       .add_field(name=f'{len(server.members)} Members', value=member_stats)
                        .set_footer(text=f'ID: {server.id} | Created')
                        )
 
