@@ -1,15 +1,7 @@
 import asyncio
 import contextlib
 
-def _iter_except(func, *exceptions, start=None):
-    'Yield a function repeatedly until it raises an exception'
-    try:
-        if start is not None:
-            yield start()
-        while True:
-            yield func()
-    except exceptions:
-        pass
+from ..utils.compat import iter_except
 
 class SessionManager:
     def __init__(self):
@@ -34,6 +26,6 @@ class SessionManager:
         if loop is None:
             loop = asyncio.get_event_loop()
 
-        popitem_iter = _iter_except(self.sessions.popitem, KeyError)
+        popitem_iter = iter_except(self.sessions.popitem, KeyError)
         stop_tasks = (inst.stop(force=True) for _, inst in popitem_iter)
         loop.create_task(asyncio.gather(*stop_tasks))   

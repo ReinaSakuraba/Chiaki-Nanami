@@ -117,7 +117,7 @@ user_colour = user_color
 # itertools related stuff
 
 try:
-    from more_itertools import always_iterable, ilen, iterate
+    from more_itertools import always_iterable, ilen, iterate, iter_except
 except ImportError:
     def ilen(iterable):
         d = deque(enumerate(iterable, 1), maxlen=1)
@@ -136,3 +136,12 @@ except ImportError:
             return obj,
 
         return obj
+
+    def iter_except(func, *exceptions, start=None):
+        try:
+            if start is not None:
+                yield start()
+            while True:
+                yield func()
+        except exceptions:
+            pass

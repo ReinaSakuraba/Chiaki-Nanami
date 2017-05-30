@@ -6,23 +6,12 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from discord.ext import commands
 
+from .utils.compat import iter_except
 from .utils.converter import duration
 from .utils.database import Database
 from .utils.json_serializers import DatetimeEncoder, decode_datetime
 from .utils.misc import duration_units, emoji_url, truncate
 
-'''
-    {
-        '10938912831223123':  [
-            {
-                'duration': 0,
-                'start': 'some time',
-                'destination': 'channel_id',
-                'message': 'message'
-            }
-        ]
-    }
-'''
 
 MAX_REMINDERS = 10
 ALARM_CLOCK_URL = emoji_url('\N{ALARM CLOCK}')
@@ -37,7 +26,10 @@ class Reminder:
         self.bot.loop.create_task(self._parse_reminders())
 
     def __unload(self):
-        pass   # Cancel all current reminders to avoid duplication.
+        for _, reminders in iter_except(self.reminder_tasks.popitem, KeyError):
+            for task in reminders.values():
+                with contextlib.suppress(BaseException):
+                    task.cancel()
 
     async def _parse_reminders(self):
         await self.bot.wait_until_ready()
