@@ -23,6 +23,7 @@ class TriviaSession:
         self.finished = asyncio.Event()
         self.answered = asyncio.Event()
         self.scoreboard = collections.Counter()
+        self._runner = self._time_out_checker = None
 
     def _check_answer(self, m):
         if m.channel != self.ctx.channel:
@@ -81,17 +82,16 @@ class TriviaSession:
         await self.stop()
 
     async def run(self):
-        task = self.ctx.bot.loop.create_task
-        self.runner = task(self.__run())
-        self.time_out_checker = task(self.check_time_out())
+        self._runner = asyncio.ensure_future(self.__run())
+        self._time_out_checker = asyncio.ensure_future(self.check_time_out())
         await self.finished.wait()
 
     async def stop(self, force=False):
         self.force_closed = force
         with contextlib.suppress(BaseException):
-            self.runner.cancel()
+            self._runner.cancel()
         with contextlib.suppress(BaseException):
-            self.time_out_checker.cancel()
+            self._time_out_checker.cancel()
         self.finished.set()
 
     async def check_time_out(self):
