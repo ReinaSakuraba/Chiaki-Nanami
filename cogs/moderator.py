@@ -1,506 +1,638 @@
 import asyncio
-import copy
+import contextlib
 import discord
-import enum
+import functools
+import json
 import os
-import re
 
-from .utils import checks
-from .utils.database import Database
-from .utils.errors import InvalidUserArgument
-from .utils.aitertools import aiterable
-from .utils.misc import duration_units, nice_time, parse_int, try_async_call, usage
-
-from collections import Counter, defaultdict, namedtuple
-from discord.ext import commands
+from collections import defaultdict, deque, namedtuple
 from datetime import datetime
-from functools import wraps
+from discord.ext import commands
+from operator import itemgetter
 
-DURATION_MULTIPLIERS = {
-    's': 1,                  'sec': 1,
-    'm': 60,                 'min': 60,
-    'h': 60 * 60,            'hr': 60 * 60,
-    'd': 60 * 60 * 24,       'day': 60 * 60 * 24,
-    'w': 60 * 60 * 24 * 7,   'wk': 60 * 60 * 24 * 7,
-    'y': 60 * 60 * 24 * 365, 'yr': 60 * 60 * 24 * 365,
+from .utils import checks, errors
+from .utils.context_managers import redirect_exception  
+from .utils.converter import duration, in_, union
+from .utils.database import Database
+from .utils.json_serializers import (
+    DatetimeEncoder, DequeEncoder, decode_datetime, decode_deque, union_decoder
+    )
+from .utils.misc import duration_units, emoji_url, ordinal
+
+_default_warn_config = {
+    'timeout': 60 * 15,
+    'punishments': {
+        '2': {
+            'punish': 'mute',
+            'duration': 60 * 10,
+        }
+    },
+    'members': {},
 }
 
-def pairwise(iterable):
-    it = iter(iterable)
-    return zip(*[it, it])
+ModAction = namedtuple('ModAction', 'repr emoji colour')
+mod_action_types = {
+    'warn'         : ModAction('warned', '\N{WARNING SIGN}', 0xFFAA00),
+    'mute'         : ModAction('muted', '\N{ZIPPER-MOUTH FACE}', 0),
+    'kick'         : ModAction('kicked', '\N{WOMANS BOOTS}', 0xFF0000),
+    'softban'      : ModAction('soft banned', '\N{BIOHAZARD SIGN}', 0xF08000),
+    'tempban'      : ModAction('temporarily banned', '\N{ALARM CLOCK}', 0xA00000),
+    'ban'          : ModAction('banned', '\N{HAMMER}', 0x800000),
+    'unban'        : ModAction('unbanned', '\N{HAMMER}', 0x00FF00),
+    'special_role' : ModAction('unbanned', '\N{HAMMER}', 0x00FF00),
+}
+_restricted_warn_punishments = {'softban', 'unban', 'warn'}
 
-def _parse_time(string, unit='m'):
-    duration = parse_int(string)
-    if duration is None:
-        return 0
-    return duration * DURATION_MULTIPLIERS.get(unit, 60)
+ModCase = namedtuple('ModCase', 'type mod user reason')
+WarnEntry = namedtuple('WarnEntry', 'time reason')
 
-def _full_time(strings):
-    durations = re.split(r"(\d+[\.]?\d*)", strings)[1:]
-    return sum(_parse_time(d, u) for d, u in pairwise(durations))
+def _mod_file(filename): return os.path.join('mod', filename)
+_member_key = '({0.guild.id}, {0.id})'.format
 
-class ModAction(enum.Enum):
-    warn = ("was warned :warning:", 0xFF8000, True)
-    warn_excess = ("was muted because they were warned too much", 0xFF8000, True)
-    mute = ("was muted :no_mouth:", 0x000000, True)
-    unmute = ("was unmuted :speaking_head:", 0x000000, True)
-    kick = ("was kicked :boot:", 0xFF0000, False)
-    temp_ban = ("was temporarily banned :hammer_pick:", 0xCC0000, True)
-    ban = ("was banned :hammer:", 0xAA1111, False)
-    unban = ("was unbanned :slight_smile:", 0x33FF00, False)
 
-    def __init__(self, msg, colour, include_duration):
-        self.msg = msg
-        self.colour = colour
-        self.include_duration = include_duration
+class WarnEncoder(DequeEncoder, DatetimeEncoder):
+    pass
 
-DEFAULT_REASON = "No reason..."
+warn_hook = union_decoder(decode_deque, decode_datetime)
 
-def _case_embed(num, action, target, msg, reason):
-    actioner = msg.author
-    title = f"Case/Action Log/Something #{num}"
-    footer = f"Command executed in #{msg.channel}"
-    description = f"{target.mention} {action.msg}"
-    avatar_url = target.avatar_url or target.default_avatar_url
+def _rreplace(s, old, new, count=1 ):
+    li = s.rsplit(old, count)  
+    return new.join(li)
 
-    return (discord.Embed(title=title, description=description, color=action.colour, timestamp=msg.timestamp)
-           .set_thumbnail(url=avatar_url)
-           .add_field(name="Moderator", value=actioner.mention)
-           .add_field(name="Reason", value=reason, inline=False)
-           .set_footer(text=footer))
-
-# Ignore this random classes
-class SlowmodeUpdater:
-    __slots__ = ('seconds', 'users_last_message')
-    def __init__(self):
-        self.seconds = 0
-        self.users_last_message = {}
-
-    def reset(self):
-        self.seconds = 0
-        self.users_last_message.clear()
-
-_user_requires_quotes_due_to_reason = """
-
-Because of the reason parameter, if you don't want to mention the user
-you must put the user in quotes if you're gonna put a reason.
-"""
-def requires_quotes_for_user(func):
-    func.__doc__ += _user_requires_quotes_due_to_reason
-    return func
-
-def mod_file(filename):
-    return os.path.join('mod', filename)
-
-_server_warn_default = {"warn_limit": 2, "users_warns": Counter()}
-
+# TODO:
+# - implement anti-raid protocol
+# - implement antispam
+# - implement mention-spam
 class Moderator:
-    """Moderator-related commands
-
-    Most of these require the Moderator role (defined by 'addmodrole')
-    or the right permissions.
-    """
     def __init__(self, bot):
         self.bot = bot
-        self.muted_roles_db = Database.from_json(mod_file("mutedroles.json"))
-        self.muted_users_db = Database.from_json(mod_file("mutedusers.json"), default_factory=dict)
-        self.temp_bans_db = Database.from_json(mod_file("tempbans.json"), default_factory=dict)
-        self.cases_db = Database.from_json(mod_file("case-action.json"), default_factory=dict)
-        self.slowmodes = defaultdict(SlowmodeUpdater)
-        self.slowonlys = defaultdict(dict)
-        self.warns_db = Database.from_json(mod_file("warns.json"), default_factory=_server_warn_default.copy)
-        self.bot.loop.create_task(self.update())
 
-    async def _try_action(self, func, on_success=None, on_forbidden=None, on_http_exc=None):
-        alts = [
-            (discord.Forbidden, on_forbidden),
-            (discord.HTTPException, on_http_exc),
-            ]
-        result = await try_async_call(func, on_success=on_success, exception_alts=alts)
-        await self.bot.say(result.message)
+        # Current statuses
+        self.current_slowmodes = defaultdict(dict)
+        self.current_slowonlys = {}
 
-    async def _regen_muted_permissions(self, role):
-        overwrite = discord.PermissionOverwrite(send_messages=False,
-                                                add_reactions=False,
-                                                manage_messages=False)
-        for channel in role.server.channels:
-            await self.bot.edit_channel_permissions(channel, role, overwrite)
+        # Databases / Configs
+        self.guild_warn_config = Database(_mod_file('warns.json'), default_factory=_default_warn_config.copy,
+            encoder=WarnEncoder, object_hook=warn_hook)
+        self.raids = Database(_mod_file('raids.json'))
+        self.cases = Database(_mod_file('cases.json'), default_factory=dict)
+        self.mutes = Database(_mod_file('mutes.json'), default_factory=dict)
+        self.tempbans = Database(_mod_file('tempbans.json'), default_factory=dict)
+
+        self.slowmodes = Database(_mod_file('slowmode.json'))
+        self.slowmode_limits = self.slowmodes.setdefault('general', {})
+        self.slowonly_limits = self.slowmodes.setdefault('members', {})
+        self.slowmodes = {}
+        self.slowonlys = {}
+
+        self.muted_roles = Database(_mod_file('muted_roles.json'), default_factory=None)
+
+        self.bot.loop.create_task(self._resume_mutes_and_tempbans())
+
+    @staticmethod
+    async def _default_temp_task(member, data, action):
+        timedelta = datetime.utcnow() - datetime.strptime(data['time'], "%Y-%m-%d %H:%M:%S.%f")
+        await asyncio.sleep(data['duration'] - timedelta.total_seconds())
+        await action(member)
+
+    async def _resume_mutes_and_tempbans(self):
+        await self.bot.wait_until_ready()
+
+        def server_pair_helper(db):
+            for server, member_status in list(db.items()):
+                for member_id, status in list(member_status.items()):
+                    yield self.bot.get_guild(int(server)), int(member_id), status
+
+        for server, member_id, status in server_pair_helper(self.mutes):
+            member = server.get_member(member_id)
+            self.bot.loop.create_task(self._default_temp_task(member, status, self._do_unmute))
+
+        # We have to repeat the loop for each database 
+        # due to how each mod tool and user_getter is used
+        for server, user_id, status in server_pair_helper(self.tempbans):
+            unban = functools.partial(self._attempt_unban, server)
+            self.bot.loop.create_task(self._default_temp_task(user_id, status, unban))
+
+    @staticmethod
+    def _case_embed(num, ctx, case, duration=None):
+        type_, mod, user, reason = case
+        case_type = mod_action_types[type_]
+        avatar_url = user.avatar_url_as(format=None)
+        bot_avatar = ctx.bot.user.avatar_url_as(format=None)
+
+        auto_punished = getattr(ctx, 'auto_punished', False)
+        if auto_punished:
+            mod = ctx.bot.user
+
+        duration_string = f' for {duration_units(duration)}' if duration is not None else ''
+        action_field = f'{"Auto-" * auto_punished}{case_type.repr.title()}{duration_string} by {mod}'
+        reason = reason or 'No reason. Please enter one.'
+
+        return (discord.Embed(color=case_type.colour, timestamp=ctx.message.created_at)
+               .set_author(name=f"Case #{num}", icon_url=emoji_url(case_type.emoji))
+               .set_thumbnail(url=avatar_url)
+               .add_field(name="User", value=str(user))
+               .add_field(name="Action", value=action_field, inline=False)
+               .add_field(name="Reason", value=reason, inline=False)
+               .set_footer(text=f'ID: {user.id}', icon_url=bot_avatar)
+               )
+
+    async def _send_case(self, ctx, case, duration=None):
+        server_cases = self.cases[ctx.guild]
+        case_channel = self.bot.get_channel(server_cases.get('case_channel'))
+        if case_channel is None:
+            return
+
+        cases = server_cases.setdefault('cases', [])
+        case_embed = self._case_embed(len(cases) + 1, ctx, case, duration)
+
+        msg = await case_channel.send(embed=case_embed)
+
+        case = {
+            'message_id': msg.id,
+            'channel_id': case_channel.id,
+            'type': case.type,
+            'mod': case.mod.id,
+            'user': case.user.id,
+            'reason': case.reason,
+        }
+        cases.append(case)
+
+    async def update_slowmode(self, message):
+        if not isinstance(message.channel, discord.abc.GuildChannel):
+            # slowmode is pointless is DMs
+            return
+
+        for mode, limit_key, key in [('slowmode', str(message.channel.id), message.channel ),
+                                     ('slowonly', _member_key(message.author), message.guild)]:
+            # order is important here
+            # the slowmode limits are persistent, but the current slowmodes are not
+            limit = getattr(self, f'{mode}_limits').get(limit_key)
+            if limit is None:
+                continue
+
+            current = getattr(self, f'{mode}s').setdefault(key, {})
+            last_time = current.get(message.author)
+            if last_time is None or (message.created_at - last_time).total_seconds() >= limit:
+                current[message.author] = message.created_at
+            else:
+                await message.delete()
+                break
+
+    @commands.command()
+    @checks.mod_or_permissions(manage_messages=True)
+    async def slowmode(self, ctx, duration: duration, member: discord.Member=None):
+        """Puts a channel in slowmode
+
+        An optional member argument can be provided. If it is provided,
+        the user is put in slowmode for the entire server.
+        """
+        async def adder(db, limit_key, key, pronoun, actual_key=None):
+            if actual_key is None:
+                actual_key = key
+
+            limits = getattr(self, f'{db}_limits')
+            if limit_key in limits:
+                return await ctx.send(f"{key.mention} is already in slowmode!") 
+            limits[limit_key] = duration
+
+            getattr(self, f'{db}s').setdefault(actual_key, {})
+            await ctx.send(f"{key.mention} is now on slowmode! {pronoun} must wait {duration} "
+                            "seconds before they can post another message.")
+
+        if member is not None:
+            await adder('slowonly', _member_key(member), member, 'They', actual_key=member.server)
+        else:
+            await adder('slowmode', str(ctx.channel.id), ctx.channel, 'Everyone')
+
+    @commands.command(aliases=['slowoff'])
+    @checks.mod_or_permissions(manage_messages=True)
+    async def slowmodeoff(self, ctx, member: discord.Member=None):
+        async def popper(currents, limits, limit_key, key):
+            with redirect_exception((KeyError, f"{key.mention} was never in slowmode...")):
+                del currents[key]
+                del limits[limit_key]
+            await ctx.send(f"{key.mention} is no longer in slowmode!")
+
+        if member is not None:
+            await popper(self.slowonlys.get(message.guild, {}), self.slowonly_limits,
+                         _member_key(member), member)
+        else:
+            await popper(self.slowmodes, self.slowmode_limits, 
+                         str(ctx.channel.id), ctx.channel)
+
+    @commands.command(aliases=['clr'])
+    @checks.mod_or_permissions(manage_messages=True)
+    async def clear(self, ctx, num_or_user: union(int, discord.Member)=None):
+        """Clears some messages in a channels
+
+        The argument can either be a user or a number.
+        If it's a number it deletes *up to* that many messages.
+        If it's a user, it deletes any message by that user up to the last 100 messages.
+        If no argument was specified, it deletes my messages.
+        """
+        async def attempt_clear(*, limit=100, check=None):
+            with redirect_exception((discord.Forbidden, "I need the Manage Messages perm to clear messages."),
+                                    (discord.HTTPException, "Deleting the messages failed, somehow.")):
+                return await ctx.channel.purge(limit=limit, check=check)
+
+        if isinstance(num_or_user, int):
+            if num_or_user < 1:
+                raise errors.InvalidUserArgument(f"How can I delete {number} messages...?")
+            deleted = await attempt_clear(limit=min(num_or_user, 1000) + 1)
+        elif isinstance(num_or_user, discord.Member):
+            deleted = await attempt_clear(check=lambda m: m.author.id == user.id)
+        else:
+            deleted = await attempt_clear(check=lambda m: m.author.id == bot.user.id)
+
+        deleted_count = len(deleted) - 1
+        is_plural = 's'*(deleted_count != 1)
+        await ctx.send(f"Deleted {deleted_count} message{is_plural} successfully!", delete_after=1.5)
+
+    @commands.command()
+    @checks.is_mod()
+    async def warn(self, ctx, member: discord.Member, *, reason: str):
+        """Warns a user (obviously)"""
+        author, current_time = ctx.author, ctx.message.created_at
+        warn_config = self.guild_warn_config[ctx.guild]
+        warn_queue = warn_config['members'].setdefault(str(member.id), deque())
+        warn_queue.append((current_time, author.id, reason))
+        current_warn_num = len(warn_queue)
+
+        def check_warn_num():
+            if current_warn_num >= max(map(int, punishments)):
+                warn_queue.popleft()
+
+        async def default_warn():
+            warn_embed = (discord.Embed(colour=0xffaa00, description=reason)
+                         .set_author(name=str(author), icon_url=author.avatar_url_as(format=None))
+                         )
+            await member.send(f"You have been warned by {author} for the followng reason:", embed=warn_embed)
+            await member.send(f"This is your {ordinal(current_warn_num)} warning.")
+            await ctx.send(f"\N{WARNING SIGN} Warned {member.mention} successfully!")
+            await self._send_case(ctx, ModCase(type='warn', mod=ctx.author, user=member, reason=reason))
+            check_warn_num()
+
+        punishments = warn_config['punishments']
+        punishment = punishments.get(str(current_warn_num))
+        if punishment is None:
+            return await default_warn()
+
+        # warn is too old, ignore it.
+        if (current_time - warn_queue[0][0]).total_seconds() > warn_config['warn_timeout']:
+            return await default_warn()
+
+        # Auto-punish the user
+        args = member,
+        if punishment['duration'] is not None:
+            args += punishment['duration'],
+        ctx.auto_punished = True
+
+        punish = punishment['punish']
+        await ctx.invoke(getattr(self, punish), *args, reason=reason + f'\n({ordinal(current_warn_num)} warning)')
+        check_warn_num()
+
+    @commands.command(name='clearwarns')
+    @checks.is_mod()
+    async def clear_warns(self, ctx, member: discord.Member):
+        self.guild_warn_config[ctx.guild]['members'][str(member.id)].clear()
+        await ctx.send(f"{member}'s warns have been reset!")
+
+    @staticmethod
+    def _check_user(ctx, member):
+        if ctx.author.id == member.id:
+            raise errors.InvalidUserArgument("Please don't hurt yourself. :(")
+        if member.id == ctx.bot.user.id:
+            raise errors.InvalidUserArgument("Hey, what did I do??")
 
     async def _create_muted_role(self, server):
-        role = await self.bot.create_role(server=server, name='Chiaki-Muted',
-                                          color=discord.Colour(0xFF0000))
-        await self._regen_muted_permissions(role)
+        role = await server.create_role(name='Chiaki-Muted', colour=discord.Colour.red())
+        await self._regen_muted_role_perms(role, *server.channels)
+
+        self.muted_roles[str(server.id)] = role.id
+        # Explicit dump to make sure the roles get updated
+        await self.mutes.dump()
         return role
 
     async def _get_muted_role(self, server):
-        async def default_muted(server):
-            role = await self._create_muted_role(server)
-            self.muted_roles_db[server] = role.id
-            # Explicit dump to make sure the roles get updated
-            await self.muted_roles_db.dump()
-            return role
+        if server is None:
+            return None
+
         try:
-            role_id = self.muted_roles_db[server]
+            role_id = self.muted_roles[str(server.id)]
         except KeyError:
-            return await default_muted(server)
+            return await self._create_muted_role(server)
         else:
             role = discord.utils.get(server.roles, id=role_id)
-            # Role could've been deleted, so we have to account for that.
-            return role or await default_muted(server)
+            # Role could've been deleted, which means it will be None. 
+            # So we have to account for that.
+            return role or await self._create_muted_role(server)
 
-    async def _make_case(self, action, msg, target, reason, duration=None):
-        server_cases = self.cases_db[msg.server]
-        if not server_cases:
-            print("no server_cases")
-            return
-        case_channel = self.bot.get_channel(server_cases.get("channel"))
-        if case_channel is None:
-            print("no case_channel")
-            return
+    @staticmethod
+    async def _regen_muted_role_perms(role, *channels):
+        muted_permissions = dict.fromkeys(['send_messages', 'manage_messages', 'add_reactions',
+                                           'speak', 'connect', 'use_voice_activity'], False)
+        for channel in channels:
+            await channel.set_permissions(role, **muted_permissions)
 
-        case_embed = _case_embed(server_cases["case_num"], action, target, msg, reason)
-        if action.include_duration:
-            case_embed.set_field_at(1, name="Duration", value=duration)
-            case_embed.add_field(name="Reason", value=reason, inline=False)
-        server_cases["case_num"] += 1
-        await self.bot.send_message(case_channel, embed=case_embed)
+    @staticmethod
+    def put_payload(db, member, duration):
+        payload = {
+            'time': str(datetime.utcnow()),
+            'duration': duration,
+        }
 
-    async def _clear(self, channel, *, limit=100, check=None):
-        try:
-            deleted = await self.bot.purge_from(channel, limit=limit, check=check)
-        except discord.Forbidden:
-            await self.bot.say("I don't have the right perms to clear messages.")
-            return None
-        except discord.HTTPException:
-            await self.bot.say("Deleting the messages failed, somehow.")
-            return None
-        else:
-            return deleted
+        db[member.guild][str(member.id)] = payload
 
-    async def _mute(self, member):
-        muted_role = await self._get_muted_role(member.server)
-        await self.bot.add_roles(member, muted_role)
+    async def _do_mute(self, member, duration):
+        mute_role = await self._get_muted_role(member.guild)
 
-    async def _unmute(self, member):
-        muted_role = await self._get_muted_role(member.server)
-        await self.bot.remove_roles(member, muted_role)
-        self.muted_users_db[member.server].pop(member.id, None)
+        # with redirect_exception((discord.Forbidden, "I either need the Manage Roles permission, or {member} is too high."),
+        #                         (discord.HTTPException, "I can't mute {member} for some reason...")):
+        await member.add_roles(mute_role)
+        self.put_payload(self.mutes, member, duration)
 
-    async def _update_db(self, db, action):
-        async for server_id, affected_members in aiterable(list(db.items())):
-            server = self.bot.get_server(server_id)
+    async def _do_unmute(self, member):
+        mute_role = await self._get_muted_role(member.guild)
+        await member.remove_roles(mute_role)
+        self.mutes[member.guild].pop(str(member.id))
 
-            async for member_id, status in aiterable(list(affected_members.items())):
-                now = datetime.now()
-                last_time = datetime.strptime(status["time"], "%Y-%m-%d %H:%M:%S.%f")
-
-                # yay for hax
-                if (now - last_time).total_seconds() >= status["duration"]:
-                    member = server.get_member(member_id)
-                    await action(member, status)
-
-    async def update(self):
-        await self.bot.wait_until_ready()
-        update_db = self._update_db
-        # let's hope async lambdas become a thing
-        async def unmute(member, status):
-            await self._unmute(member)
-        async def unban(member, status):
-            server = self.bot.get_server(status["server"])
-            member = await self.bot.get_user_info(status["user"])
-            await self.bot.unban(server, member)
-            invite = await self.bot.create_invite(server)
-            msg = f"You have been unbanned from {server}, please be on your best behaviour from now on..."                
-            await self.bot.send_message(member, f"{msg}\n{invite}")
-            
-        while not self.bot.is_closed:
-            await update_db(self.muted_users_db, unmute)
-            await update_db(self.temp_bans_db, unban)
-            await asyncio.sleep(0)
-
-    @commands.command(pass_context=True)
-    @checks.mod_or_permissions(manage_messages=True)
-    @usage('slowmode 100')
-    async def slowmode(self, ctx, secs: int=10):
-        """Puts the channel in slowmode"""
-        if secs < 0:
-            raise InvalidUserArgument("Seconds cannot be negative, unless you want me to back in time...")
-        channel = ctx.message.channel
-        self.slowmodes[channel].seconds = secs
-        fmt = (f"{channel.mention} is now in slow mode, probably."
-               f" You must wait {secs} seconds before you can send another message")
-        await self.bot.say(fmt)
-
-    @commands.command(pass_context=True)
-    @checks.mod_or_permissions(manage_messages=True)
-    @usage('slowonly Salt')
-    async def slowonly(self, ctx, user: discord.Member, secs: int):
-        """Puts a user in a certain channel in slowmode"""
-        channel = ctx.message.channel
-        slowonly_channel = self.slowonlys[channel]
-
-        user_dict = {
-            "duration": secs,
-            "last_time": datetime.now()
-            }
-        slowonly_channel[user] = user_dict
-
-        fmt = (f"{channel.mention} is now in slow mode for {user.mention}, probably."
-               f"They must wait {secs} seconds before they can send another message")
-        await self.bot.say(fmt)
-
-    @commands.command(pass_context=True, aliases=['slowoff'])
-    @checks.mod_or_permissions(manage_messages=True)
-    async def slowmodeoff(self, ctx):
-        """Puts the channel out of slowmode"""
-        channel = ctx.message.channel
-        self.slowmodes[channel].reset()
-        fmt = "{.mention} is no longer in slow mode, I think. :sweat_smile:"
-        await self.bot.say(fmt.format(channel))
-
-    @commands.command(pass_context=True)
-    @checks.mod_or_permissions(manage_messages=True)
-    async def slowonlyoff(self, ctx, user: discord.Member):
-        """Puts a user in a certain channel out of slowmode"""
-        channel = ctx.message.channel
-        result = try_call(lambda: self.slowonlys[channel].pop(user),
-                          on_success=f"{user} is no longer in slow mode, I think. :sweat_smile:",
-                          exception_alts={KeyError: f"{user} was never in slowmode, I think"})
-
-    async def update_slowmode(self, message):
-        author = message.author
-        channel = message.channel
-        slowmode = self.slowmodes[channel]
-        message_time = message.timestamp
-        last_time = slowmode.users_last_message.get(author, None)
-        if last_time is None or (message_time - last_time).total_seconds() >= slowmode.seconds:
-            slowmode.users_last_message[author] = message_time
-            await asyncio.sleep(0)
-        else:
-            await self.bot.delete_message(message)
-
-    async def update_slowonly(self, message):
-        author = message.author
-        channel = message.channel
-        slowonly_user = self.slowonlys[channel].get(author)
-        if slowonly_user is None:
-            return
-
-        message_time = message.timestamp
-        last_time = slowonly_user["last_time"]
-        if (message_time - last_time).total_seconds() >= slowonly_user["duration"]:
-            slowonly_user["last_time"] = message_time
-            await asyncio.sleep(0)
-        else:
-            await self.bot.delete_message(message)
-
-    @commands.command(pass_context=True, no_pm=True, aliases=['clr'])
-    @checks.mod_or_permissions(manage_messages=True)
-    @usage('clear 50', 'clear Nadeko')
-    async def clear(self, ctx, *, arg: str):
-        """Mass-deletes some messages
-
-        If the argument specified is a number, it deletes that many messages.
-        If the argument specified is a user, it deletes any messages from that user in the last 100 messages.
-        """
-        msg = ctx.message
-        number = parse_int(arg)
-        #Is it a number?
-        if number is None:
-            #Maybe it's a user?
-            user = commands.UserConverter(ctx, arg).convert()
-            deleted = await self._clear(msg.channel, check=lambda m: m.author.id == user.id)
-        else:
-            if number < 1:
-                raise InvalidUserArgument("How can I delete {number} messages...?")
-            deleted = await self._clear(msg.channel, limit=min(number, 1000) + 1)
-        if deleted is None:
-            return
-        deleted_count = len(deleted) - 1
-        is_plural = 's'*(deleted_count != 1)
-        await self.bot.say(
-            f"Deleted {deleted_count} message{is_plural} successfully!",
-            delete_after=1.5
-        )
-
-    # Because of the reason parameter
-    # If you don't want to mention the member
-    # You must put quotes around the member name if there are spaces
-    # eg mute "makoto naegi#0001" Too Hopeful
-    # This also applies to kick, ban, and unmute
-
-    @commands.command(pass_context=True, no_pm=True)
-    @checks.is_mod()
-    @requires_quotes_for_user
-    @usage('warn "Chiaki Nanami" Sleeping too much.')
-    async def warn(self, ctx, member: discord.Member, *, reason):
-        """Warns a user.
-
-        If a user was warned already, then it mutes the user for 30 mins.
-        """
-        server = ctx.message.server
-        author = ctx.message.author
-        server_warns = self.warns_db[server]
-
-        await self.bot.say(("Hey, {0}, {1} has warned you for: \"{2}\". Please stop."
-                           ).format(member.mention, author.mention, reason))
-        await self.bot.send_message(member, f"{author} from {server} has warned you for {reason}.")
-
-        server_warns["users_warns"][member.id] += 1
-        if server_warns["users_warns"][member.id] >= server_warns["warn_limit"]:
-            await ctx.invoke(self.mute, member, "30", reason=reason)
-            action = ModAction.warn_excess
-        else:
-            action = ModAction.warn
-        await self._make_case(action, ctx.message, member, reason)
-
-
-    @commands.command(pass_context=True, no_pm=True)
+    @commands.command()
     @checks.mod_or_permissions(manage_roles=True)
-    @requires_quotes_for_user
-    @usage('mute @komaeda 5h666s Stop talking about hope please')
-    async def mute(self, ctx, member: discord.Member, duration: _full_time, *, reason: str=DEFAULT_REASON):
-        """Mutes a user for a given duration and reason"""
-        message = ctx.message
-        server = message.server
+    async def mute(self, ctx, member: discord.Member, duration: duration, *, reason: str=None):
+        """Mutes a user (obviously)"""
+        await self._do_mute(member, duration)
+        await ctx.send(f"Done. {member.mention} will now be muted for {duration_units(duration)}... \N{ZIPPER-MOUTH FACE}")
+        await self._send_case(ctx, ModCase(type='mute', mod=ctx.author, user=member, reason=reason), duration)
+        await asyncio.sleep(duration)
+        await self._do_unmute(member)
 
-        await self._mute(member)
-        server_mutes = self.muted_users_db[server]
-        data = {
-            "time": str(datetime.now()),
-            "duration": duration,
-            "reason": reason,
-            }
-
-        server_mutes[member.id] = data
-        units = duration_units(duration)
-        await self.bot.send_message(message.channel,
-            f"{member.mention} has now been muted by {message.author.mention} "
-            f"for {units}. Reason: {reason}")
-        await self._make_case(ModAction.mute, message, member, reason, duration=units)
-        #self._set_perms_for_mute(member, False, True)
-
-    async def on_member_join(self, member):
-        # Prevent mute evasion by leaving the server and coming back
-        server = member.server
-        if member.id in self.muted_users_db[server]:
-            await self._mute(member)
-
-    @commands.command(pass_context=True, no_pm=True)
+    @commands.command()
     @checks.mod_or_permissions(manage_roles=True)
-    @requires_quotes_for_user
-    @usage('unmute "Makoto Naegi" We need more hope.')
-    async def unmute(self, ctx, member: discord.Member, *, reason="None"):
-        """Unmutes a user"""
-        await self._unmute(member)
-        await self.bot.say(f"{member.mention} can speak again, probably.")
-        await self._make_case(ModAction.unmute, ctx.message, member, reason)
+    async def unmute(self, ctx, member: discord.Member, *, reason: str=None):
+        """Unmutes a user (obviously)"""
+        await self._do_unmute(member)
+        await ctx.send(f'{member.mention} can now speak again... \N{SMILING FACE WITH OPEN MOUTH AND COLD SWEAT}')
+        await self._send_case(ctx, ModCase(type='unmute', mod=ctx.author, user=member, reason=reason), duration)
 
-    @commands.command(pass_context=True, no_pm=True)
-    @checks.mod_or_permissions(kick_members=True)
-    @requires_quotes_for_user
-    @usage('kick "Junko Enoshima#6666" Too much despair')
-    async def kick(self, ctx, member: discord.Member, *, reason: str="idk no one put a reason"):
-        """Kicks a user (obviously)"""
-        if member == ctx.message.author:
-            raise InvalidUserArgument("You can't kick yourself, I think.")
-        try:
-            await self.bot.kick(member)
-        except discord.Forbidden:
-            await self.bot.say("I don't have the permission to kick members, I think.")
-        except discord.HTTPException:
-            await self.bot.say("Kicking failed. I don't know what happened.")
-        else:
-            await self.bot.say("Done, please don't make me do that again.")
-            await self._make_case(ModAction.kick, ctx.message, member, reason)
-
-    @commands.command(pass_context=True, no_pm=True, disabled=True)
-    @checks.mod_or_permissions(ban_members=True)
-    @requires_quotes_for_user
-    @usage('tempban "Junko Enoshima#6666" Too much despair')
-    async def tempban(self, ctx, member: discord.Member, durations: _full_time, *, reason: str):
-        """Temporarily bans a user (obviously)"""
-        server_temp_bans = self.temp_bans_db[member.server]
-        data = {
-            "server": member.server.id,
-            "user": member.id,
-            "time": str(datetime.now()),
-            "duration": duration,
-            "reason": reason,
-            }
-
-        server_temp_bans[member.id] = data
-        duration_units = duration_units(duration)
-        try:
-            await self.bot.ban(member)
-        except discord.Forbidden:
-            await self.bot.say("I don't have the permission to ban members, I think.")
-        except discord.HTTPException:
-            await self.bot.say("Banning failed. I don't know what happened.")
-        else:
-            await self.bot.say("Done, please don't make me do that again.")
-            await self._make_case(ModAction.temp_ban, ctx.message, member, reason, duration_units)
-
-    @commands.command(pass_context=True, no_pm=True)
-    @checks.mod_or_permissions(ban_members=True)
-    @usage('ban "Junko Enoshima#6666" Too much despair')
-    @requires_quotes_for_user
-    async def ban(self, ctx, member: discord.Member, *, reason: str):
-        """Bans a user (obviously)"""
-        if member == ctx.message.author:
-            raise InvalidUserArgument("You can't ban yourself, I think.")
-        try:
-            await self.bot.ban(member)
-        except discord.Forbidden:
-            await self.bot.say("I don't have the permission to ban members, I think.")
-        except discord.HTTPException:
-            await self.bot.say("Banning failed. I don't know what happened.")
-        else:
-            await self.bot.say("Done, please don't make me do that again.")
-            await self._make_case(ModAction.ban, ctx.message, member, reason)
-
-    @commands.command(pass_context=True, no_pm=True, disabled=True)
+    @commands.command(name='regenmutedperms', aliases=['rmp'])
     @checks.is_owner()
-    async def unban(self, ctx, member: discord.User, *, reason: str):
-        """Unbans a user (obviously)
+    @commands.guild_only()
+    async def regen_muted_perms(self, ctx):
+        mute_role = await self._get_muted_role(ctx.guild)
+        await self._regen_muted_role_perms(mute_role, *ctx.guild.channels)
+        await ctx.send('\N{THUMBS UP SIGN}')
 
-        As of right now, this command doesn't work, as the user is effectively removed from the server upon banning.
+    @commands.command()
+    @checks.mod_or_permissions(kick_members=True)
+    async def kick(self, ctx, member: discord.Member, *, reason: str=None):
+        """Kick a user (obviously)"""
+        self._check_user(ctx, member)
+
+        with redirect_exception((discord.Forbidden, 'I need the "Kick Members" permission, I think.'),
+                                (discord.HTTPException, f'Kicking {member} failed, for some reason.')):
+            await member.kick(reason=reason)
+        await ctx.send(f"Done. Please don't make me do that again...")
+        await self._send_case(ctx, ModCase(type='kick', mod=ctx.author, user=member, reason=reason))
+
+    @staticmethod
+    async def _attempt_ban(member, *, days=1, reason=None):
+        with redirect_exception((Forbidden, 'I need the "Ban Members" permission, I think.'),
+                                (HTTPException, f'Banning {member} failed, for some reason.')):
+            await member.ban(delete_message_days=days, reason=reason)
+
+    async def _attempt_unban(self, server, user, reason):
+        await server.unban(user, reason)
+        self.tempbans[server].pop(str(member.id), None)
+
+    @commands.command(aliases=['sb'])
+    @checks.mod_or_permissions(ban_members=True)
+    async def softban(self, ctx, member: discord.Member, days: int=1, *, reason: str=None):
+        """Softbans a user (obviously)"""
+        self._check_user(ctx, member)
+        await self._attempt_ban(member, days=days, reason=reason)
+        await ctx.send("Done. Please don't make me do it again...")
+        await self._send_case(ctx, ModCase(type='softban', mod=ctx.author, user=member, reason=reason))
+
+        await asyncio.sleep(10)
+        await member.unban(reason='unban after a softban')
+        invite = await ctx.guild.create_invite(max_uses=1, reason=f'created to unban {member}')
+        # XXX: This will not work if the user doesn't have any mutual servers 
+        #      with the bot at this point. Is that ok?
+        await member.send(f"You have been soft-banned by {ctx.author} "
+                          f"for the following reason:\n{reason}\n"
+                           "Here's the invite link back to the server. "
+                          f"I hope you've learned your lesson...\n{invite}")
+
+    @commands.command(aliases=['tb'])
+    @checks.mod_or_permissions(ban_members=True)
+    async def tempban(self, ctx, member: discord.Member, duration: duration, *, reason: str=None):
+        """Temporarily bans a user (obviously)"""
+        self._check_user(ctx, member)
+        await self._attempt_ban(member, reason=reason)
+        await ctx.send(f"Done. Please don't make me do that again...")
+
+        self.put_payload(self.tempbans, member, duration)
+        await self._send_case(ctx, ModCase(type='tempban', mod=ctx.author, user=member, reason=reason), duration)
+        await asyncio.sleep(duration)
+        await self._attempt_unban(ctx.guild, member, reason)
+
+    @commands.command()
+    @checks.mod_or_permissions(ban_members=True)
+    async def ban(self, ctx, member: discord.Member, *, reason: str=None):
+        """Bans a user (obviously)"""
+        self._check_user(ctx, member)
+
+        await self._attempt_ban(member, reason=reason)
+        await ctx.send(f"Done. Please don't make me do that again...")
+        await self._send_case(ctx, ModCase(type='ban', mod=ctx.author, user=member, reason=reason))
+
+    @commands.command()
+    @checks.mod_or_permissions(ban_members=True)
+    async def unban(self, ctx, user: discord.User, *, reason: str=None):
+        """Unbans a user (obviously)"""
+        with redirect_exception((discord.Forbidden, 'I need the "Ban Members" permission, I think.'),
+                                (discord.HTTPException, f'Unbanning {user} failed, for some reason.')):
+            await ctx.guild.unban(user)
+        await ctx.send("Done. What did they do to get banned in the first place...?")
+        await self._send_case(ctx, ModCase(type='unban', mod=ctx.author, user=user, reason=reason))
+
+    @commands.command()
+    @checks.mod_or_permissions(ban_members=True)
+    async def hackban(self, ctx, user_id):
+        """Bans a user (obviously)
+        
+        Unlike {prefix}ban, this can only take the ID of a user.
+        This makes it possible to ban a user who's not even in the server.
+        (Not so obviously)
         """
-        try:
-            await self.bot.unban(ctx.message.server, member)
-        except discord.Forbidden:
-            await self.bot.say("I don't have the permission to unban members, I think.")
-        except discord.HTTPException:
-            await self.bot.say("Unbanning failed. I don't know what happened.")
-        else:
-            await self.bot.say(f"Done. What did {member.mention} do to get banned in the first place?")
-            await self._make_case(ModAction.unban, ctx.message, member, reason)
+        with redirect_exception((discord.Forbidden, 'I need the "Ban Members" permission, I think.'),
+                                (discord.HTTPException, f'Unbanning user {user_id} failed, for some reason.')):
+            await self._state.http.ban(user_id, ctx.guild.id)
+        await ctx.send("\N{OK HAND SIGN}")
 
-    @commands.group(pass_context=True, no_pm=True)
-    @checks.is_admin()
-    async def caseset(self, ctx):
+    # TODO: implement these stuffs
+    async def antispam(self, limit, effect):
         pass
 
-    @caseset.command(pass_context=True, no_pm=True)
-    @checks.is_admin()
-    async def log(self, ctx, *, channel: discord.Channel=None):
-        if channel is None:
-            channel = ctx.message.channel
-        server_cases = self.cases_db[ctx.message.server]
-        server_cases["channel"] = channel.id
-        server_cases.setdefault("case_num", 1)
-        await self.bot.say(f"Cases will now be made on channel {channel.mention}")
+    @commands.command(name='warnpunish')
+    async def warn_punish(self, ctx, num: int, punishment, duration: duration=None):
+        """Sets the punishment a user receives upon exceeding a given warn limit"""
+        punish_lower = punishment.lower()
+        if punish_lower in _restricted_warn_punishments:
+            raise errors.InvalidUserArgument("{punish_lower} is not a valid punishment")
 
-    @caseset.command(pass_context=True, no_pm=True)
-    @checks.is_admin()
-    async def reset(self, ctx):
-        server_cases = self.cases_db[ctx.message.server]
-        server_cases["case_num"] = 1
-        await self.bot.say(f"Cases has been reset back to 1")
+        if punish_lower in {'tempban', 'mute'} and duration is None:
+            raise errors.InvalidUserArgument(f'A duration is required for {punish_lower}')
+
+        payload = {
+            'punish': punish_lower,
+            'duration': duration,
+        }
+        self.guild_warn_config[ctx.guild]['punishments'][str(num)] = payload
+        await ctx.send(f'\N{OK HAND SIGN} if a user has been warned {num} times, I will **{punish_lower}** them.')
+
+    async def warn_timeout(self, ctx, duration: duration):
+        """Sets the maximum time between the oldest warn and the most recent warn.
+        If a user hits a warn limit within this timeframe, they will be punished.
+        """
+        self.guild_warn_config[ctx.guild]['timeout'] = duration
+        await ctx.send(f'Alright, if a user was warned within {duration_units(duration)} '
+                        'after their oldest warn, bad things will happen.')
+
+
+    # ------------- Case Related Commands ------------------
+
+    def _get_case(self, server, num=None):
+        cases = self.cases[server].setdefault('cases', [])
+        with redirect_exception((IndexError, f"Couldn't find case {num}."),
+                                cls=errors.ResultsNotFound):
+            # support negative indexing
+            if num is None:
+                return cases
+            num -= num > 0
+            return cases[num]
+
+    @commands.group()
+    @checks.admin_or_permissions(manage_server=True)
+    async def caseset(self, ctx):
+        """Super-command for all mod case-related commands
+
+        Only cases where the bot was used will be logged.
+        """
+        # TODO: Make like Pollr and log *everything*
+        pass
+
+    @caseset.command(name='logchannel', aliases=['channel'])
+    async def log_channel(self, ctx, channel: discord.TextChannel):
+        """Sets the channel for logging mod cases"""
+        if not channel.permissions_for(ctx.me).send_messages:
+            raise errors.InvalidUserArgument(f"I can't speak in {channel.mention}. Please give me the Send Messages perm there.\n")
+
+        self.cases[ctx.guild]['case_channel'] = channel.id
+        await ctx.send(f"Cases will now be put on {channel.mention}")
+
+    @caseset.command(name='stop')
+    async def case_stop(self, ctx):
+        """Stops logging the mod-cases."""
+        with redirect_exception((KeyError, "There was never a place to log any cases...")):
+            self.cases[ctx.guild].pop('case_channel')
+        await ctx.send(f"Cases will now be put on {channel.mention}")
+
+    @caseset.command(name='reason')
+    async def case_reason(self, ctx, num: int, *, reason):
+        """Sets the reason for a given mod case"""
+        case = self._get_case(ctx.guild, num)
+        mod = case['mod']
+        if case['type'] == 'WARN':
+            return await ctx.send("Cannot edit a warn case (it doesn't make sense anyway...)")
+
+        if mod not in (None, ctx.author.id):    
+            return await ctx.send("That case is not yours...")
+
+        channel = self.bot.get_channel(case['channel_id'])
+        if channel is None:
+            return await ctx.send("This channel no longer exists")
+
+        message = await channel.get_message(case['message_id'])
+        assert message.author.id == self.bot.user.id
+
+        embed = message.embeds[0].set_field_at(-1, name="Reason", value=reason, inline=False)
+        if mod is None:
+            case['mod'] = ctx.author.id
+            action_field = embed.fields[1]
+            new_action = _rreplace(action_field.value, 'None', str(ctx.author), 1)
+            embed.set_field_at(1, name=action_field.name, value=new_action, inline=False)
+
+        await message.edit(embed=embed)
+        case['reason'] = reason
+        await ctx.send(f"Successfully changed case #{num}'s reason to {reason}!")
+
+    @caseset.command(name='reset', aliases=['clear'])
+    async def case_reset(self, ctx):
+        """Resets all the mod cases. However, this doesn't clear the existing case messages."""
+        cases = self._get_case(ctx.guild)
+        if not cases:
+            raise errors.ResultsNotFound("There are no cases in this server!")
+
+        cases.clear()
+        await ctx.send("Successfully cleared the cases for this server!")
+
+    # Will probably be redone later but I don't like the implementation at the moment.
+    # def _get_special_roles(self, server):
+    #     return self.cases[server].setdefault('special_roles', [])
+
+    # @caseset.command(name='addspecialrole', aliases=['asr'])
+    # async def case_add_special_role(self, ctx, *, role: discord.Role):
+    #     """Adds a special role to be logged."""
+    #     muted_role = await self._get_muted_role(ctx.guild)
+    #     if role == muted_role:
+    #         return await ctx.send("That role is the muted role. It's already special.")
+
+    #     special_roles = self._get_special_roles(ctx.guild)
+    #     if role.id in special_roles:
+    #         return await ctx.send("You have already made this role special.")
+
+    #     special_roles.append(role.id)
+    #     await ctx.send(f'{role} is now a special role! If a user is given this role, it will be logged.')
+
+    # @caseset.command(name='removespecialrole', aliases=['rsr'])
+    # async def case_remove_special_role(self, ctx, *, role: discord.Role):
+    #     """Removes a special role from being logged."""
+
+    #     special_roles = self._get_special_roles(ctx.guild)
+    #     if role.id not in special_roles:
+    #         return await ctx.send("This role isn't special.")
+
+    #     special_roles.remove(role.id)
+    #     await ctx.send(f'{role} is no longer a special role! I will not keep track of it anymore.')
+
+
+    # --------- Events ---------
 
     async def on_message(self, message):
         await self.update_slowmode(message)
-        await self.update_slowonly(message)
+
+    async def on_guild_channel_create(self, channel):
+        server = channel.guild
+        role = await self._get_muted_role(server)
+        if role is None:
+            return
+        await self._regen_muted_role_perms(role, channel)
+
+    async def on_member_join(self, member):
+        # Prevent mute-evasion
+        mute_data = self.mutes[member.guild].get(str(member.id))
+        if mute_data:
+            await self._do_mute(member, mute_data['duration'])
+
+    # async def on_member_update(self, before, after):
+    #     new_roles = set(after.roles).symmetric_difference(before.roles)
+    #     special_roles = self._get_special_roles(before.guild)
+
+    #     for new_role in new_roles:
+    #         if new_role.id in special_roles:
+    #             await self._send_case(ctx, ModCase(type='special_role', mod=None, user=before, reason=None))
 
 def setup(bot):
-    bot.add_cog(Moderator(bot), "Mod")
+    bot.add_cog(Moderator(bot))

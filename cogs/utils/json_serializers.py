@@ -33,6 +33,9 @@ def decode_datetime(d):
         return datetime.fromtimestamp(d['timestamp'])
     return d
 
+def decode_deque(d):
+    return deque(d['deque']) if d.get('__type__') == 'deque' else d
+
 def union_decoder(*decoders):
     def actual_decoder(d):
         for decoder in decoders:
