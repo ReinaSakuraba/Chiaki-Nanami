@@ -43,21 +43,6 @@ except FileNotFoundError:
 
 bot = chiaki_bot(config)
 
-initial_extensions = (
-    'cogs.admin',
-    'cogs.afk',
-    'cogs.customcommands',
-    'cogs.halp',
-    'cogs.math',
-    'cogs.meta',
-    'cogs.moderator',
-    'cogs.owner',
-    'cogs.permissions',
-    'cogs.rng',
-    'cogs.searches',
-    'cogs.games.race',
-    'cogs.games.trivia'
-)
 
 #------------------EVENTS----------------
 @bot.event
@@ -141,7 +126,7 @@ async def on_command_completion(ctx):
 #--------------MAIN---------------
 
 def main():
-    for ext in initial_extensions:
+    for ext in config.pop('extensions'):
         try:
             bot.load_extension(ext)
         except Exception as e:

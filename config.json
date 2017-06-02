@@ -1,12 +1,33 @@
 {
-	"official_server": 0,
+    "official_server": 0,
+    "official_server_invite": "",
 
-	"log": false,
-	"logging_channels": [],
+    "log": false,
+    "logging_channels": [],
+
 
     "default_command_prefix": "->",
     "default_help": "Your help text here",
-    
+    "description": "description",
+
+    "extensions": [
+        "cogs.admin",
+        "cogs.afk",
+        "cogs.customcommands",
+        "cogs.halp",
+        "cogs.math",
+        "cogs.meta",
+        "cogs.moderator",
+        "cogs.owner",
+        "cogs.permissions",
+        "cogs.rng",
+        "cogs.searches",
+        "cogs.games.hangman",
+        "cogs.games.race",
+        "cogs.games.trivia"
+
+    ],
+
     "permissions": [
         "administrator",
         "manage_guild",
