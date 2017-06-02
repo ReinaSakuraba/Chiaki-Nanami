@@ -11,17 +11,24 @@ import sys
 from contextlib import redirect_stdout
 from discord.ext import commands
 from io import StringIO
-from itertools import chain, islice, starmap
+from itertools import chain, islice, starmap, zip_longest
 from operator import attrgetter
 
 from .utils import converter
-from .utils.compat import url_color, user_color
+from .utils.compat import ilen, url_color, user_color
 from .utils.context_managers import redirect_exception, temp_message
 from .utils.converter import BotCommand, union
 from .utils.errors import InvalidUserArgument, ResultsNotFound
 from .utils.misc import str_join, nice_time, ordinal
 from .utils.paginator import iterable_limit_say, iterable_say
 
+
+def _grouper(n, iterable, fillvalue=None):
+    args = [iter(iterable)] * n
+    return zip_longest(fillvalue=fillvalue, *args)
+
+def _group_strings(n, strings):
+    return map(''.join, _grouper(n, strings, ''))
 
 def _icon_embed(idable, url, name):
     embed = (discord.Embed(title=f"{idable.name}'s {name}")
@@ -47,7 +54,6 @@ _status_colors = {
     discord.Status.offline   : discord.Colour.default(),
     discord.Status.invisible : discord.Colour.default(),
 }
-
 
 def default_last_n(n=50): 
     return lambda: collections.deque(maxlen=n)
@@ -214,6 +220,46 @@ class Meta:
                      )
 
         await ctx.send(embed=role_embed)
+
+    @staticmethod
+    def text_channel_embed(channel):
+        topic = '\n'.join(_group_strings(70, channel.topic)) if channel.topic else discord.Embed.Empty
+        member_count = len(channel.members)
+        empty_overwrites = ilen(ow for _, ow in channel.overwrites if ow.is_empty())
+        overwrite_message = f'{len(channel.overwrites)} ({empty_overwrites} empty)'
+
+        return (discord.Embed(description=topic, timestamp=channel.created_at)
+               .set_author(name=channel.name)
+               .add_field(name='ID', value=channel.id)
+               .add_field(name='Position', value=channel.position)
+               .add_field(name='Members', value=len(channel.members))
+               .add_field(name='Permission Overwrites', value=overwrite_message)
+               .set_footer(text='Created')
+               )
+
+    @staticmethod
+    def voice_channel_embed(channel):
+        empty_overwrites = ilen(ow for _, ow in channel.overwrites if ow.is_empty())
+        overwrite_message = f'{len(channel.overwrites)} ({empty_overwrites} empty)'
+
+        return (discord.Embed(timestamp=channel.created_at)
+               .set_author(name=channel.name)
+               .add_field(name='ID', value=channel.id)
+               .add_field(name='Position', value=channel.position)
+               .add_field(name='Bitrate', value=channel.bitrate)
+               .add_field(name='Max Members', value=channel.user_limit)
+               .add_field(name='Permission Overwrites', value=overwrite_message)
+               .set_footer(text='Created')
+               )
+
+    @info.command()
+    async def channel(self, ctx, channel: union(discord.TextChannel, discord.VoiceChannel)=None):
+        if channel is None:
+            channel = ctx.channel
+
+        channel_embed = (self.text_channel_embed(channel) if isinstance(channel, discord.TextChannel) else
+                         self.voice_channel_embed(channel))
+        await ctx.send(embed=channel_embed)
 
     @staticmethod
     async def _server_embed(server):
