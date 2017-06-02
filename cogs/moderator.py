@@ -418,8 +418,8 @@ class Moderator:
 
     @staticmethod
     async def _attempt_ban(member, *, days=1, reason=None):
-        with redirect_exception((Forbidden, 'I need the "Ban Members" permission, I think.'),
-                                (HTTPException, f'Banning {member} failed, for some reason.')):
+        with redirect_exception((discord.Forbidden, 'I need the "Ban Members" permission, I think.'),
+                                (discord.HTTPException, f'Banning {member} failed, for some reason.')):
             await member.ban(delete_message_days=days, reason=reason)
 
     async def _attempt_unban(self, server, user, reason):
