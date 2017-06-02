@@ -331,7 +331,7 @@ class Moderator:
     @staticmethod
     async def _regen_muted_role_perms(role, *channels):
         muted_permissions = dict.fromkeys(['send_messages', 'manage_messages', 'add_reactions',
-                                           'speak', 'connect', 'use_voice_activity'], False)
+                                           'speak', 'connect', 'use_voice_activation'], False)
         for channel in channels:
             await channel.set_permissions(role, **muted_permissions)
 
@@ -382,6 +382,27 @@ class Moderator:
         mute_role = await self._get_muted_role(ctx.guild)
         await self._regen_muted_role_perms(mute_role, *ctx.guild.channels)
         await ctx.send('\N{THUMBS UP SIGN}')
+        
+    @commands.command(name='setmuterole', aliases=['smur'])
+    @checks.admin_or_permissions(manage_roles=True, manage_server=True)
+    async def set_muted_role(self, ctx, *, role: discord.Role):
+        """Sets the muted role for the server.
+        
+        Ideally you shouldn't have to do this, as I already create a muted role.
+        This is just in case you already have a muted role and would like to use that one.
+        """
+        await self._regen_muted_role_perms(role, *ctx.guild.channels)
+        self.muted_roles[str(ctx.guild.id)] = role.id
+        await ctx.send(f'Set the muted role to **{role}**!')
+        
+    @commands.command(name='muterole', aliases=['mur'])
+    async def muted_role(self, ctx):
+        """Gets the current muted role."""
+        role_id = self.muted_roles.get(str(ctx.guild.id), None)
+        role = discord.utils.get(ctx.guild.roles, id=role_id)
+        msg = ("There is no muted role, either set one now or let me create one for you."
+               if role is None else f"The current muted role is **{role}**")
+        await ctx.send(msg)
 
     @commands.command()
     @checks.mod_or_permissions(kick_members=True)
