@@ -36,7 +36,7 @@ class ApproximateUser(commands.MemberConverter):
                     await channel.send(f"(I found {ilen(filtered) + 2} occurences of '{arg}'. "
                                         "I'll take the first result, probably.)")
                 return next_member
-        return super().convert()
+        return await super().convert(ctx, arg)
 
 
 # Is there any way to make this such that there's no repetition?
@@ -53,7 +53,7 @@ class ApproximateRole(commands.RoleConverter):
                     await channel.send(f"(I found {ilen(role_filter) + 2} occurences of '{arg}'. "
                                         "I'll take the first result, probably.)")
                 return next_role
-        return super().convert()
+        return await super().convert(ctx, arg)
 
 
 class BotCogConverter(commands.Converter):
