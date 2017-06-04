@@ -117,7 +117,6 @@ class Admin:
         await ctx.send(f"**{role}** is no longer a self-assignable role!")
 
     @commands.command(name='listselfrole', aliases=['lsar'])
-    @checks.is_admin()
     async def list_self_role(self, ctx):
         """List all the self-assignable roles in the server
 
