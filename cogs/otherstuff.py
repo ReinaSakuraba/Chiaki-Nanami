@@ -163,7 +163,7 @@ class OtherStuffs:
                      ]
             msg2 = "(Hint: specify a user.)"
         elif target.id == slapper.id:
-            msg21 = f"{slapper} is slapping themself, I think."
+            msg1 = f"{slapper} is slapping themself, I think."
             slaps = ["https://media.giphy.com/media/rCftUAVPLExZC/giphy.gif",
                      "https://media.giphy.com/media/EQ85WxyAAwEaQ/giphy.gif",
                      ]
