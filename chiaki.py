@@ -8,6 +8,7 @@ import random
 import re
 import sys
 import traceback
+import warnings
 
 from cogs.utils import errors
 from cogs.utils.context_managers import redirect_exception
