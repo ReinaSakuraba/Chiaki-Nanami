@@ -375,9 +375,9 @@ for k, v in _reverse_units.items():
     _reverse_units[k] = f"{name} {aliases}"
 del _length, _mass, _bit, _femto, _nano
 
-_unit_converter = item_converter(_units, key=str.lower, error_msg="I don't recognized **{key}** as a unit.")
+
 def _parse_unit(unit_type):
-    unit = _unit_converter(unit_type)
+    unit = _units[unit_type.lower()]
     if unit.type == 'Data':
         return _units.get(unit_type, unit)
     return unit
@@ -532,9 +532,9 @@ class Math:
         try:
             result = convert_unit(from_unit, to_unit, value)
         except IncompatibleUnits as e:
-            result = f'{type(e).__name__}: {e}'
-        except KeyError:
-            result = f'Either {from_unit} or {to_unit} is not a recognized unit of measurement.'
+            result = f'{MAGIC_ERROR_THING}{type(e).__name__}: {e}'
+        except KeyError as e:
+            result = f'{MAGIC_ERROR_THING}{e} is not a recognized unit of measurement.'
         await self._result_say(ctx, f'{value} {from_unit} -> {to_unit}', result)
 
     @commands.command()
