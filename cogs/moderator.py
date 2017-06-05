@@ -201,22 +201,23 @@ class Moderator:
                             "seconds before they can post another message.")
 
         if member is not None:
-            await adder('slowonly', _member_key(member), member, 'They', actual_key=member.server)
+            await adder('slowonly', _member_key(member), member, 'They', actual_key=member.guild)
         else:
             await adder('slowmode', str(ctx.channel.id), ctx.channel, 'Everyone')
 
     @commands.command(aliases=['slowoff'])
     @checks.mod_or_permissions(manage_messages=True)
     async def slowmodeoff(self, ctx, member: discord.Member=None):
-        async def popper(currents, limits, limit_key, key):
+        async def popper(currents, limits, limit_key, key, actual_key=None):
             with redirect_exception((KeyError, f"{key.mention} was never in slowmode...")):
-                del currents[key]
                 del limits[limit_key]
+            with contextlib.suppress(KeyError):
+                 del currents[key]
             await ctx.send(f"{key.mention} is no longer in slowmode!")
 
         if member is not None:
-            await popper(self.slowonlys.get(message.guild, {}), self.slowonly_limits,
-                         _member_key(member), member)
+            await popper(self.slowonlys.get(ctx.guild.id, {}), self.slowonly_limits,
+                         _member_key(member), member, actual_key=member.guild)
         else:
             await popper(self.slowmodes, self.slowmode_limits, 
                          str(ctx.channel.id), ctx.channel)
