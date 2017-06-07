@@ -157,7 +157,7 @@ class OtherStuffs:
         message = await ctx.send('Poing...')
         end = time.perf_counter()       # fuck time.monotonic()
         ms = (end - start) * 100
-        await message.edit(content=f'Poing! ({ms} ms)')
+        await message.edit(content=f'Poing! ({ms :.3f} ms)')
 
     @commands.command()
     async def slap(self, ctx, target: discord.Member=None):
