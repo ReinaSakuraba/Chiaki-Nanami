@@ -6,10 +6,12 @@ import random
 import sys
 
 from collections import namedtuple
+from datetime import datetime
 from discord.ext import commands
 from PIL import Image
 
 from .utils import errors
+from .utils.compat import user_colour
 from .utils.converter import item_converter
 
 with open(r'data\copypastas.json', encoding='utf-8') as f:
@@ -85,6 +87,8 @@ def _calculate_compatibilty(info1, info2):
 class OtherStuffs:
     def __init__(self, bot):
         self.bot = bot
+        self.last_messages = {}
+        self.default_time = datetime.utcnow()
 
     def __unload(self):
         # unload the cache if necessary...
@@ -193,6 +197,32 @@ class OtherStuffs:
                      .set_footer(text=msg2)
                      )
         await ctx.send(embed=slap_embed)
+
+    @commands.command(name='lastseen')
+    async def last_seen(self, ctx, user: discord.User):
+        """Shows the last words of a user"""
+
+        # TODO: Save these (will probably require a DB).
+        message = self.last_messages.get(user.id)
+        colour = await user_colour(user)
+        if message is None:
+            embed = (discord.Embed(colour=colour, timestamp=self.default_time)
+                    .set_author(name=f'{user} has not been alive...')
+                    .set_thumbnail(url=user.avatar_url)
+                    .set_footer(text='Last seen ')
+                    )
+        else:
+            embed = (discord.Embed(colour=colour, description=message.content, timestamp=message.created_at)
+                    .set_author(name=f"{user}'s last words...")
+                    .set_thumbnail(url=user.avatar_url)
+                    .add_field(name='\u200b', value=f'From #{message.channel} in {message.guild}')
+                    .set_footer(text='Last seen ')
+                    )
+        await ctx.send(embed=embed)
+
+    async def on_message(self, message):
+        self.last_messages[message.author.id] = message
+
 
 def setup(bot):
     bot.add_cog(OtherStuffs(bot))
