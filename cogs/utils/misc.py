@@ -1,3 +1,4 @@
+import functools
 import inspect
 import logging
 import os
@@ -25,6 +26,9 @@ def multi_replace(string, replacements):
     substrs = sorted(replacements, key=len, reverse=True)
     pattern = re.compile("|".join(map(re.escape, substrs)))
     return pattern.sub(lambda m: replacements[m.group(0)], string)
+
+_markdown_replacements = {re.escape(c): '\\' + c for c in ('*', '`', '_', '~', '\\')}
+escape_markdown = functools.partial(multi_replace, replacements=_markdown_replacements)
 
 def truncate(s, length, placeholder):
     return (s[:length] + placeholder) if len(s) > length + len(placeholder) else s
