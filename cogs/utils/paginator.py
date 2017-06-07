@@ -2,6 +2,7 @@ import asyncio
 import discord
 import functools
 import itertools
+import random
 
 from datetime import datetime
 from discord.ext import commands
@@ -118,7 +119,7 @@ class EmbedPages:
         joined = '\n'.join(itertools.chain(initial_message, funcs))
 
         return (discord.Embed(title=self.title, colour=self.colour, description=joined)
-               .set_footer(text=f"From page {self._index}")
+               .set_footer(text=f"From page {self._index + 1}")
                )
 
     def first(self):
@@ -229,4 +230,45 @@ class EmbedFieldPages(EmbedPages):
         add_field = functools.partial(embed.add_field, inline=self.inline)
         for name, value in page:
             add_field(name=name, value=value)
+        return embed
+
+class TitleBasedPages(EmbedPages):
+    """Similar to EmbedPages, but takes a dict of title-content pages
+
+    As a result, the content can easily exceed the limit of 2000 chars.
+    Please use responsibly.
+    """
+    def __init__(self, context, entries, **kwargs):
+        super().__init__(context, entries, **kwargs)
+        self.entry_map = entries
+
+    def _create_embed(self, idx, page):
+        entry_title = self.entries[idx]
+        return  (discord.Embed(title=entry_title, colour=self.colour, description='\n'.join(page))
+                .set_author(name=self.title)
+                .set_footer(text=f'Page: {idx + 1} / {len(self)} ({len(self.entries)} entries)')
+                )
+
+    def __getitem__(self, idx):
+        if idx < 0:
+            idx += len(self)
+
+        self._index = idx
+        page = self.entry_map[self.entries[idx]]
+        return self._create_embed(idx, page)
+
+    def __len__(self):
+        return len(self.entries)
+
+class RandomColourEmbeds(EmbedPages):
+    """Mixin class for the embed pages. This allows you to randomize the colour pages.
+
+    Usage of the class goes something like this:
+
+    class Pages(RandomColourEmbeds, ActualEmbedPagesBase):
+        pass
+    """
+    def _create_embed(self, idx, page):
+        embed = super()._create_embed(idx, page)
+        embed.colour = random.randint(0, 0xFFFFFF)
         return embed

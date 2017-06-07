@@ -17,6 +17,7 @@ from random import randrange
 from .utils.converter import item_converter
 from .utils.database import Database
 from .utils.errors import InvalidUserArgument
+from .utils.paginator import RandomColourEmbeds, TitleBasedPages
 
 try:
     import sympy
@@ -411,6 +412,9 @@ parse_expr = functools.partial(parse_sympy_expr, evaluate=False,
 
 MAGIC_ERROR_THING = 'error:\x00' # prepend for any errors
 
+class ConversionPages(RandomColourEmbeds, TitleBasedPages):
+    pass
+
 class Math:
     def __init__(self, bot):
         self.bot = bot
@@ -540,10 +544,14 @@ class Math:
     @commands.command()
     async def conversions(self, ctx):
         """Lists all the available units"""
-        conversions_embed = discord.Embed(title="__List of available units for conversion__", colour=self.bot.colour)
-        for k, v in itertools.groupby(_reverse_units.items(), lambda t: t[0].type):
-            conversions_embed.add_field(name=k, value='\n'.join([t[1] for t in v]))
-        await ctx.send(embed=conversions_embed)
+        grouped = itertools.groupby(_reverse_units.items(), lambda t: t[0].type)
+        conversion_fields = {k: [t[1] for t in v] for k, v in grouped}
+        pages = ConversionPages(ctx, conversion_fields, title='List of available units for conversion')
+        await pages.interact()
+        # conversions_embed = discord.Embed(title="__List of available units for conversion__", colour=self.bot.colour)
+        # for k, v in itertools.groupby(_reverse_units.items(), lambda t: t[0].type):
+        #     conversions_embed.add_field(name=k, value='\n'.join([t[1] for t in v]))
+        # await ctx.send(embed=conversions_embed)
 
     def _transform_expr(self, ctx, expr):
         config = self.parsing_configs[ctx.author]
