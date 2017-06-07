@@ -10,6 +10,7 @@ from operator import attrgetter, contains
 
 from .utils import checks, errors
 from .utils.compat import always_iterable, iterate
+from .utils.context_managers import redirect_exception
 from .utils.converter import item_converter, BotCommand, BotCogConverter
 from .utils.database import Database
 from .utils.misc import emoji_url, str_join
@@ -39,7 +40,7 @@ def _make_doc(thing, extra=''):
 _perm_set_command_help = _make_doc('a command', extra=('This will affect aliases as well. If a command group is blocked, '
                                                       'its subcommands are blocked as well.'))
 
-class PermLevel(enum.Enum):
+class Level(enum.Enum):
     user        = (discord.Member, '({0.guild.id}, {0.author.id})'.format, False, )
     # higher roles should be prioritised
     role        = (discord.Role, lambda ctx: reversed([role.id for role in ctx.author.roles]), False, )
@@ -71,24 +72,29 @@ class PermLevel(enum.Enum):
         # Context objects don't have a "server" attribute, they have a "guild" attribute
         # The only reason why server is used in the enum is because of convenience for the user
         # As they'll be more familiar with the term "server" than "guild"
-        attr = 'guild' if self == PermLevel.server else self.name
+        attr = 'guild' if self == Level.server else self.name
         # using a 1-elem tuple is faster than making a 1-elem list O.o
         return Idable(getattr(ctx, attr)),
 
-level_getter = item_converter(PermLevel, key=str.lower, error_msg="Unrecognized level: {arg}")
+    @classmethod
+    async def convert(cls, ctx, arg):
+        with redirect_exception((KeyError, f"Unrecognized level: {arg}")):
+            return cls[arg.lower()]
 
-class PermAction(namedtuple('PermAction', 'value action emoji colour')):
-    def __new__(cls, arg):
+
+class Action(namedtuple('Action', 'value action emoji colour')):
+    @classmethod
+    async def convert(cls, ctx, arg):
         mode = arg.lower()
-        action = functools.partial(super().__new__, cls)
 
         if mode in ('allow', 'unlock', 'enable', ):
-            return action(value=True,  action='enabled',  emoji='\U0001f513', colour=discord.Colour.green())
+            return cls(value=True,  action='enabled',  emoji='\U0001f513', colour=discord.Colour.green())
         elif mode in ('none', 'reset', 'null', ):
-            return action(value=None,  action='reset',    emoji='\U0001f504', colour=discord.Colour.default())
+            return cls(value=None,  action='reset',    emoji='\U0001f504', colour=discord.Colour.default())
         elif mode in ('deny', 'lock', 'disable', ):
-            return action(value=False, action='disabled', emoji='\U0001f512', colour=discord.Colour.red())
+            return cls(value=False, action='disabled', emoji='\U0001f512', colour=discord.Colour.red())
         raise commands.BadArgument(f"Don't know what to do with {arg}.")
+
 
 class BlockType(enum.Enum):
     blacklist = (discord.Colour.red(),   '\U000026d4')
@@ -105,18 +111,13 @@ class BlockType(enum.Enum):
                .add_field(name='ID', value=user.id)
                )
 
-command_perm_default = {i: {} for i in map(str, PermLevel)}
+command_perm_default = {i: {} for i in map(str, Level)}
 ALL_MODULES_KEY = 'All Modules'
 
 class Permissions:
     def __init__(self):
         self.permissions = Database('permissions.json', default_factory=command_perm_default.copy)
         self.other_permissions = Database('permissions2.json', default_factory=list)
-        # Because checking a command's permissions will most likely be meaningless or unhelpful,
-        # (since all it would return is whether or not a user can use a command)
-        # a history is probably the best way to see the what has been inputted
-        # This approach is taken by nadeko and is probably the best one here...
-        self.permissions_history = Database('permissionshistory.json', default_factory=list)
 
     def __global_check(self, ctx):
         user_id = ctx.author.id
@@ -151,8 +152,12 @@ class Permissions:
             raise errors.InvalidUserArgument(f"I can't modify permissions from the module {name}.")
 
     def _perm_iterator(self, name, ctx):
-        perms = self.permissions[name]
-        for level in PermLevel:
+        perms = self.permissions.get(name)
+        if perms is None:
+            yield
+            return
+
+        for level in Level:
             level_perms = perms[str(level)]
             try:
                 ctx_attr = self._context_attribute(level, ctx)
@@ -179,7 +184,7 @@ class Permissions:
     def set_perms(self, level, mode, name, *args):
         level_perms = self.permissions[name][str(level)]
         # members require a special key - a tuple of (server_id, member_id)
-        fmt = '({0.original.guild.id}, {0.id})' if level == PermLevel.user else '{0.id}'
+        fmt = '({0.original.guild.id}, {0.id})' if level == Level.user else '{0.id}'
         level_perms.update(zip(map(fmt.format, args), itertools.repeat(mode.value)))
 
     # We could make this function take a union of Commands and cogs.
@@ -190,8 +195,7 @@ class Permissions:
     @commands.command(name='permsetcommand', aliases=['psc'], help=_perm_set_command_help)
     @checks.is_admin()
     @commands.guild_only()
-    async def perm_set_command(self, ctx, level: level_getter, mode: PermAction,
-                               command: BotCommand, *args):
+    async def perm_set_command(self, ctx, level: Level, mode: Action, command: BotCommand, *args):
         self._assert_is_valid_cog(command)
         ids = await level.parse_args(ctx, *args)
         await self._perm_set(ctx, level, mode, command.qualified_name, *ids, thing='Command')
@@ -199,8 +203,7 @@ class Permissions:
     @commands.command(name='permsetmodule', aliases=['psm'], help=_make_doc('a module'))
     @checks.is_admin()
     @commands.guild_only()
-    async def perm_set_module(self, ctx, level: level_getter, mode: PermAction,
-                              module: BotCogConverter, *args):
+    async def perm_set_module(self, ctx, level: Level, mode: Action, module: BotCogConverter, *args):
         self._assert_is_valid_cog(module)
         ids = await level.parse_args(ctx, *args)
         await self._perm_set(ctx, level, mode, type(module).__name__, *ids, thing='Module')
@@ -208,7 +211,7 @@ class Permissions:
     @commands.command(name='permsetall', aliases=['psall'], help=_make_doc('all modules'))
     @checks.is_owner()
     @commands.guild_only()
-    async def perm_set_all(self, ctx, level: level_getter, mode: PermAction, *args):
+    async def perm_set_all(self, ctx, level: Level, mode: Action, *args):
         ids = await level.parse_args(ctx, *args)
         self.set_perms(level, mode, ALL_MODULES_KEY, *ids)
 
@@ -263,6 +266,7 @@ class Permissions:
         """
         await self._modify_blacklist(ctx, user, 'remove', contains_op=lambda a, b: b not in a, 
                                      block_type=BlockType.whitelist)
+
 
 def setup(bot):
     bot.add_cog(Permissions())
