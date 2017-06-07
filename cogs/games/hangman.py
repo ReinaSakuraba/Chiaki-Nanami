@@ -14,19 +14,24 @@ from discord.ext import commands
 from .manager import SessionManager
 
 from ..utils import errors
-from ..utils.misc import base_filename
+from ..utils.misc import base_filename, escape_markdown
 
 _template = '''
   011111
   0    2
-  0    3      Guessed : {guesses}
-  0   546     Average : {avg}%
+  0    3
+  0   546
   0    4
   0   7 8
  _0_
 |   |______
 |          |
 |__________|
+
+{word}
+
+Guessed : {guesses}
+Average : {avg}%
 '''
 
 _symbols = string.octdigits + '8'
@@ -68,7 +73,7 @@ class HangmanSession:
                 return GameResult(success=True, message=f"You guessed it!")
             return GameResult(success=False, message=f"That is not the word :(")
 
-        if lowered in self._lowered_word    :
+        if lowered in self._lowered_word:
             return GameResult(success=True, message=f"That is in the word :D")
         return GameResult(success=False, message=f"That is not in the word :(")
 
@@ -77,11 +82,11 @@ class HangmanSession:
             return False
 
         # check for cooldown
-        last_time = self.cooldowns.get(message.author)
-        if last_time is not None:
-            if (message.created_at - last_time).total_seconds() < 1:
-                print('no')
-                return False
+        # last_time = self.cooldowns.get(message.author)
+        # if last_time is not None:
+        #     if (message.created_at - last_time).total_seconds() < 1:
+        #         print('no')
+        #         return False
 
         content = message.content
         return len(content) == 1 or content.startswith('*')
@@ -100,7 +105,8 @@ class HangmanSession:
                 self.blanks[:] = (c if c.lower() in content else v for c, v in zip(self.word, self.blanks))
             else:
                 self.fails += ok is not None
-            self.guesses.append(content.lower())
+            if ok is not None:
+                self.guesses.append(content.lower())
             await message.edit(content=f'{guess.author.mention}, {self.format_message(result)}')
             if self.is_completed() or self.is_dead():
                 break
@@ -111,7 +117,7 @@ class HangmanSession:
         self._runner = self.ctx.bot.loop.create_task(self.__run())
         await self._finished.wait()
 
-        message = f'The answer was {self.word}'
+        message = f'The answer was {escape_markdown(self.word)}'
         return GameResult(success=not self.is_dead(), message=message)
 
     async def stop(self, force=False):
@@ -124,12 +130,13 @@ class HangmanSession:
 
     def game_screen(self):
         formats = {
+            'word': " ".join(self.blanks),
             'guesses': ', '.join(self.guesses),
             'avg': self.average() * 100
         }
 
         screen = hangman_drawings[self.fails].format(**formats)
-        return f'```\n{screen}\n{" ".join(self.blanks)}```'
+        return f'```\n{screen}```'
 
     def average(self):
         return 1 - (self.fails / len(self.guesses)) if self.fails else 1
@@ -138,7 +145,7 @@ class HangmanSession:
         return '_' not in self.blanks
 
     def is_dead(self):
-        return self.fails >= len(hangman_drawings)
+        return self.fails >= len(hangman_drawings) - 1
 
 def _load_hangman(filename):
     with open(filename) as f:
