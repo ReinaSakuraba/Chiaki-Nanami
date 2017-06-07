@@ -187,10 +187,12 @@ class EmbedPages:
 
         message = await destination.send(embed=self[start])
         # No need to put reactions if there's only one page.
-        if len(self) != 1:
-            for emoji in self._reaction_maps:
-                await asyncio.sleep(0.25)
-                await message.add_reaction(emoji)
+        if len(self) <= 1:
+            return
+
+        for emoji in self._reaction_maps:
+            await asyncio.sleep(0.25)
+            await message.add_reaction(emoji)
 
         while True:
             try:
