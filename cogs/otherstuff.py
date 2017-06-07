@@ -4,6 +4,7 @@ import operator
 import functools
 import random
 import sys
+import time
 
 from collections import namedtuple
 from datetime import datetime
@@ -151,9 +152,12 @@ class OtherStuffs:
 
     @commands.command()
     async def ping(self, ctx):
-        """Your average ping command"""
-        time = await self.bot.ping()
-        await ctx.send(f'Poing! ({time:.3f} ms)')
+        """Your average ping command."""
+        start = time.perf_counter()     # fuck time.monotonic()
+        message = await ctx.send('Poing...')
+        end = time.perf_counter()       # fuck time.monotonic()
+        ms = (end - start) * 100
+        await message.edit(content=f'Poing! ({ms} ms)')
 
     @commands.command()
     async def slap(self, ctx, target: discord.Member=None):

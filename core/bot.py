@@ -5,7 +5,6 @@ import functools
 import inspect
 import logging
 import random
-import time
 
 from datetime import datetime
 from discord.ext import commands
@@ -147,16 +146,6 @@ class ChiakiBot(commands.Bot):
         self.invites_by_bot = [inv for inv in await self.official_guild.invites() if inv.inviter.id == self.user.id]
         if not self.invites_by_bot:
             self.invites_by_bot.append(await official_guild.create_invite())
-
-    async def ping(self, times=1):
-        """Returns the ping in milliseconds"""
-        # I prefer using time.perf_counter()
-        # Some people use time.monotonic(), 
-        # but time.perf_counter() is literally made for timing things.
-        start = time.perf_counter()
-        await (await self.ws.ping())
-        end = time.perf_counter()
-        return (end - start) * 1000
 
     # ------ Config-related properties ------
 
