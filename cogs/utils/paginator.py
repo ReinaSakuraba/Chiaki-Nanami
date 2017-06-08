@@ -214,7 +214,7 @@ class EmbedPages:
         await message.clear_reactions()
 
 class EmbedFieldPages(EmbedPages):
-    """Similat to EmbedPages, but uses the fields instead of the description"""
+    """Similar to EmbedPages, but uses the fields instead of the description"""
     def __init__(self, context, entries, *, 
                 description=discord.Embed.Empty, inline=True, **kwargs):
         super().__init__(context, entries, **kwargs)
