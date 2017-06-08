@@ -102,7 +102,7 @@ class EmbedPages:
         return self._create_embed(idx, page)
 
     def __len__(self):
-        return len(self.entries) // self.per_page + 1
+        return -(-len(self.entries) // self.per_page)
 
     @property
     def color(self):
