@@ -4,7 +4,7 @@ import enum
 import functools
 import itertools
 
-from collections import namedtuple
+from collections import defaultdict, namedtuple
 from discord.ext import commands
 from operator import attrgetter, contains
 
@@ -13,7 +13,8 @@ from .utils.compat import always_iterable, iterate
 from .utils.context_managers import redirect_exception
 from .utils.converter import item_converter, BotCommand, BotCogConverter
 from .utils.database import Database
-from .utils.misc import emoji_url, str_join
+from .utils.misc import emoji_url, str_join, unique
+from .utils.paginator import EmbedPages, TitleBasedPages
 
 
 def first_non_none(iterable, default=None):
@@ -84,7 +85,7 @@ class Level(enum.Enum):
 
 class Action(namedtuple('Action', 'value action emoji colour')):
     @classmethod
-    async def convert(cls, ctx, arg):
+    def from_arg(cls, arg):
         mode = arg.lower()
 
         if mode in ('allow', 'unlock', 'enable', ):
@@ -95,6 +96,15 @@ class Action(namedtuple('Action', 'value action emoji colour')):
             return cls(value=False, action='disabled', emoji='\U0001f512', colour=discord.Colour.red())
         raise commands.BadArgument(f"Don't know what to do with {arg}.")
 
+    @classmethod 
+    async def convert(cls, ctx, arg):
+        return cls.from_arg(arg)
+
+_value_emoji_map = {
+    True: '\N{WHITE HEAVY CHECK MARK}',
+    False: '\N{NO ENTRY}',
+    None: '\N{MEDIUM BLACK CIRCLE}',
+}
 
 class BlockType(enum.Enum):
     blacklist = (discord.Colour.red(),   '\U000026d4')
@@ -137,6 +147,10 @@ class Permissions:
     @property
     def blacklisted_users(self):
         return self.other_permissions[BlockType.blacklist.name]
+
+    @staticmethod
+    def _is_valid_cog(name):
+        return name not in {'Owner', 'Permissions'}
 
     @staticmethod
     def _context_attribute(level, ctx):
@@ -267,6 +281,61 @@ class Permissions:
         await self._modify_blacklist(ctx, user, 'remove', contains_op=lambda a, b: b not in a, 
                                      block_type=BlockType.whitelist)
 
+    @commands.group(name='permshow', aliases=['pshow'])
+    async def perm_show(self, ctx):
+        pass
 
-def setup(bot):
+    def _get_perm(self, name, level, key):
+        permissions = self.permissions.get(name)
+        if permissions is None:
+            return None
+        return permissions[str(level)].get(key)
+
+    async def _perm_show_commands(self, ctx, level, thing, commands):
+        # Level.parse_args is variadic
+        args = (ctx, ) + (thing, ) * (thing is not None)
+        thing, *_ = await level.parse_args(*args)
+        get_perm = functools.partial(self._get_perm, level=level, key=str(thing.id))
+
+        command_permissions = defaultdict(list)
+        for cog_name, commands in itertools.groupby(commands, key=attrgetter('cog_name')):
+            if not self._is_valid_cog(cog_name):
+                continue
+            command_permissions[cog_name].extend(f'{_value_emoji_map[get_perm(cmd)]} {cmd}'
+                                                 for cmd in map(str, commands))
+
+        title = f'Command Permissions on the {level} level for {thing.original}'
+        pages = TitleBasedPages(ctx, command_permissions, title=title, colour=ctx.bot.colour)
+        await pages.interact()
+
+
+    @perm_show.command(name='commands', aliases=['cmds'])
+    async def perm_show_commands(self, ctx, level: Level, thing=None):
+        """Shows the perms for each command on a given level"""
+        await self._perm_show_commands(ctx, level, thing, ctx.bot.commands)
+
+    @perm_show.command(name='recursivecommands', aliases=['recmds'])
+    async def perm_show_recursive_commands(self, ctx, level: Level, thing=None):
+        """Shows the perms for **all** the commands on a given level. This includes subcommands."""
+        await self._perm_show_commands(ctx, level, thing, unique(ctx.bot.walk_commands()))
+
+    @perm_show.command(name='modules', aliases=['mdls'])
+    async def perm_show_modules(self, ctx, level: Level, thing=None):
+        """Shows the perms for each module on a given level"""
+        unique_cog_names = (type(cog).__name__ for cog in unique(ctx.bot.cogs.values()))
+
+        args = (ctx, ) + (thing, ) * (thing is not None)
+        thing, = await level.parse_args(*args)
+
+        get_perm = functools.partial(self._get_perm, level=level, key=str(thing.id))
+        permissions = (f'{_value_emoji_map[get_perm(name)]} {name}'
+                       for name in unique_cog_names)
+        all_modules = f'{_value_emoji_map[get_perm(ALL_MODULES_KEY)]} **{ALL_MODULES_KEY}**'
+        permissions = itertools.chain((all_modules, ), permissions)
+
+        title = f'Modules Permissions on the {level} level for {thing.original}'
+        pages = EmbedPages(ctx, permissions, title=title, colour=ctx.bot.colour)
+        await pages.interact()
+
+def setup(bot):     
     bot.add_cog(Permissions())

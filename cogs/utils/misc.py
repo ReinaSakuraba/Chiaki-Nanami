@@ -5,7 +5,7 @@ import os
 import random
 import re
 
-from collections import namedtuple
+from collections import namedtuple, OrderedDict
 from datetime import datetime, timezone
 from discord.ext import commands
 
@@ -73,3 +73,6 @@ def base_filename(name):
 
 def emoji_url(emoji):
     return f'https://twemoji.maxcdn.com/2/72x72/{hex(ord(emoji))[2:]}.png'
+
+def unique(iterable):
+    return list(OrderedDict.fromkeys(iterable))
