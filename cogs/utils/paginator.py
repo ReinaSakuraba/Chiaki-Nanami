@@ -213,6 +213,7 @@ class EmbedPages:
 
         await message.clear_reactions()
 
+
 class EmbedFieldPages(EmbedPages):
     """Similar to EmbedPages, but uses the fields instead of the description"""
     def __init__(self, context, entries, *, 
@@ -233,6 +234,30 @@ class EmbedFieldPages(EmbedPages):
         for name, value in page:
             add_field(name=name, value=value)
         return embed
+
+
+class OneFieldPages(EmbedPages):
+    """Embed pagination where each page is just one section using a name, value pair
+
+    The entries parameter is an iterable of (name, value) pairs.
+    """
+    def __init__(self, context, entries, *, 
+                description=discord.Embed.Empty, **kwargs):
+        super().__init__(context, entries, **kwargs)
+
+        self.description = description
+
+    def __len__(self):
+        return len(self.entries)
+
+    def _create_embed(self, idx, page):
+        name, value = self.entries[idx]
+        return (discord.Embed(colour=self.colour, description=self.description)
+               .set_author(name=self.title)
+               .add_field(name=name, value=value)
+               .set_footer(text=f'Page: {idx + 1} / {len(self)} ({len(self.entries)} entries)')
+               )
+
 
 class TitleBasedPages(EmbedPages):
     """Similar to EmbedPages, but takes a dict of title-content pages
@@ -274,3 +299,21 @@ class RandomColourEmbeds(EmbedPages):
         embed = super()._create_embed(idx, page)
         embed.colour = random.randint(0, 0xFFFFFF)
         return embed
+
+class SetColorEmbeds(EmbedPages):
+    """Mixin class for the embed pages. This allows you to set the color for each pag.
+
+    Usage of the class goes something like this:
+
+    class Pages(RandomColourEmbeds, ActualEmbedPagesBase, colors=(0xFF0000, 0x00FF00, 0x0000FF)):
+        pass
+    """
+    def __init_subclass__(cls, colours=(0, ), **kwargs):
+        print(kwargs)
+        super().__init_subclass__(**kwargs)
+        cls._colours = colours
+
+    def _create_embed(self, idx, page):
+        embed = super()._create_embed(idx, page)
+        embed.colour = self._colours[idx % len(self._colours)]
+        return embed 
