@@ -76,3 +76,6 @@ def emoji_url(emoji):
 
 def unique(iterable):
     return list(OrderedDict.fromkeys(iterable))
+
+async def maybe_awaitable(maybe):
+    return await maybe if inspect.isawaitable(maybe) else maybe

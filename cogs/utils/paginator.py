@@ -9,6 +9,7 @@ from discord.ext import commands
 
 from .compat import always_iterable
 from .context_managers import temp_message
+from .misc import maybe_awaitable
 
 class DelimPaginator(commands.Paginator):
     def __init__(self, prefix='```', suffix='```', max_size=2000, join_delim='\n', **kwargs):
@@ -126,6 +127,8 @@ class EmbedPages:
         """Returns the first page"""
         return self[0]
 
+    default = first
+
     def last(self):
         """Returns the last page"""
         return self[-1]
@@ -185,7 +188,8 @@ class EmbedPages:
         def react_check(reaction, user):    
             return user.id == ctx.author.id and reaction.emoji in self._reaction_maps
 
-        message = await destination.send(embed=self[start])
+        starting_embed = await maybe_awaitable(self.default())
+        message = await destination.send(embed=starting_embed)
         # No need to put reactions if there's only one page.
         if len(self) <= 1:
             return
@@ -202,7 +206,7 @@ class EmbedPages:
             else:
                 attr = self._reaction_maps[react.emoji]
                 try:
-                    next_embed = await discord.utils.maybe_coroutine(getattr(self, attr))
+                    next_embed = await maybe_awaitable(getattr(self, attr)())
                 except StopPagination:
                     break
                 except IndexError:
