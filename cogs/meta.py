@@ -52,6 +52,31 @@ _status_colors = {
 def default_last_n(n=50):
     return lambda: collections.deque(maxlen=n)
 
+class ServerPages(EmbedPages):
+    _reaction_maps = {
+        '\N{INFORMATION SOURCE}': 'default',
+        '\N{CAMERA}': 'icon',
+        '\N{BLACK SQUARE FOR STOP}': 'stop',
+    }
+
+    def __init__(self, context, **kwargs):
+        super().__init__(context, entries=(), **kwargs)
+
+    def __len__(self):
+        return len(self._reaction_maps)
+
+    @property
+    def server(self):
+        return self.context.guild
+
+    async def default(self):
+        return await Meta.server_embed(self.server)
+
+    async def icon(self):
+        return await Meta.server_icon(self.server)
+
+
+
 class Meta:
     """Info related commands"""
 
@@ -137,17 +162,25 @@ class Meta:
             subcommands = '\n'.join(ctx.command.commands.keys())
             await ctx.send(f"```\nAvailable info commands:\n{subcommands}```")
 
-    @info.command()
+    @info.command(name='user')
     @commands.guild_only()
-    async def user(self, ctx, *, member: converter.ApproximateUser=None):
+    async def info_user(self, ctx, *, member: converter.ApproximateUser=None):
         """Gets some userful info because why not"""
-        await ctx.invoke(self.userinfo, member=member)
+        if member is None:
+            member = ctx.author
+        await ctx.send(embed=await self._user_embed(member))
 
-    @info.command()
+    @info.command(name='mee6')
     @commands.guild_only()
-    async def mee6(self, ctx, *, member: converter.ApproximateUser=None):
+    async def info_mee6(self, ctx, *, member: converter.ApproximateUser=None):
         """Equivalent to `{prefix}rank`"""
         await ctx.invoke(self.rank, member=member)
+
+    @commands.command()
+    @commands.guild_only()
+    async def userinfo(self, ctx, *, member: discord.Member=None):
+        """Gets some userful info because why not"""
+        await ctx.invoke(self.info_user, member=member)
 
     @commands.command()
     @commands.guild_only()
@@ -179,8 +212,8 @@ class Meta:
 
         await ctx.send(embed=mee6_embed)
 
-    @info.command()
-    async def role(self, ctx, *, role: converter.ApproximateRole):
+    @info.command(name='role')
+    async def info_role(self, ctx, *, role: converter.ApproximateRole):
         """Shows information about a particular role.
 
         The role is case-insensitive.
@@ -251,18 +284,17 @@ class Meta:
                .set_footer(text='Created')
                )
 
-    @info.command()
-    async def channel(self, ctx, channel: union(discord.TextChannel, discord.VoiceChannel)=None):
+    @info.command(name='channel')
+    async def info_channel(self, ctx, channel: union(discord.TextChannel, discord.VoiceChannel)=None):
         """Shows info about a voice or text channel."""
         if channel is None:
             channel = ctx.channel
-
-        channel_embed = (self.text_channel_embed(channel) if isinstance(channel, discord.TextChannel) else
-                         self.voice_channel_embed(channel))
+        embed_type = 'text_channel_embed' if isinstance(channel, discord.TextChannel) else 'voice_channel_embed'
+        channel = getattr(self, embed_type)(channel)
         await ctx.send(embed=channel_embed)
 
     @staticmethod
-    async def _server_embed(server):
+    async def server_embed(server):
         highest_role = server.role_hierarchy[0]
         description = f"Owned by {server.owner}"
         features = '\n'.join(server.features) or 'None'
@@ -291,17 +323,19 @@ class Meta:
             server_embed.colour = await url_color(icon)
         return server_embed
 
-    @info.group(aliases=['guild'])
+    @info.group(name='server', aliases=['guild'])
     @commands.guild_only()
-    async def server(self, ctx):
+    async def info_server(self, ctx):
         """Shows info about a server"""
         if ctx.subcommand_passed in ['server', 'guild']:
-            await ctx.send(embed=await self._server_embed(ctx.guild))
+            server_pages = ServerPages(ctx)
+            await server_pages.interact()
+            #await ctx.send(embed=await self._server_embed(ctx.guild))
         elif ctx.invoked_subcommand is None:
             subcommands = '\n'.join(ctx.command.all_commands)
             await ctx.send(f"```\nAvailable server commands:\n{subcommands}```")
 
-    @server.command()
+    @commands.command(aliases=['chnls'])
     async def channels(self, ctx):
         """Shows all the channels in the server."""
         permissions_in = ctx.author.permissions_in
@@ -318,7 +352,7 @@ class Meta:
         pages = EmbedPages(ctx, channels, title=f'Channels in {ctx.guild}', colour=self.bot.colour)
         await pages.interact()
 
-    @server.command()
+    @commands.command()
     async def members(self, ctx):
         """Shows all the members of the server, sorted by their top role, then by join date"""
         # TODO: Status
@@ -327,21 +361,20 @@ class Meta:
                            colour=self.bot.colour)
         await pages.interact()
 
-    @server.command()
-    async def icon(self, ctx):
-        """Shows the server's icon."""
-        icon = (discord.Embed(title=f"{ctx.guild}'s icon")
-               .set_footer(text=f"ID: {ctx.guild.id}"))
+    @staticmethod
+    async def server_icon(server):
+        icon = (discord.Embed(title=f"{server}'s icon")
+               .set_footer(text=f"ID: {server.id}"))
 
-        icon_url = ctx.guild.icon_url
+        icon_url = server.icon_url
         if icon_url:
             icon.set_image(url=icon_url)
             icon.colour = await url_color(icon_url)
         else:
             icon.description = "This server has no icon :("
-        await ctx.send(embed=icon)
+        return icon
 
-    @server.command()
+    @commands.command()
     async def roles(self, ctx):
         """Shows all the roles in the server. Roles in bold are the ones you have"""
         member_roles = ctx.author.roles
@@ -353,7 +386,7 @@ class Meta:
                            colour=self.bot.colour)
         await pages.interact()
 
-    @server.command()
+    @commands.command()
     async def emojis(self, ctx):
         """Shows all the emojis in the server."""
 
@@ -363,14 +396,6 @@ class Meta:
         emojis = map('{0} = {0.name} ({0.id})'.format, ctx.guild.emojis)
         pages = EmbedPages(ctx, emojis, title=f'Emojis in {ctx.guild}', colour=self.bot.colour)
         await pages.interact()
-
-    @commands.command()
-    @commands.guild_only()
-    async def userinfo(self, ctx, *, member: discord.Member=None):
-        """Gets some userful info because why not"""
-        if member is None:
-            member = ctx.author
-        await ctx.send(embed=await self._user_embed(member))
 
     async def _source(self, ctx, thing):
         lines = inspect.getsourcelines(thing)[0]
