@@ -421,7 +421,8 @@ class Meta:
         If you don't want to mention a role, please put it in quotes,
         especially if there's a space in the role name
         """
-        await self._inrole(ctx, *roles, members=functools.reduce(set.intersection, map(set, map(attrgetter('members'), roles))))
+        role_members = (role.members for role in roles)
+        await self._inrole(ctx, *roles, members=set(next(role_members)).intersection(*role_members))
 
     @commands.command()
     @commands.guild_only()
