@@ -2,6 +2,7 @@ import discord
 import json
 import operator
 import functools
+import itertools
 import random
 import sys
 import time
@@ -13,10 +14,6 @@ from PIL import Image
 
 from .utils import errors
 from .utils.compat import user_colour
-from .utils.converter import item_converter
-
-with open(r'data\copypastas.json', encoding='utf-8') as f:
-    _copypastas = json.load(f)
 
 
 # ---------------- Ship-related utilities -------------------
@@ -90,39 +87,53 @@ class OtherStuffs:
         self.bot = bot
         self.last_messages = {}
         self.default_time = datetime.utcnow()
+        self.bot.loop.create_task(self._load_pastas())
 
     def __unload(self):
         # unload the cache if necessary...
         _calculate_compatibilty.cache_clear()
         pass
 
-    @commands.group(invoke_without_command=True)
-    async def copypasta(self, ctx, copy_pasta: item_converter(_copypastas, key=int), *, name=None):
+    async def _load_pastas(self):
+        def nobody_kanna_cross_it():
+            with open(r'data\copypastas.json', encoding='utf-8') as f:
+                return json.load(f)
+        self.copypastas = await self.bot.loop.run_in_executor(None, nobody_kanna_cross_it)
+
+    @commands.group(invoke_without_command=True, aliases=['c+v'])
+    async def copypasta(self, ctx, index: int, *, name=None):
         """Returns a copypasta from an index and name"""
+        copy_pasta = self.copypastas[index]
         category, copypastas = copy_pasta['category'], copy_pasta['copypastas']
-        if name is None:
-            name = random.choice(list(copypastas.keys()))
-        try:
-            pasta = copypastas[name.title()]
-        except KeyError:
-            return await ctx.send(f"Category \"{category}\" doesn't have pasta called \"{name}\"")
+        pasta = random.choice(list(copypastas.values())) if name is None else copypastas[name.title()]
+
         embed = discord.Embed(title=f"{category} {name}", description=pasta, colour=0x00FF00)
         await ctx.send(embed=embed)
 
-    @copypasta.command(name="listgroups")
-    async def copypasta_listgroups(self, ctx):
-        embed = discord.Embed(title="All the categories (and their indices)")
-        for i, pasta in enumerate(map(operator.itemgetter('category'), self.copypastas)):
-            embed.add_field(name=str(i), value=pasta)
+    @copypasta.command(name="groups")
+    async def copypasta_groups(self, ctx):
+        padding = len(self.copypastas) // 10
+        pastas = itertools.starmap('`{0}.` {1}'.format, enumerate(c['category'] for c in self.copypastas))
+        embed = discord.Embed(title="All the categories (and their indices)", description='\n'.join(pastas))
         await ctx.send(embed=embed)
 
-    @copypasta.command(name="listpastas")
-    async def copypasta_listpastas(self, ctx, pastas: item_converter(_copypastas, key=int)):
+    @copypasta.command(name="pastas")
+    async def copypasta_pastas(self, ctx, index: int):
+        pastas = self.copypastas[index]
         category, copypastas = pastas['category'], pastas['copypastas']
-        embed = discord.Embed(title=category)
-        for pasta in copypastas:
-            embed.add_field(name=pasta, value='\u200b')
+        description = '\n'.join([f'\N{BULLET} {c}' for c in copypastas])
+        embed = discord.Embed(title=category, description=description)
         await ctx.send(embed=embed)
+
+    @copypasta.error
+    @copypasta_pastas.error
+    async def copypasta_error(self, ctx, error):
+        cause = error.__cause__
+        if isinstance(cause, IndexError):
+            await ctx.send(f'Index {ctx.args[2]} is out of range.')
+        elif isinstance(cause, KeyError):
+            await ctx.send(f"Category \"{self.copypastas[ctx.args[2]]['category']}\" "
+                           f"doesn't have pasta called \"{ctx.kwargs['name']}\"")
 
     @commands.command(usage=['rjt#2336 Nelyn#7808', 'Danny#0007 Jake#0001'])
     async def ship(self, ctx, user1: discord.Member, user2: discord.Member=None):
