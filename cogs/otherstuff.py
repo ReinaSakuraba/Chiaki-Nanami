@@ -23,7 +23,9 @@ def _lerp_color(c1, c2, interp):
 
 _lerp_red = functools.partial(_lerp_color, (0, 0, 0), (255, 0, 0))
 
-class UserInfo(namedtuple('UserInfo', ['name', 'id', 'avatar', 'created_at'])):
+class UserInfo(namedtuple('UserInfo', 'name id avatar created_at')):
+    __slots__ = ()
+
     @classmethod
     def from_user(cls, user):
         avatar = user.avatar or user.default_avatar.value
@@ -55,6 +57,8 @@ def _scale(old_min, old_max, new_min, new_max, number):
 _value_to_index = functools.partial(_scale, 0, 100, 0, len(_default_rating_comments) - 1)
 
 class ShipRating(namedtuple('ShipRating', 'value comment')):
+    __slots__ = ()
+
     def __new__(cls, value, comment=None):
         if comment is None:
             index = round(_value_to_index(value))
