@@ -8,7 +8,7 @@ from itertools import chain, starmap
 from .utils import checks, errors
 from .utils.context_managers import temp_attr
 from .utils.database import Database
-from .utils.paginator import DelimPaginator, iterable_limit_say
+from .utils.paginator import ListPaginator
 
 def word_count(s):
     return len(s.split()), len(s)
@@ -88,16 +88,12 @@ class CustomCommands:
             await ctx.send(f'"{trigger}" was never a custom command.')
 
     @custom_command.command(name='list')
-    async def list_custom_commands(self, ctx, page: int=0):
+    async def list_custom_commands(self, ctx):
         """Lists the custom commands for the server."""
         server = ctx.guild or 'global'
-        paginator = DelimPaginator.from_iterable(self._cc_iterator(server), prefix='', suffix='')
-        try:
-            msg = paginator[page]
-        except IndexError:
-            msg = (f"Page {page} doesn't exist, or is out of bounds, I think." if page else
-                    "This server doesn't have any custom commands... I think.")
-        await ctx.send(msg)
+        pages = ListPaginator(ctx, self._cc_iterator(server), title=f'Custom commands in {ctx.guild}',
+                              colour=self.bot.colour)
+        await pages.interact()
 
     def get_prefix(self, message):
         prefix = self.bot.prefix_function(message)
@@ -139,7 +135,9 @@ class CustomCommands:
 
     @alias.command(name='list')
     async def list_aliases(self, ctx):
-        await iterable_limit_say(starmap('{0} => {1}'.format, self.aliases[ctx.guild].items()), ctx=ctx)
+        aliases = starmap('{0} => {1}'.format, self.aliases[ctx.guild].items())
+        pages = ListPaginator(ctx, aliases, title=f'Aliases in {ctx.guild}', colour=self.bot.colour)
+        await pages.interact()
 
     async def check_alias(self, message):
         if isinstance(message.channel, (discord.DMChannel, discord.GroupChannel)):

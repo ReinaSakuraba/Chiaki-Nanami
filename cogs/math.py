@@ -17,7 +17,7 @@ from random import randrange
 from .utils.converter import item_converter
 from .utils.database import Database
 from .utils.errors import InvalidUserArgument
-from .utils.paginator import SetColorEmbeds, OneFieldPages
+from .utils.paginator import BaseReactionPaginator, page
 
 try:
     import sympy
@@ -401,10 +401,29 @@ def convert_unit(from_unit_type, to_unit_type, value):
     return str(round(new_value, 3)) + to_unit_type
 
 
+class ConversionPages(BaseReactionPaginator):
+    def __init__(self, context, things):
+        super().__init__(context)
+        self.entries = things
+
+    def _create_embed(self, thing, colour=0):
+        return (discord.Embed(colour=colour)
+               .set_author(name='List of available units for conversion')
+               .add_field(name=thing, value=self.entries[thing])
+               )
+
+    default     = page('\N{STRAIGHT RULER}')(functools.partialmethod(_create_embed, 'Length'))
+    mass        = page('\N{SCALES}')(functools.partialmethod(_create_embed, 'Mass'))
+    storage     = page('\N{PERSONAL COMPUTER}')(functools.partialmethod(_create_embed, 'Data', 0x4CAF50))
+    time        = page('\N{ALARM CLOCK}')(functools.partialmethod(_create_embed, 'Time'))
+    temperature = page('\N{THERMOMETER}')(functools.partialmethod(_create_embed, 'Temperature', 0xFFC107))
+
+
 _default_parse_settings = {
     'e_as_E': True,
     '^_as_pow': True,
 }
+
 _e_sub_pattern = re.compile('e(?!rf)')
 _default_parses = _default_parse_settings.copy
 parse_expr = functools.partial(parse_sympy_expr, evaluate=False,
@@ -412,14 +431,10 @@ parse_expr = functools.partial(parse_sympy_expr, evaluate=False,
 
 MAGIC_ERROR_THING = 'error:\x00' # prepend for any errors
 
-class ConversionPages(SetColorEmbeds, OneFieldPages, colours=(0, 0, 0x4CAF50, 0, 0xFFC107, )):
-    pass
-
 class Math:
     def __init__(self, bot):
         self.bot = bot
-        self.parsing_configs = Database('math-parsing.json', 
-                                        default_factory=_default_parses)
+        self.parsing_configs = Database('math-parsing.json', default_factory=_default_parses)
 
     @staticmethod
     def _result_embed(ctx, input, output):
@@ -545,13 +560,9 @@ class Math:
     async def conversions(self, ctx):
         """Lists all the available units"""
         grouped = itertools.groupby(_reverse_units.items(), lambda t: t[0].type)
-        conversion_fields = ((k, '\n'.join([t[1] for t in v])) for k, v in grouped)
-        pages = ConversionPages(ctx, conversion_fields, title='List of available units for conversion')
+        conversion_fields = {k: '\n'.join([t[1] for t in v]) for k, v in grouped}
+        pages = ConversionPages(ctx, conversion_fields)
         await pages.interact()
-        # conversions_embed = discord.Embed(title="__List of available units for conversion__", colour=self.bot.colour)
-        # for k, v in itertools.groupby(_reverse_units.items(), lambda t: t[0].type):
-        #     conversions_embed.add_field(name=k, value='\n'.join([t[1] for t in v]))
-        # await ctx.send(embed=conversions_embed)
 
     def _transform_expr(self, ctx, expr):
         config = self.parsing_configs[ctx.author]

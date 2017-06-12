@@ -20,7 +20,7 @@ from .utils.context_managers import redirect_exception, temp_message
 from .utils.converter import BotCommand, union
 from .utils.errors import InvalidUserArgument, ResultsNotFound
 from .utils.misc import escape_markdown, str_join, nice_time, ordinal, truncate
-from .utils.paginator import iterable_limit_say, iterable_say, EmbedPages
+from .utils.paginator import BaseReactionPaginator, ListPaginator, page
 
 
 def _grouper(n, iterable, fillvalue=None):
@@ -52,29 +52,16 @@ _status_colors = {
 def default_last_n(n=50):
     return lambda: collections.deque(maxlen=n)
 
-class ServerPages(EmbedPages):
-    _reaction_maps = {
-        '\N{INFORMATION SOURCE}': 'default',
-        '\N{CAMERA}': 'icon',
-        '\N{BLACK SQUARE FOR STOP}': 'stop',
-    }
-
-    def __init__(self, context, **kwargs):
-        super().__init__(context, entries=(), **kwargs)
-
-    def __len__(self):
-        return len(self._reaction_maps)
-
-    @property
-    def server(self):
-        return self.context.guild
-
+class ServerPages(BaseReactionPaginator):
+    @page('\N{INFORMATION SOURCE}')
     async def default(self):
-        return await Meta.server_embed(self.server)
+        """Shows some information about this server"""
+        return await Meta.server_embed(self.context.guild)
 
+    @page('\N{CAMERA}')
     async def icon(self):
-        return await Meta.server_icon(self.server)
-
+        """Shows the server's iconr"""
+        return await Meta.server_icon(self.context.guild)
 
 
 class Meta:
@@ -349,7 +336,7 @@ class Meta:
         channels = chain(('', f'**List of Text Channelels ({len(text_channels)})**', ), text_channels,
                          ('', f'**List of Voice Channels ({len(voice_channels)})**', ), voice_channels)
 
-        pages = EmbedPages(ctx, channels, title=f'Channels in {ctx.guild}', colour=self.bot.colour)
+        pages = ListPaginator(ctx, channels, title=f'Channels in {ctx.guild}', colour=self.bot.colour)
         await pages.interact()
 
     @commands.command()
@@ -357,7 +344,7 @@ class Meta:
         """Shows all the members of the server, sorted by their top role, then by join date"""
         # TODO: Status
         members = [str(m) for m in sorted(ctx.guild.members, key=attrgetter("top_role", "joined_at"), reverse=True)]
-        pages = EmbedPages(ctx, members, title=f'Members in {ctx.guild} ({len(members)})',
+        pages = ListPaginator(ctx, members, title=f'Members in {ctx.guild} ({len(members)})',
                            colour=self.bot.colour)
         await pages.interact()
 
@@ -382,7 +369,7 @@ class Meta:
         padding = max(map(len, (role.members for role in roles))) // 10
         hierarchy = [f"`{len(role.members) :<{padding}}\u200b` {f'**{escape_markdown(role.name)}**' if role in member_roles else role.name}"
                      for role in roles]
-        pages = EmbedPages(ctx, hierarchy, title=f'Roles in {ctx.guild} ({len(hierarchy)})',
+        pages = ListPaginator(ctx, hierarchy, title=f'Roles in {ctx.guild} ({len(hierarchy)})',
                            colour=self.bot.colour)
         await pages.interact()
 
@@ -394,14 +381,14 @@ class Meta:
             return await ctx.send("This server doesn't have any custom emojis. :'(")
 
         emojis = map('{0} = {0.name} ({0.id})'.format, ctx.guild.emojis)
-        pages = EmbedPages(ctx, emojis, title=f'Emojis in {ctx.guild}', colour=self.bot.colour)
+        pages = ListPaginator(ctx, emojis, title=f'Emojis in {ctx.guild}', colour=self.bot.colour)
         await pages.interact()
 
     async def _source(self, ctx, thing):
         lines = inspect.getsourcelines(thing)[0]
         await iterable_limit_say(lines, '', ctx=ctx, prefix='```py\n', escape_code=True)
 
-    @commands.command()
+    # @commands.command(disabled=True)
     async def source(self, ctx, *, cmd: BotCommand):
         """Displays the source code for a particular command"""
         # TODO: use GitHub
@@ -411,7 +398,7 @@ class Meta:
     async def _inrole(ctx, *roles, members):
         entries = members or ('There are no members in these role(s) :(', )
         truncated_title = truncate(f'Members in role{"s" * (len(roles) != 1)} {str_join(", ", roles)}', 256, '...')
-        pages = EmbedPages(ctx, map(str, entries), colour=ctx.bot.colour, title=truncated_title)
+        pages = ListPaginator(ctx, map(str, entries), colour=ctx.bot.colour, title=truncated_title)
         await pages.interact()
 
     @commands.command()
@@ -533,7 +520,7 @@ class Meta:
         self.cmd_history[ctx.author].append(ctx.message.content)
         self.bot.command_leaderboard[str(ctx.command)] += 1
 
-    @commands.command(usage=['pow', 'os.system'], aliases=['pyh'])
+    # @commands.command(disabled=True, usage=['pow', 'os.system'], aliases=['pyh'])
     async def pyhelp(self, ctx, thing):
         """Gives you the help string for a builtin python function.
         (or any sort of function, for that matter)

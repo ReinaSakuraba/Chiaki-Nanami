@@ -15,7 +15,6 @@ from .utils.checks import OWNER_CHECK
 from .utils.converter import item_converter
 from .utils.context_managers import temp_attr
 from .utils.misc import code_msg
-from .utils.paginator import EmbedPages
 
 
 class Owner:

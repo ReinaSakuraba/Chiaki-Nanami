@@ -14,7 +14,7 @@ from .utils.context_managers import redirect_exception
 from .utils.converter import item_converter, BotCommand, BotCogConverter
 from .utils.database import Database
 from .utils.misc import emoji_url, str_join, unique
-from .utils.paginator import EmbedPages, TitleBasedPages
+from .utils.paginator import ListPaginator, TitleBasedPages
 
 
 def first_non_none(iterable, default=None):
@@ -334,7 +334,7 @@ class Permissions:
         permissions = itertools.chain((all_modules, ), permissions)
 
         title = f'Modules Permissions on the {level} level for {thing.original}'
-        pages = EmbedPages(ctx, permissions, title=title, colour=ctx.bot.colour)
+        pages = ListPaginator(ctx, permissions, title=title, colour=ctx.bot.colour)
         await pages.interact()
 
 def setup(bot):     
