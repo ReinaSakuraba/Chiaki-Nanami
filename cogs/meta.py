@@ -277,7 +277,9 @@ class Meta:
         if channel is None:
             channel = ctx.channel
         embed_type = 'text_channel_embed' if isinstance(channel, discord.TextChannel) else 'voice_channel_embed'
-        channel = getattr(self, embed_type)(channel)
+        channel_embed = getattr(self, embed_type)(channel)
+        channel_embed.colour = self.bot.colour
+
         await ctx.send(embed=channel_embed)
 
     @staticmethod
