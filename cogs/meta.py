@@ -1,5 +1,6 @@
 import aiohttp
 import collections
+import contextlib
 import discord
 import functools
 import inspect
@@ -53,16 +54,49 @@ def default_last_n(n=50):
     return lambda: collections.deque(maxlen=n)
 
 class ServerPages(BaseReactionPaginator):
+    async def server_color(self):
+        try:
+            result = self._colour
+        except AttributeError:
+            result = 0
+            url = self.guild.icon_url
+            if url:
+                result = self._colour = await url_color(url)
+        return result
+
+    @property
+    def guild(self):
+        return self.context.guild
+
+
     @page('\N{INFORMATION SOURCE}')
-    async def default(self):
-        """Shows some information about this server"""
-        return await Meta.server_embed(self.context.guild)
+    def default(self):
+        """|coro|
+        Shows some information about this server
+        """
+        return Meta.server_embed(self.guild)
 
     @page('\N{CAMERA}')
-    async def icon(self):
-        """Shows the server's iconr"""
-        return await Meta.server_icon(self.context.guild)
+    def icon(self):
+        """Shows the server's icon"""
+        return Meta.server_icon(self.guild)
 
+    @page('\N{THINKING FACE}')
+    async def emojis(self):
+        """Shows the server's emojis"""
+        guild = self.guild
+        emojis = guild.emojis
+        description = '\n'.join(_group_strings(10, map(str, guild.emojis))) if emojis else 'There are no emojis :('
+
+        return (discord.Embed(colour=await self.server_color(), description=description)
+               .set_author(name=f"{guild}'s custom emojis")
+               .set_footer(text=f'{len(emojis)} emojis')
+               )
+
+def join_and(items, *, conjunction='and'):
+    if not items:
+        return ''
+    return f"{', '.join(items[:-1])} {conjunction} {items[-1]}" if len(items) != 1 else items[0]
 
 class Meta:
     """Info related commands"""
@@ -397,21 +431,34 @@ class Meta:
         await self._source(ctx, cmd.callback)
 
     @staticmethod
-    async def _inrole(ctx, *roles, members):
-        entries = members or ('There are no members in these role(s) :(', )
-        truncated_title = truncate(f'Members in role{"s" * (len(roles) != 1)} {str_join(", ", roles)}', 256, '...')
+    async def _inrole(ctx, *roles, members, conjunction='and'):
+        # because join_and takes a sequence... -_-
+        joined_roles = join_and([str(r) for r in roles], conjunction=conjunction)
+        truncated_title = truncate(f'Members in role{"s" * (len(roles) != 1)} {joined_roles}', 256, '...')
+
         total_color = map(sum, zip(*(role.colour.to_rgb() for role in roles)))
         average_color = discord.Colour.from_rgb(*map(round, (c / len(roles) for c in total_color)))
 
-        pages = ListPaginator(ctx, map(str, entries), colour=average_color, title=truncated_title)
+        if members:
+            entries = sorted(map(str, members))
+            # Make the author's name bold (assuming they have that role).
+            # We have to do it after the list was built, otherwise the author's name
+            # would be at the top.
+            with contextlib.suppress(ValueError):
+                index = entries.index(str(ctx.author))
+                entries[index] = f'**{entries[index]}**'
+        else:
+            entries = ('There are no members :(', )
+
+        pages = ListPaginator(ctx, entries, colour=average_color, title=truncated_title)
         await pages.interact()
 
     @commands.command()
     @commands.guild_only()
     async def inrole(self, ctx, *, role: discord.Role):
-        """
-        Checks which members have a given role
-        The role is case sensitive.
+        """Checks which members have a given role. The role is case sensitive.
+
+        If you have the role, your name will be in **bold**.
         Only one role can be specified. For multiple roles, use `{prefix}inanyrole` or `{prefix}inallrole`.
         """
         await self._inrole(ctx, role, members=role.members)
@@ -419,24 +466,23 @@ class Meta:
     @commands.command()
     @commands.guild_only()
     async def inanyrole(self, ctx, *roles: discord.Role):
-        """
-        Checks which members have any of the given role(s)
+        """Checks which members have any of the given role(s). The role(s) are case sensitive.
+        If you have the role, your name will be in **bold**.
 
-        The role(s) are case sensitive.
-        If you don't want to mention a role, please put it in quotes,
-        especially if there's a space in the role name
+        If you don't want to mention a role and there's a space in the role name, 
+        you must put the role in quotes
         """
-        await self._inrole(ctx, *roles, members=set(chain.from_iterable(map(attrgetter('members'), roles))))
+        await self._inrole(ctx, *roles, members=set(chain.from_iterable(map(attrgetter('members'), roles))),
+                           conjunction='or')
 
     @commands.command()
     @commands.guild_only()
     async def inallrole(self, ctx, *roles: discord.Role):
-        """
-        Checks which members have all of the given role(s)
+        """Checks which members have all of the given role(s). The role(s) are case sensitive.
+        If you have the role, your name will be in **bold**.
 
-        The role(s) are case sensitive.
-        If you don't want to mention a role, please put it in quotes,
-        especially if there's a space in the role name
+        If you don't want to mention a role and there's a space in the role name, 
+        you must put that role in quotes
         """
         role_members = (role.members for role in roles)
         await self._inrole(ctx, *roles, members=set(next(role_members)).intersection(*role_members))
