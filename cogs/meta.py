@@ -400,7 +400,10 @@ class Meta:
     async def _inrole(ctx, *roles, members):
         entries = members or ('There are no members in these role(s) :(', )
         truncated_title = truncate(f'Members in role{"s" * (len(roles) != 1)} {str_join(", ", roles)}', 256, '...')
-        pages = ListPaginator(ctx, map(str, entries), colour=ctx.bot.colour, title=truncated_title)
+        total_color = map(sum, zip(*(role.colour.to_rgb() for role in roles)))
+        average_color = discord.Colour.from_rgb(*map(round, (c / len(roles) for c in total_color)))
+
+        pages = ListPaginator(ctx, map(str, entries), colour=average_color, title=truncated_title)
         await pages.interact()
 
     @commands.command()
