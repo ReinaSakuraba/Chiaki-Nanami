@@ -23,24 +23,17 @@ def _lerp_color(c1, c2, interp):
 
 _lerp_red = functools.partial(_lerp_color, (0, 0, 0), (255, 0, 0))
 
-class UserInfo(namedtuple('UserInfo', 'name id avatar created_at')):
+class UserInfo(namedtuple('UserInfo', 'name id avatar')):
     __slots__ = ()
 
     @classmethod
     def from_user(cls, user):
         avatar = user.avatar or user.default_avatar.value
-        return cls(str(user), user.id, avatar, user.created_at)
-
-    @discord.utils.cached_property
-    def value(self):
-        return (int.from_bytes(self.name.encode('utf-8'), sys.byteorder) +
-                self.id +
-                int(self.avatar, 16) +
-                self.created_at.timestamp()
-                )
+        return cls(str(user), user.id, avatar)
 
 _default_rating_comments = (
     'There is no chance for this to happen.',
+    'Why...',
     'No way, not happening.',
     'Nope.',
     'Maybe.',
@@ -70,7 +63,10 @@ _special_pairs = {
 }
 
 @functools.lru_cache(maxsize=2 ** 20)
-def _calculate_compatibilty(info1, info2):
+def _calculate_compatibilty(info_pair):
+    # This has to be stored as a frozenset pair to make sure that
+    # switching the two users doesn't affect the result
+    info1, info2 = info_pair
     id_pair = frozenset((info1.id, info2.id))
     if id_pair in _special_pairs:
         return _special_pairs[id_pair]
@@ -79,9 +75,7 @@ def _calculate_compatibilty(info1, info2):
     if len(id_pair) == 1:
         return ShipRating(0, f"RIP {info1.name}. They're forever alone.")
 
-    r = random.randrange
-    value = (round((info1.value + info2.value + r(10000))) >> r(25, 100)) % 100
-    return ShipRating(value)
+    return ShipRating(random.randrange(101))
 
 #--------------- End ship stuffs ---------------------
 
@@ -152,7 +146,10 @@ class OtherStuffs:
         # we have to use a tuple of these stats.
         # Using the actual User object won't work if we're gonna take advantage of functools.lru_cache
         # Because a change in avatar or username won't create a new result
-        rating = _calculate_compatibilty(UserInfo.from_user(user1), UserInfo.from_user(user2))
+        #
+        # Also make sure ->ship user1 user2 and ->ship user2 user1 return the same result
+        pair = frozenset(map(UserInfo.from_user, (user1, user2)))
+        rating = _calculate_compatibilty(pair)
 
         # TODO: Use pillow to make an image out of the two users' thumbnails.
         field_name = 'I give it a...'       # In case I decide to have it choose between mulitiple field_names 
