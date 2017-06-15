@@ -166,7 +166,8 @@ class Meta:
             creator = self._creator = await self.bot.get_user_info(239110748180054017)
 
         chiaki_embed = (discord.Embed(description=bot.appinfo.description, colour=self.bot.colour)
-                       .set_author(name=str(creator), icon_url=creator.avatar_url_as(format=None))
+                       .set_author(name=str(ctx.bot.user), icon_url=bot.user.avatar_url_as(format=None))
+                       .add_field(name='Created by', value=str(creator))
                        .add_field(name='Servers', value=len(self.bot.guilds))
                        .add_field(name='Modules', value=extension_stats)
                        .add_field(name='CPU Usage', value=f'{cpu_usage}%\n{memory_usage_in_mb: .2f}MB')
