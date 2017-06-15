@@ -3,6 +3,7 @@ import discord
 
 from discord.ext import commands
 from functools import partial
+from itertools import starmap
 
 from .utils import checks, errors
 from .utils.converter import ArgumentParser, duration
@@ -479,32 +480,31 @@ class Admin:
 
     # ------------------------- PREFIX RELATED STUFF -------------------
 
-    @commands.command()
+    @commands.group(aliases=['prefixes'])
     @checks.is_admin()
-    async def prefix(self, ctx, *, prefix=None):
-        """Sets a custom prefix for this server.
-
-        If no arguments are specified, it shows the custom prefixes for this server.
-        """
-        if prefix is None:
-            prefixes = self.bot.custom_prefixes.get(ctx.guild, self.bot.default_prefix)
-            await ctx.send(f"{ctx.guild}'s custom prefix(es) are {', '.join(prefixes)}")
+    async def prefix(self, ctx):
+        """Shows the prefixes that you can use in this server."""
+        if ctx.invoked_subcommand is not None:
             return
-        self.bot.custom_prefixes[ctx.guild] = [prefix]
-        await ctx.send(f"Successfully set {ctx.guild}'s prefix to \"{prefix}\"!")
 
-    @commands.command(name="addprefix", aliases=['apf'])
+        prefixes = await self.bot.get_prefix(ctx.message)
+        description = '\n'.join(starmap('`{0}.` {1}'.format, enumerate(prefixes, start=1)))
+        embed = discord.Embed(title=f'Prefixes you can use in {ctx.guild}', 
+                              colour=self.bot.colour, description=description)
+        await ctx.send(embed=embed)
+
+    @prefix.command(name='add')
     @checks.is_admin()
     async def add_prefix(self, ctx, *, prefix):
-        """Adds a prefix for this server"""
-        prefixes = self.bot.custom_prefixes.setdefault(ctx.guild, [*self.bot.default_prefix])
+        """Adds a custom prefix for this server"""
+        prefixes = self.bot.custom_prefixes.setdefault(ctx.guild, [])
         if prefix in prefixes:
             await ctx.send(f"\"{prefix}\" was already a custom prefix...")
         else:
             prefixes.append(prefix)
             await ctx.send(f"Successfully added prefix \"{prefix}\"!")
 
-    @commands.command(name="removeprefix", aliases=['rpf'])
+    @prefix.command(name='remove')
     @checks.is_admin()
     async def remove_prefix(self, ctx, *, prefix):
         """Removes a prefix for this server"""
@@ -516,7 +516,7 @@ class Admin:
             prefixes.remove(prefix)
         await ctx.send(f"Successfully removed \"{prefix}\"!")
 
-    @commands.command(name="resetprefix", aliases=['clrpf'])
+    @prefix.command(name="reset")
     @checks.is_admin()
     async def reset_prefix(self, ctx):
         """Resets the server's custom prefixes back to the default prefix ({prefix})"""
