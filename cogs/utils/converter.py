@@ -159,5 +159,19 @@ def in_(*choices):
         if lowered in choices:
             return lowered
         raise commands.BadArgument(f"{lowered} is not valid option. "
-                                    "Available options:\n{', '.join(choices)}")
+                                   f"Available options:\n{', '.join(choices)}")
     return in_converter
+
+
+def ranged(low, high=None, *, type=int):
+    'Converter to check if an argument is in a certain range INCLUSIVELY'
+    if high is None:
+        low, high = 0, low
+
+    def ranged_argument(arg):
+        result = type(arg)
+        if low <= result <= high:
+            return result
+        raise commands.BadArgument(f'Value must be between {low} and {high}, '
+                                   f'or equal to {low} or {high}.')
+    return ranged_argument
