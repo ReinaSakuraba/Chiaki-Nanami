@@ -4,17 +4,14 @@ import discord
 import enum
 import itertools
 import random
-import string
 import textwrap
 import time
-import traceback
 
 from datetime import datetime
 from discord.ext import commands
 
 from .manager import SessionManager
 
-from ..utils.context_managers import redirect_exception
 from ..utils.converter import in_, ranged
 from ..utils.database import Database
 from ..utils.paginator import BaseReactionPaginator, page
@@ -278,8 +275,6 @@ class MinesweeperSession:
     def __init__(self, ctx, board):
         self.board = board
         self.ctx = ctx
-        self._closed = False
-        self._exploded = False
         self._interaction = None
         self._runner = None
         self._game_screen = MinesweeperDisplay(ctx, self)
@@ -323,50 +318,50 @@ class MinesweeperSession:
         
         await self._game_screen.message.edit(embed=embed)
 
-    async def run_loop(self): 
-        start = time.perf_counter()
-        # To cover this being cancelled through stop(), this entire while loop 
-        # has to be inside a try-except block
-        try:
-            while True:
-                colour = None
-                try:
-                    message = await self.ctx.bot.wait_for('message', timeout=120, check=self.check_message)
-                except asyncio.TimeoutError:
-                    await self.ctx.send('You took too long!')
-                    break
+    async def _loop(self):
+        start = time.perf_counter() 
+        while True:
+            colour = None
+            try:
+                message = await self.ctx.bot.wait_for('message', timeout=120, check=self.check_message)
+            except asyncio.TimeoutError:
+                await self.ctx.send('You took too long!')
+                break
 
-                parsed = self.parse_message(message.content)
-                if parsed is None:      # garbage input, ignore.
-                    continue
-                x, y, thing = parsed
-                await message.delete()
+            parsed = self.parse_message(message.content)
+            if parsed is None:      # garbage input, ignore.
+                continue
+            x, y, thing = parsed
+            await message.delete()
 
-                try:
-                    if thing.value:
-                        getattr(self.board, thing.value)(x, y)
-                    else:
-                        self.board.show(x, y)
-                except HitMine:
-                    self.board.explode(x, y)
-                    await self.edit_board(0xFFFF00)
-                    await asyncio.sleep(random.uniform(0.5, 1))
-                    self.board.reveal_mines()
-                    colour = 0xFF0000
-                    raise
-                except Exception as e:
-                    await self.ctx.send(f'An error happened.\n```\y\n{type(e).__name__}: {e}```')
-                    raise
+            try:
+                if thing.value:
+                    getattr(self.board, thing.value)(x, y)
                 else:
-                    if self.board.is_solved():
-                        colour = 0x00FF00
-                        return time.perf_counter() - start
-                finally:
-                    await self.edit_board(colour)
+                    self.board.show(x, y)
+            except HitMine:
+                self.board.explode(x, y)
+                await self.edit_board(0xFFFF00)
+                await asyncio.sleep(random.uniform(0.5, 1))
+                self.board.reveal_mines()
+                colour = 0xFF0000
+                raise
+            except Exception as e:
+                await self.ctx.send(f'An error happened.\n```\y\n{type(e).__name__}: {e}```')
+                raise
+            else:
+                if self.board.is_solved():
+                    colour = 0x00FF00
+                    return time.perf_counter() - start
+            finally:
+                await self.edit_board(colour)
+
+    async def run_loop(self): 
+        try:
+           return await self._loop()
         except asyncio.CancelledError:
             await self.edit_board(0)
             raise
-
         return None
 
     async def run(self):
@@ -431,7 +426,6 @@ class Minesweeper:
             await ctx.send(f'You {cause}... ;-;')
         if isinstance(cause, asyncio.CancelledError):
             await ctx.send(f'Ok, cya later...')
-        # traceback.print_tb(error.__traceback__)
 
     @minesweeper.command(name='stop')
     async def minesweeper_stop(self, ctx, level: Level):
