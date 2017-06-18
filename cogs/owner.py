@@ -100,7 +100,7 @@ class Owner:
                 await ctx.send(f'```py\n{value}{traceback.format_exc()}\n```')
             else:
                 value = stdout.getvalue()
-                with contextlib.suppress(BaseException):
+                with contextlib.suppress(discord.HTTPException):
                     await ctx.message.add_reaction('\u2705')
 
                 if ret is None:
@@ -110,7 +110,6 @@ class Owner:
                     self._last_result = ret
                     await ctx.send(f'```py\n{value}{ret}\n```')
 
-
     @commands.command(hidden=True)
     async def botav(self, ctx, *, avatar):
         with open(avatar, 'rb') as f:
@@ -118,21 +117,30 @@ class Owner:
         await ctx.send('\N{OK HAND SIGN}')
 
     @commands.command(hidden=True)
-    async def reload(self, ctx, cog: str):
-        """Reloads a bot-extension (one with a setup method)"""
-        self.bot.unload_extension(cog)
-        await self._load(ctx, cog)
-
-    @commands.command(hidden=True)
     async def load(self, ctx, cog: str):
         """Loads a bot-extension (one with a setup method)"""
-        await self._load(ctx, cog)
+        ctx.bot.load_extension(cog)
+        await ctx.send('ok')
 
     @commands.command(hidden=True)
     async def unload(self, ctx, cog: str):
         """Unloads a bot-extension (one with a setup method)"""
-        self.bot.unload_extension(cog)
-        await ctx.send(f'```Unloaded {cog}```')
+        ctx.bot.unload_extension(cog)
+        await ctx.send('ok')
+
+    @commands.command(hidden=True)
+    async def reload(self, ctx, cog: str):
+        """Reloads a bot-extension (one with a setup method)"""
+        ctx.bot.unload_extension(cog)
+        ctx.bot.load_extension(cog)
+        await ctx.send('ok')
+
+    @load.error
+    @unload.error
+    @reload.error
+    async def load_error(self, ctx, error):
+        traceback.print_exc()
+        await ctx.send('no')
 
     @commands.command(hidden=True, aliases=['kys'])
     async def die(self, ctx):
@@ -144,6 +152,7 @@ class Owner:
     async def reset(self, ctx):
         """Restarts the bot"""
         ctx.bot.reset_requested = True
+        await ctx.send("Sleepy... zZzzzzZ...")
         await ctx.bot.logout()
 
     @commands.command(hidden=True)
