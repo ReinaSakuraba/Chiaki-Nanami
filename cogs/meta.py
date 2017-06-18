@@ -12,24 +12,23 @@ import sys
 from contextlib import redirect_stdout
 from discord.ext import commands
 from io import StringIO
-from itertools import chain, islice, starmap, zip_longest
-from operator import attrgetter
+from itertools import chain, filterfalse, islice, starmap, tee
+from operator import attrgetter, itemgetter
 
 from .utils import converter
-from .utils.compat import ilen, url_color, user_color
+from .utils.compat import grouper, ilen, url_color, user_color
 from .utils.context_managers import redirect_exception, temp_message
 from .utils.converter import BotCommand, union
 from .utils.errors import InvalidUserArgument, ResultsNotFound
-from .utils.misc import escape_markdown, str_join, nice_time, ordinal, truncate
+from .utils.misc import (
+    escape_markdown, group_strings, role_name, str_join, nice_time, ordinal, truncate
+)
 from .utils.paginator import BaseReactionPaginator, ListPaginator, page
 
-
-def _grouper(n, iterable, fillvalue=None):
-    args = [iter(iterable)] * n
-    return zip_longest(fillvalue=fillvalue, *args)
-
-def _group_strings(n, strings):
-    return map(''.join, _grouper(n, strings, ''))
+def _join_and(items, *, conjunction='and'):
+    if not items:
+        return ''
+    return f"{', '.join(items[:-1])} {conjunction} {items[-1]}" if len(items) != 1 else items[0]
 
 async def _mee6_stats(session, member):
     async with session.get(f"https://mee6.xyz/levels/{member.guild.id}?json=1&limit=-1") as r:
@@ -86,17 +85,13 @@ class ServerPages(BaseReactionPaginator):
         """Shows the server's emojis"""
         guild = self.guild
         emojis = guild.emojis
-        description = '\n'.join(_group_strings(10, map(str, guild.emojis))) if emojis else 'There are no emojis :('
+        description = '\n'.join(group_strings(map(str, guild.emojis)), 10) if emojis else 'There are no emojis :('
 
         return (discord.Embed(colour=await self.server_color(), description=description)
                .set_author(name=f"{guild}'s custom emojis")
                .set_footer(text=f'{len(emojis)} emojis')
                )
 
-def join_and(items, *, conjunction='and'):
-    if not items:
-        return ''
-    return f"{', '.join(items[:-1])} {conjunction} {items[-1]}" if len(items) != 1 else items[0]
 
 class Meta:
     """Info related commands"""
@@ -277,13 +272,13 @@ class Meta:
 
     @staticmethod
     def text_channel_embed(channel):
-        topic = '\n'.join(_group_strings(70, channel.topic)) if channel.topic else discord.Embed.Empty
+        topic = '\n'.join(group_strings(channel.topic, 70)) if channel.topic else discord.Embed.Empty
         member_count = len(channel.members)
         empty_overwrites = ilen(ow for _, ow in channel.overwrites if ow.is_empty())
         overwrite_message = f'{len(channel.overwrites)} ({empty_overwrites} empty)'
 
         return (discord.Embed(description=topic, timestamp=channel.created_at)
-               .set_author(name=channel.name)
+               .set_author(name=f'#{channel.name}')
                .add_field(name='ID', value=channel.id)
                .add_field(name='Position', value=channel.position)
                .add_field(name='Members', value=len(channel.members))
@@ -305,6 +300,11 @@ class Meta:
                .add_field(name='Permission Overwrites', value=overwrite_message)
                .set_footer(text='Created')
                )
+
+    @staticmethod
+    async def server_colour(server):
+        icon = server.icon_url
+        return await url_color(icon) if icon else discord.Colour.default()
 
     @info.command(name='channel')
     async def info_channel(self, ctx, channel: union(discord.TextChannel, discord.VoiceChannel)=None):
@@ -344,7 +344,7 @@ class Meta:
         icon = server.icon_url
         if icon:
             server_embed.set_thumbnail(url=icon)
-            server_embed.colour = await url_color(icon)
+            server_embed.colour = await self.server_colour(server)
         return server_embed
 
     @info.group(name='server', aliases=['guild'])
@@ -354,7 +354,6 @@ class Meta:
         if ctx.subcommand_passed in ['server', 'guild']:
             server_pages = ServerPages(ctx)
             await server_pages.interact()
-            #await ctx.send(embed=await self._server_embed(ctx.guild))
         elif ctx.invoked_subcommand is None:
             subcommands = '\n'.join(ctx.command.all_commands)
             await ctx.send(f"```\nAvailable server commands:\n{subcommands}```")
@@ -401,11 +400,11 @@ class Meta:
     @commands.command()
     async def roles(self, ctx):
         """Shows all the roles in the server. Roles in bold are the ones you have"""
-        member_roles = ctx.author.roles
         roles = ctx.guild.role_hierarchy[:-1]
         padding = max(map(len, (role.members for role in roles))) // 10
-        hierarchy = [f"`{len(role.members) :<{padding}}\u200b` {f'**{escape_markdown(role.name)}**' if role in member_roles else role.name}"
-                     for role in roles]
+
+        role_name = functools.partial(_role_name, ctx.author)
+        hierarchy = [f"`{len(role.members) :<{padding}}\u200b` {role_name(role)}" for role in roles]
         pages = ListPaginator(ctx, hierarchy, title=f'Roles in {ctx.guild} ({len(hierarchy)})',
                            colour=self.bot.colour)
         await pages.interact()
@@ -497,38 +496,53 @@ class Meta:
         The permission is case insensitive.
         """
         perm_attr = perm.replace(' ', '_').lower()
-        roles_that_have_perms = [role for role in ctx.guild.roles
-                                 if getattr(role.permissions, perm_attr)]
-        fmt = f"Here are the roles who have the {perm.title()} perm."
-        await ctx.send(fmt + f"```css\n{str_join(', ', roles_that_have_perms)}```")
+        roles = filter(attrgetter(f'permissions.{perm_attr}'), ctx.guild.role_hierarchy)
+        title = f"Roles in {ctx.guild} that have {perm.replace('_', ' ').title()}"
+        entries = map(functools.partial(role_name, ctx.author), roles)
 
-    async def display_permissions(self, ctx, thing, permissions, extra=''):
+        pages = ListPaginator(ctx, entries, title=title, colour=ctx.bot.colour)
+        await pages.interact()    
+
+    @staticmethod
+    async def _display_permissions(ctx, thing, permissions, extra=''):
+        diffs = '\n'.join([f"{'-+'[value]} {attr.title().replace('_', ' ')}" for attr, value in permissions])
+        str_perms = f'```diff\n{diffs}```'
+
         value = permissions.value
-        diff_mapper = '\n'.join([f"{'-+'[value]} {attr.title().replace('_', ' ')}" for attr, value in permissions])
-
-        message = (f"The permissions {extra} for **{thing}** is **{value}**."
-                   f"\nIn binary it's {bin(value)[2:]}"
-                    "\nThis implies the following values:"
-                   f"\n```diff\n{diff_mapper}```"
-                   )
-        await ctx.send(message)
+        perm_embed = (discord.Embed(colour=thing.colour, description=str_perms)
+                     .set_author(name=f'Permissions for {thing}')
+                     .set_footer(text=f'Value: {value} | Binary: {bin(value)[2:]}')
+                     )
+        await ctx.send(embed=perm_embed)
 
     @commands.command(aliases=['perms'])
     @commands.guild_only()
     async def permissions(self, ctx, *, member_or_role: union(discord.Member, discord.Role)=None):
-        """Shows either a member's Permissions, or a role's Permissions"""
+        """Shows either a member's Permissions, or a role's Permissions
+
+        ```diff
+        + Permissions you have will be shown like this.
+        - Permissions you don't have will be shown like this.
+        ```
+        """
         if member_or_role is None:
             member_or_role = ctx.author
         permissions = getattr(member_or_role, 'permissions', None) or member_or_role.guild_permissions
-        await self.display_permissions(ctx, member_or_role, permissions)
+        await self._display_permissions(ctx, member_or_role, permissions)
 
     @commands.command(aliases=['permsin'])
     @commands.guild_only()
     async def permissionsin(self, ctx, *, member: discord.Member=None):
-        """Shows either a member's Permissions *in the channel*"""
+        """Shows either a member's Permissions *in the channel*
+
+        ```diff
+        + Permissions you have will be shown like this.
+        - Permissions you don't have will be shown like this.
+        ```
+        """
         if member is None:
             member = ctx.author
-        await self.display_permissions(ctx, member, ctx.channel.permissions_for(member), extra=f'in {ctx.channel.mention}')
+        await self._display_permissions(ctx, member, ctx.channel.permissions_for(member), extra=f'in {ctx.channel.mention}')
 
     @commands.command(aliases=['av'])
     async def avatar(self, ctx, *, user: converter.ApproximateUser=None):
