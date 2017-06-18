@@ -3,6 +3,7 @@ import discord
 
 from discord.ext import commands
 from functools import partial
+from itertools import starmap
 
 from .utils import checks, errors
 from .utils.converter import ArgumentParser, duration
@@ -25,8 +26,10 @@ class Admin:
         return bool(ctx.guild)
 
     @staticmethod
-    def _check_role_position(ctx, role, action):
-        author = ctx.author
+    def _check_role_position(member, role, action):
+        if member.id == member.guild.owner.id:
+            return
+
         top_role = author.top_role
         if role >= top_role:
             raise errors.InvalidUserArgument(f"You can't {action} a role higher than or equal "
@@ -35,7 +38,7 @@ class Admin:
     @staticmethod
     async def _set_chiaki_role(ctx, key, role, action):
         # if role is not None:
-            # self._check_role_position(ctx, role, action)
+            # self._check_role_position(ctx.author, role, action)
         checks.assign_role(ctx.guild, key, role)
         msg = (f"Made {role} an **{key} role**!" if role is not None else
                f"Reset the **{key}** role to **{checks.DEFAULT}**")
@@ -99,7 +102,7 @@ class Admin:
         self_roles = self.self_roles[ctx.guild]
         if role.id in self_roles:
             raise errors.InvalidUserArgument("That role is already self-assignable... I think")
-        self._check_role_position(ctx, role, "assign as a self role")
+        self._check_role_position(ctx.author, role, "assign as a self role")
         self_roles.append(role.id)
         await ctx.send(f"**{role}** is now a self-assignable role!")
 
@@ -111,13 +114,12 @@ class Admin:
         A self-assignable role is one that you can assign to yourself
         using `{prefix}iam` or `{prefix}selfrole`
         """
-        self._check_role_position(ctx, role, "remove as a self role")
+        self._check_role_position(ctx.author, role, "remove as a self role")
         with redirect_exception((ValueError, "That role was never self-assignable... I think.")):
             self.self_roles[ctx.guild].remove(role.id)
         await ctx.send(f"**{role}** is no longer a self-assignable role!")
 
     @commands.command(name='listselfrole', aliases=['lsar'])
-    @checks.is_admin()
     async def list_self_role(self, ctx):
         """List all the self-assignable roles in the server
 
@@ -172,7 +174,7 @@ class Admin:
         This role must be lower than both the bot's highest role and your highest role.
         """
         # This normally won't raise an exception, so we have to check for that
-        self._check_role_position(ctx, role, 'add')
+        self._check_role_position(ctx.author, role, 'add')
         with redirect_exception((discord.Forbidden, f"I can't give {user} {role}. Either I don't have the right perms, "
                                                      "or you're trying to add a role that's higher than mine"),
                                 (discord.HTTPException, f"Giving {role} to {user} failed. Not sure why though...")):
@@ -187,7 +189,7 @@ class Admin:
         This role must be lower than both the bot's highest role and your highest role.
         Do not confuse this with `{prefix}deleterole`, which deletes a role from the server.
         """
-        self._check_role_position(ctx, role, 'remove')
+        self._check_role_position(ctx.author, role, 'remove')
         with redirect_exception((discord.Forbidden, f"I can't remove **{role}** from {user}. Either I don't have the right perms, "
                                                      "or you're trying to remove a role that's higher than mine"),
                                 (discord.HTTPException, f"Removing {role} from {user} failed. Not sure why though...")):
@@ -308,7 +310,7 @@ class Admin:
 
         Do not confuse this with `{prefix}removerole`, which removes a role from a member.
         """
-        self._check_role_position(ctx, role, "delete")
+        self._check_role_position(ctx.author, role, "delete")
         with redirect_exception((discord.Forbidden, "I need the **Manage Roles** perm to delete roles, I think."),
                                 (discord.HTTPException, f"Deleting role **{role.name}** failed, for some reason.")):
             await role.delete()
@@ -480,32 +482,31 @@ class Admin:
 
     # ------------------------- PREFIX RELATED STUFF -------------------
 
-    @commands.command()
+    @commands.group(aliases=['prefixes'])
     @checks.is_admin()
-    async def prefix(self, ctx, *, prefix=None):
-        """Sets a custom prefix for this server.
-
-        If no arguments are specified, it shows the custom prefixes for this server.
-        """
-        if prefix is None:
-            prefixes = self.bot.custom_prefixes.get(ctx.guild, self.bot.default_prefix)
-            await ctx.send(f"{ctx.guild}'s custom prefix(es) are {', '.join(prefixes)}")
+    async def prefix(self, ctx):
+        """Shows the prefixes that you can use in this server."""
+        if ctx.invoked_subcommand is not None:
             return
-        self.bot.custom_prefixes[ctx.guild] = [prefix]
-        await ctx.send(f"Successfully set {ctx.guild}'s prefix to \"{prefix}\"!")
 
-    @commands.command(name="addprefix", aliases=['apf'])
+        prefixes = await self.bot.get_prefix(ctx.message)
+        description = '\n'.join(starmap('`{0}.` {1}'.format, enumerate(prefixes, start=1)))
+        embed = discord.Embed(title=f'Prefixes you can use in {ctx.guild}', 
+                              colour=self.bot.colour, description=description)
+        await ctx.send(embed=embed)
+
+    @prefix.command(name='add')
     @checks.is_admin()
     async def add_prefix(self, ctx, *, prefix):
-        """Adds a prefix for this server"""
-        prefixes = self.bot.custom_prefixes.setdefault(ctx.guild, [*self.bot.default_prefix])
+        """Adds a custom prefix for this server"""
+        prefixes = self.bot.custom_prefixes.setdefault(ctx.guild, [])
         if prefix in prefixes:
             await ctx.send(f"\"{prefix}\" was already a custom prefix...")
         else:
             prefixes.append(prefix)
             await ctx.send(f"Successfully added prefix \"{prefix}\"!")
 
-    @commands.command(name="removeprefix", aliases=['rpf'])
+    @prefix.command(name='remove')
     @checks.is_admin()
     async def remove_prefix(self, ctx, *, prefix):
         """Removes a prefix for this server"""
@@ -517,7 +518,7 @@ class Admin:
             prefixes.remove(prefix)
         await ctx.send(f"Successfully removed \"{prefix}\"!")
 
-    @commands.command(name="resetprefix", aliases=['clrpf'])
+    @prefix.command(name="reset")
     @checks.is_admin()
     async def reset_prefix(self, ctx):
         """Resets the server's custom prefixes back to the default prefix ({prefix})"""

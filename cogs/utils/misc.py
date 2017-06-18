@@ -1,12 +1,16 @@
+import functools
 import inspect
 import logging
 import os
 import random
 import re
 
-from collections import namedtuple
+from collections import namedtuple, OrderedDict
 from datetime import datetime, timezone
 from discord.ext import commands
+
+from .compat import grouper
+
 
 def code_say(bot, msg):
     return bot.say(code_msg(msg))
@@ -26,11 +30,17 @@ def multi_replace(string, replacements):
     pattern = re.compile("|".join(map(re.escape, substrs)))
     return pattern.sub(lambda m: replacements[m.group(0)], string)
 
+_markdown_replacements = {c: f'\\{c}' for c in ('*', '`', '_', '~', '\\')}
+escape_markdown = functools.partial(multi_replace, replacements=_markdown_replacements)
+
 def truncate(s, length, placeholder):
     return (s[:length] + placeholder) if len(s) > length + len(placeholder) else s
 
 def str_join(delim, iterable):
     return delim.join(map(str, iterable))
+
+def group_strings(string, n):
+    return map(''.join, grouper(string, n, ''))
 
 def pairwise(t):
     it = iter(t)
@@ -69,3 +79,14 @@ def base_filename(name):
 
 def emoji_url(emoji):
     return f'https://twemoji.maxcdn.com/2/72x72/{hex(ord(emoji))[2:]}.png'
+
+def unique(iterable):
+    return list(OrderedDict.fromkeys(iterable))
+
+async def maybe_awaitable(func, *args, **kwargs):
+    maybe = func(*args, **kwargs)
+    return await maybe if inspect.isawaitable(maybe) else maybe
+
+def role_name(member, role):
+    name = str(role)
+    return f'**{escape_markdown(name)}**' if role in member.roles else name

@@ -14,13 +14,20 @@ from discord.ext import commands
 from .manager import SessionManager
 
 from ..utils import errors
-from ..utils.misc import base_filename
+from ..utils.compat import iter_except
+from ..utils.misc import base_filename, escape_markdown, group_strings, truncate
+from ..utils.paginator import ListPaginator
+
+
+# I hate string concatentation
+# And I hate constantly building the same string
+# So this is done to avoid both of those.
 
 _template = '''
-  011111
+   11111
   0    2
-  0    3      Guessed : {guesses}
-  0   546     Average : {avg}%
+  0    3
+  0   546
   0    4
   0   7 8
  _0_
@@ -42,8 +49,9 @@ del _template
 GameResult = namedtuple('GameResult', 'success message')
 GameResult.__bool__ = operator.attrgetter('success')
 
-
-# TODO: embed-fuck this
+INSTRUCTIONS = ('Type a letter to guess a letter, \n'
+                'or prefix your phrase with `*` to guess the phrase.\n'
+                '(eg `*the quick brown fox`)')
 class HangmanSession:
     def __init__(self, ctx, word):
         self.ctx = ctx
@@ -51,99 +59,111 @@ class HangmanSession:
         self._lowered_word = self.word.lower()
         self.blanks = ['_' if letter in string.ascii_letters else letter
                        for letter in word]
-        self.guesses = []
+        self._guesses = []
         self.fails = 0
-        self.cooldowns = {}
-        self.force_closed = False
-        self._finished = asyncio.Event()
         self._runner = None
+
+        self._game_screen = (discord.Embed(colour=0x00FF00)
+                            .set_author(name='Hangman Game Started!')
+                            .add_field(name='Guesses', value='\u200b')
+                            .add_field(name='Average', value=0)
+                            .add_field(name='Instructions', value=INSTRUCTIONS, inline=False)
+                            )
 
     def _verify_guess(self, guess):
         lowered = guess.lower()
-        if lowered in self.guesses:
+        if lowered in self._guesses:
             return GameResult(success=None, message=f"{guess} was already guessed!")
 
         if len(lowered) != 1:      # full word
             if lowered == self._lowered_word:
-                return GameResult(success=True, message=f"You guessed it!")
-            return GameResult(success=False, message=f"That is not the word :(")
+                return GameResult(success=True, message="You guessed it!")
+            return GameResult(success=False, message=f"{guess} is not the word :(")
 
-        if lowered in self._lowered_word    :
-            return GameResult(success=True, message=f"That is in the word :D")
-        return GameResult(success=False, message=f"That is not in the word :(")
+        if lowered in self._lowered_word:
+            return GameResult(success=True, message=f"{guess} is in the word :D")
+        return GameResult(success=False, message=f"{guess} is not in the word :(")
 
     def _check_message(self, message):
         if message.channel != self.ctx.channel:
             return False
 
-        # check for cooldown
-        last_time = self.cooldowns.get(message.author)
-        if last_time is not None:
-            if (message.created_at - last_time).total_seconds() < 1:
-                print('no')
-                return False
-
         content = message.content
         return len(content) == 1 or content.startswith('*')
 
-    async def __run(self):
-        message = await self.ctx.send(self.format_message('Hangman game started!'))
+    def edit_screen(self):
+        guess = '\n'.join(group_strings(', '.join(self.guesses), 35))
+        self._game_screen.description = f'```{" ".join(self.blanks)}```\n```{hangman_drawings[self.fails]}```'
+        self._game_screen.set_field_at(0, name='Guesses', value=truncate(guess, 1024, '...') or '\u200b')
+        self._game_screen.set_field_at(1, name='Average', value=f'{self.average() * 100 :.2f}%')
 
+    async def _loop(self, message):
         while True:
             guess = await self.ctx.bot.wait_for('message', check=self._check_message)
-            self.cooldowns[guess.author] = guess.created_at
             content = guess.content
             content = content[len(content) > 1:]
 
             ok, result = self._verify_guess(content)
             if ok:
+                self._game_screen.colour = 0x00FF00
                 self.blanks[:] = (c if c.lower() in content else v for c, v in zip(self.word, self.blanks))
             else:
+                self._game_screen.colour = 0xFF0000
                 self.fails += ok is not None
-            self.guesses.append(content.lower())
-            await message.edit(content=f'{guess.author.mention}, {self.format_message(result)}')
-            if self.is_completed() or self.is_dead():
-                break
+            if ok is not None:
+                self._guesses.append(content.lower())
 
-        self._finished.set()
+            self.edit_screen()
+            await guess.delete()
+            try:
+                if self.is_completed():
+                    self._game_screen.set_author(name='Hangman Completed!')
+                    break
+                elif self.is_dead():
+                    self._game_screen.set_author(name='GAME OVER')
+                    break
+            finally:
+                await message.edit(content=f'{guess.author.mention}, {result}', embed=self._game_screen)
+
+    async def run_loop(self):
+        self.edit_screen()
+        message = await self.ctx.send(embed=self._game_screen)
+        self._game_screen.set_author(name='Hangman Game')
+
+        try:
+            await self._loop(message)
+        except asyncio.CancelledError:
+            self._game_screen.set_author(name='Hangman stopped...')
+            self._game_screen.colour = 0
+            await message.edit(embed=self._game_screen)
+            raise
+        else:
+            message = f'The answer was **{escape_markdown(self.word)}**.'
+            return GameResult(success=not self.is_dead(), message=message)
 
     async def run(self):
-        self._runner = self.ctx.bot.loop.create_task(self.__run())
-        await self._finished.wait()
+        self._runner = asyncio.ensure_future(self.run_loop())
+        return await self._runner
 
-        message = f'The answer was {self.word}'
-        return GameResult(success=not self.is_dead(), message=message)
-
-    async def stop(self, force=False):
-        self.force_closed = True
+    def stop(self):
         self._runner.cancel()
-        self._finished.set()
-
-    def format_message(self, message):
-        return f'{message}\n{self.game_screen()}'
-
-    def game_screen(self):
-        formats = {
-            'guesses': ', '.join(self.guesses),
-            'avg': self.average() * 100
-        }
-
-        screen = hangman_drawings[self.fails].format(**formats)
-        return f'```\n{screen}\n{" ".join(self.blanks)}```'
 
     def average(self):
-        return 1 - (self.fails / len(self.guesses)) if self.fails else 1
+        return 1 - (self.fails / len(self.guesses)) if self.fails else 0
 
     def is_completed(self):
         return '_' not in self.blanks
 
     def is_dead(self):
-        return self.fails >= len(hangman_drawings)
+        return self.fails >= len(hangman_drawings) - 1
+
+    @property
+    def guesses(self):
+        return ['`{0}`'.format(g.replace("`", r"\`")) for g in self._guesses]
 
 def _load_hangman(filename):
     with open(filename) as f:
         return [line.strip() for line in f]
-
 
 class Hangman:
     """So you don't have to hang people in real life."""
@@ -153,9 +173,11 @@ class Hangman:
         self.bot = bot
         self.manager = SessionManager()
         self.bot.loop.create_task(self._load_categories())
+        self.default_categories = {}
+        self.custom_categories = {}
 
     def __unload(self):
-        self.manager.cancel_all(loop=self.bot.loop)
+        self.manager.cancel_all()
 
     async def _load_categories(self):
         load_async = functools.partial(self.bot.loop.run_in_executor, None, _load_hangman)
@@ -163,7 +185,7 @@ class Hangman:
         load_tasks = (load_async(name) for name in files)
         file_names = (base_filename(name) for name in files)
 
-        self.default_categories = dict(zip(file_names, await asyncio.gather(*load_tasks)))
+        self.default_categories.update(zip(file_names, await asyncio.gather(*load_tasks)))
         print('everything is ok now')
 
     async def _get_category(self, ctx, category):
@@ -182,6 +204,10 @@ class Hangman:
 
         return random.choice(words)
 
+    def all_categories(self, guild):
+        # This will be ChainMapped with custom categories
+        return self.default_categories
+
     @commands.group(invoke_without_command=True)
     async def hangman(self, ctx, category):
         """It's hangman..."""
@@ -192,10 +218,10 @@ class Hangman:
         word = self._get_random_word(words)
         with self.manager.temp_session(ctx.channel, HangmanSession(ctx, word)) as inst:
             success, message = await inst.run()
-            if inst.force_closed:
+            if success is None:
                 return
 
-            game_over_message = 'You did it!' if success else 'Noooo you lost :('
+            game_over_message = 'You did it!' if success else 'Noooo you lost. \N{CRYING FACE}'
             await ctx.send(f'{game_over_message} {message}') 
 
     @hangman.command(name='stop')
@@ -204,8 +230,14 @@ class Hangman:
         if instance is None:
             return await ctx.send('There is no hangman running right now...')
 
-        await instance.stop()
-        await ctx.send('Hangman stopped.')
+        instance.stop()
+
+    @hangman.command(name='categories')
+    async def hangman_categories(self, ctx):
+        categories = self.all_categories(ctx.guild)
+        embeds = ListPaginator(ctx, sorted(categories), title=f'List of Categories for {ctx.guild}',
+                               colour=discord.Colour.blurple())
+        await embeds.interact()
 
 def setup(bot):
     bot.add_cog(Hangman(bot))

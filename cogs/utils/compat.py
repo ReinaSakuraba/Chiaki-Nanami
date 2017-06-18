@@ -7,12 +7,13 @@ import functools
 from collections import deque, namedtuple, OrderedDict
 from discord.ext import commands
 from io import BytesIO
+from itertools import zip_longest
 
 # decided to remove the aiocache one and work with this one for now
 _AsyncCacheInfo = namedtuple("CacheInfo", ['hits', 'misses', 'future_hits', 'maxsize', 'currsize'])
 
 # http://stackoverflow.com/a/37627076
-def async_cache(maxsize=128, key=functools._make_key):
+def async_cache(maxsize=128, loop=None):
     # support use as decorator without calling, for this case maxsize will
     # not be an int
     if maxsize is None:
@@ -25,39 +26,44 @@ def async_cache(maxsize=128, key=functools._make_key):
         except (ValueError, TypeError):
             raise TypeError(f"expected an int, callable, or None, received {type(maxsize).__name__}")
 
+    if loop is None:
+        loop = asyncio.get_event_loop()
+
     boundless = real_max_size is None
     cache = OrderedDict()
     cache_len = cache.__len__
     hits = misses = future_hits = 0
 
     async def run_and_cache(func, args, kwargs):
-        """Run func with the specified arguments and store the result
-        in cache."""
+        """Await the coroutine with the specified arguments
+        and store the result in cache."""
         result = await func(*args, **kwargs)
-        cache[key(args, kwargs, False)] = result
+        key = functools._make_key(args, kwargs, False)
+        cache[key] = result
         if not boundless and cache_len() > real_max_size:
             cache.popitem(last=False)
+        cache.move_to_end(key)
         return result
 
     def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             nonlocal hits, misses, future_hits
-            key_ = key(args, kwargs, False)
-            if key_ in cache:
+            key = functools._make_key(args, kwargs, False)
+            if key in cache:
                 # Some protection against duplicating calls already in
                 # progress: when starting the call cache the future, and if
                 # the same thing is requested again return that future.
-                if isinstance(cache[key_], asyncio.Future):
+                if isinstance(cache[key], asyncio.Future):
                     future_hits += 1
-                    return cache[key_]
+                    return cache[key]
                 else:
                     f = asyncio.Future()
-                    f.set_result(cache[key_])
+                    f.set_result(cache[key])
                     hits += 1
                     return f
             else:
-                cache[key_] = task = asyncio.Task(run_and_cache(func, args, kwargs))
+                cache[key] = task = asyncio.ensure_future(run_and_cache(func, args, kwargs), loop=loop)
                 misses += 1
                 return task
 
@@ -117,7 +123,7 @@ user_colour = user_color
 # itertools related stuff
 
 try:
-    from more_itertools import always_iterable, ilen, iterate, iter_except
+    from more_itertools import always_iterable, grouper, ilen, iterate, iter_except
 except ImportError:
     def ilen(iterable):
         d = deque(enumerate(iterable, 1), maxlen=1)
@@ -145,3 +151,10 @@ except ImportError:
                 yield func()
         except exceptions:
             pass
+
+    def grouper(iterable, n, fillvalue=None):
+        "Collect data into fixed-length chunks or blocks"
+        # grouper('ABCDEFG', 3, 'x') --> ABC DEF Gxx"
+        args = [iter(iterable)] * n
+        return zip_longest(*args, fillvalue=fillvalue)
+

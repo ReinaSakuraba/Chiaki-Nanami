@@ -1,5 +1,6 @@
 import aiohttp
 import collections
+import contextlib
 import discord
 import functools
 import inspect
@@ -11,35 +12,27 @@ import sys
 from contextlib import redirect_stdout
 from discord.ext import commands
 from io import StringIO
-from itertools import chain, islice, starmap, zip_longest
-from operator import attrgetter
+from itertools import chain, filterfalse, islice, starmap, tee
+from operator import attrgetter, itemgetter
 
 from .utils import converter
-from .utils.compat import ilen, url_color, user_color
+from .utils.compat import grouper, ilen, url_color, user_color
 from .utils.context_managers import redirect_exception, temp_message
 from .utils.converter import BotCommand, union
 from .utils.errors import InvalidUserArgument, ResultsNotFound
-from .utils.misc import str_join, nice_time, ordinal
-from .utils.paginator import iterable_limit_say, iterable_say
+from .utils.misc import (
+    escape_markdown, group_strings, role_name, str_join, nice_time, ordinal, truncate
+)
+from .utils.paginator import BaseReactionPaginator, ListPaginator, page
 
-
-def _grouper(n, iterable, fillvalue=None):
-    args = [iter(iterable)] * n
-    return zip_longest(fillvalue=fillvalue, *args)
-
-def _group_strings(n, strings):
-    return map(''.join, _grouper(n, strings, ''))
-
-def _icon_embed(idable, url, name):
-    embed = (discord.Embed(title=f"{idable.name}'s {name}")
-            .set_footer(text=f"ID: {idable.id}"))
-    return embed.set_image(url=url) if url else embed
-
+def _join_and(items, *, conjunction='and'):
+    if not items:
+        return ''
+    return f"{', '.join(items[:-1])} {conjunction} {items[-1]}" if len(items) != 1 else items[0]
 
 async def _mee6_stats(session, member):
     async with session.get(f"https://mee6.xyz/levels/{member.guild.id}?json=1&limit=-1") as r:
         levels = await r.json(content_type=None)
-    print(levels)
     for idx, user_stats in enumerate(levels['players'], start=1):
         if user_stats.get("id") == str(member.id):
             user_stats["rank"] = idx
@@ -55,8 +48,50 @@ _status_colors = {
     discord.Status.invisible : discord.Colour.default(),
 }
 
-def default_last_n(n=50): 
+
+def default_last_n(n=50):
     return lambda: collections.deque(maxlen=n)
+
+class ServerPages(BaseReactionPaginator):
+    async def server_color(self):
+        try:
+            result = self._colour
+        except AttributeError:
+            result = 0
+            url = self.guild.icon_url
+            if url:
+                result = self._colour = await url_color(url)
+        return result
+
+    @property
+    def guild(self):
+        return self.context.guild
+
+
+    @page('\N{INFORMATION SOURCE}')
+    def default(self):
+        """|coro|
+        Shows some information about this server
+        """
+        return Meta.server_embed(self.guild)
+
+    @page('\N{CAMERA}')
+    def icon(self):
+        """Shows the server's icon"""
+        return Meta.server_icon(self.guild)
+
+    @page('\N{THINKING FACE}')
+    async def emojis(self):
+        """Shows the server's emojis"""
+        guild = self.guild
+        emojis = guild.emojis
+        description = '\n'.join(group_strings(map(str, guild.emojis)), 10) if emojis else 'There are no emojis :('
+
+        return (discord.Embed(colour=await self.server_color(), description=description)
+               .set_author(name=f"{guild}'s custom emojis")
+               .set_footer(text=f'{len(emojis)} emojis')
+               )
+
 
 class Meta:
     """Info related commands"""
@@ -112,9 +147,9 @@ class Meta:
         """Shows some info about me"""
         bot = self.bot
         command_stats = '\n'.join(starmap('{1} {0}'.format, bot.command_counter.most_common())) or 'No stats yet.'
-        extension_stats = '\n'.join(f'{len(set(getattr(bot, attr).values()))} {attr}' 
+        extension_stats = '\n'.join(f'{len(set(getattr(bot, attr).values()))} {attr}'
                                     for attr in ('cogs', 'extensions'))
-        python_version = str_join('.', sys.version_info[:3])    
+        python_version = str_join('.', sys.version_info[:3])
 
         with self.process.oneshot():
             memory_usage_in_mb = self.process.memory_full_info().uss / 1024**2
@@ -126,7 +161,8 @@ class Meta:
             creator = self._creator = await self.bot.get_user_info(239110748180054017)
 
         chiaki_embed = (discord.Embed(description=bot.appinfo.description, colour=self.bot.colour)
-                       .set_author(name=str(creator), icon_url=creator.avatar_url_as(format=None))
+                       .set_author(name=str(ctx.bot.user), icon_url=bot.user.avatar_url_as(format=None))
+                       .add_field(name='Created by', value=str(creator))
                        .add_field(name='Servers', value=len(self.bot.guilds))
                        .add_field(name='Modules', value=extension_stats)
                        .add_field(name='CPU Usage', value=f'{cpu_usage}%\n{memory_usage_in_mb: .2f}MB')
@@ -143,16 +179,25 @@ class Meta:
             subcommands = '\n'.join(ctx.command.commands.keys())
             await ctx.send(f"```\nAvailable info commands:\n{subcommands}```")
 
-    @info.command()
+    @info.command(name='user')
     @commands.guild_only()
-    async def user(self, ctx, *, member: converter.ApproximateUser=None):
+    async def info_user(self, ctx, *, member: converter.ApproximateUser=None):
         """Gets some userful info because why not"""
-        await ctx.invoke(self.userinfo, member=member)
+        if member is None:
+            member = ctx.author
+        await ctx.send(embed=await self._user_embed(member))
 
-    @info.command()
+    @info.command(name='mee6')
     @commands.guild_only()
-    async def mee6(self, ctx, *, member: converter.ApproximateUser=None):
+    async def info_mee6(self, ctx, *, member: converter.ApproximateUser=None):
+        """Equivalent to `{prefix}rank`"""
         await ctx.invoke(self.rank, member=member)
+
+    @commands.command()
+    @commands.guild_only()
+    async def userinfo(self, ctx, *, member: discord.Member=None):
+        """Gets some userful info because why not"""
+        await ctx.invoke(self.info_user, member=member)
 
     @commands.command()
     @commands.guild_only()
@@ -184,8 +229,12 @@ class Meta:
 
         await ctx.send(embed=mee6_embed)
 
-    @info.command()
-    async def role(self, ctx, *, role: converter.ApproximateRole):
+    @info.command(name='role')
+    async def info_role(self, ctx, *, role: converter.ApproximateRole):
+        """Shows information about a particular role.
+
+        The role is case-insensitive.
+        """
         server = ctx.guild
 
         def bool_as_answer(b):
@@ -223,13 +272,13 @@ class Meta:
 
     @staticmethod
     def text_channel_embed(channel):
-        topic = '\n'.join(_group_strings(70, channel.topic)) if channel.topic else discord.Embed.Empty
+        topic = '\n'.join(group_strings(channel.topic, 70)) if channel.topic else discord.Embed.Empty
         member_count = len(channel.members)
         empty_overwrites = ilen(ow for _, ow in channel.overwrites if ow.is_empty())
         overwrite_message = f'{len(channel.overwrites)} ({empty_overwrites} empty)'
 
         return (discord.Embed(description=topic, timestamp=channel.created_at)
-               .set_author(name=channel.name)
+               .set_author(name=f'#{channel.name}')
                .add_field(name='ID', value=channel.id)
                .add_field(name='Position', value=channel.position)
                .add_field(name='Members', value=len(channel.members))
@@ -252,26 +301,34 @@ class Meta:
                .set_footer(text='Created')
                )
 
-    @info.command()
-    async def channel(self, ctx, channel: union(discord.TextChannel, discord.VoiceChannel)=None):
+    @staticmethod
+    async def server_colour(server):
+        icon = server.icon_url
+        return await url_color(icon) if icon else discord.Colour.default()
+
+    @info.command(name='channel')
+    async def info_channel(self, ctx, channel: union(discord.TextChannel, discord.VoiceChannel)=None):
+        """Shows info about a voice or text channel."""
         if channel is None:
             channel = ctx.channel
+        embed_type = 'text_channel_embed' if isinstance(channel, discord.TextChannel) else 'voice_channel_embed'
+        channel_embed = getattr(self, embed_type)(channel)
+        channel_embed.colour = self.bot.colour
 
-        channel_embed = (self.text_channel_embed(channel) if isinstance(channel, discord.TextChannel) else
-                         self.voice_channel_embed(channel))
         await ctx.send(embed=channel_embed)
 
     @staticmethod
-    async def _server_embed(server):
+    async def server_embed(server):
         highest_role = server.role_hierarchy[0]
         description = f"Owned by {server.owner}"
         features = '\n'.join(server.features) or 'None'
         counts = (f'{len(getattr(server, thing))} {thing}' for thing in ('channels', 'roles', 'emojis'))
-        
+
         statuses = collections.OrderedDict.fromkeys(['online', 'idle', 'dnd', 'offline'], 0)
         statuses.update(collections.Counter(m.status.name for m in server.members))
+        statuses['bots'] = sum(m.bot for m in server.members)
         member_stats = '\n'.join(starmap('{1} {0}'.format, statuses.items()))
-        
+
         server_embed = (discord.Embed(title=server.name, description=description, timestamp=server.created_at)
                        .add_field(name="Default Channel", value=server.default_channel.mention)
                        .add_field(name="Highest Role", value=highest_role)
@@ -287,73 +344,121 @@ class Meta:
         icon = server.icon_url
         if icon:
             server_embed.set_thumbnail(url=icon)
-            server_embed.colour = await url_color(icon)
+            server_embed.colour = await self.server_colour(server)
         return server_embed
 
-    @info.group(aliases=['guild'])
+    @info.group(name='server', aliases=['guild'])
     @commands.guild_only()
-    async def server(self, ctx):
+    async def info_server(self, ctx):
+        """Shows info about a server"""
         if ctx.subcommand_passed in ['server', 'guild']:
-            await ctx.send(embed=await self._server_embed(ctx.guild))
+            server_pages = ServerPages(ctx)
+            await server_pages.interact()
         elif ctx.invoked_subcommand is None:
             subcommands = '\n'.join(ctx.command.all_commands)
             await ctx.send(f"```\nAvailable server commands:\n{subcommands}```")
 
-    @server.command()
+    @commands.command(aliases=['chnls'])
     async def channels(self, ctx):
-        await iterable_say(ctx.guild.channels, ', ', ctx=ctx)
+        """Shows all the channels in the server."""
+        permissions_in = ctx.author.permissions_in
+        def get_channels(type_):
+            sorted_channels = sorted((c for c in ctx.guild.channels if isinstance(c, type_)),
+                                     key=attrgetter('position'))
+            return [c.mention if permissions_in(c).read_messages else f'#{c.name}'
+                    for c in sorted_channels]
 
-    @server.command()
-    async def members(self, ctx):
-        members = sorted(ctx.guild.members, key=attrgetter("top_role"), reverse=True)
-        await iterable_say(members, ', ', ctx=ctx, prefix='```css\n')
+        text_channels, voice_channels = get_channels(discord.TextChannel), get_channels(discord.VoiceChannel)
+        channels = chain(('', f'**List of Text Channelels ({len(text_channels)})**', ), text_channels,
+                         ('', f'**List of Voice Channels ({len(voice_channels)})**', ), voice_channels)
 
-    @server.command()
-    async def icon(self, ctx):
-        server = ctx.guild
-        await ctx.send(embed=_icon_embed(server, server.icon_url, "icon"))
-
-    @server.command()
-    async def roles(self, ctx):
-        await iterable_say(ctx.guild.role_hierarchy, ', ', ctx=ctx)
-
-    @server.command()
-    async def emojis(self, ctx):
-        if not ctx.guild.emojis:
-            return await ctx.send("This server doesn't have any custom emojis. :'(")
-        emojis = map('{0} = {0.name}'.format, ctx.guild.emojis)
-        await iterable_say(emojis, ctx=ctx)
+        pages = ListPaginator(ctx, channels, title=f'Channels in {ctx.guild}', colour=self.bot.colour)
+        await pages.interact()
 
     @commands.command()
-    @commands.guild_only()
-    async def userinfo(self, ctx, *, member: discord.Member=None):
-        """Gets some userful info because why not"""
-        if member is None:
-            member = ctx.author
-        await ctx.send(embed=await self._user_embed(member))
+    async def members(self, ctx):
+        """Shows all the members of the server, sorted by their top role, then by join date"""
+        # TODO: Status
+        members = [str(m) for m in sorted(ctx.guild.members, key=attrgetter("top_role", "joined_at"), reverse=True)]
+        pages = ListPaginator(ctx, members, title=f'Members in {ctx.guild} ({len(members)})',
+                           colour=self.bot.colour)
+        await pages.interact()
+
+    @staticmethod
+    async def server_icon(server):
+        icon = (discord.Embed(title=f"{server}'s icon")
+               .set_footer(text=f"ID: {server.id}"))
+
+        icon_url = server.icon_url
+        if icon_url:
+            icon.set_image(url=icon_url)
+            icon.colour = await url_color(icon_url)
+        else:
+            icon.description = "This server has no icon :("
+        return icon
+
+    @commands.command()
+    async def roles(self, ctx):
+        """Shows all the roles in the server. Roles in bold are the ones you have"""
+        roles = ctx.guild.role_hierarchy[:-1]
+        padding = max(map(len, (role.members for role in roles))) // 10
+
+        role_name = functools.partial(_role_name, ctx.author)
+        hierarchy = [f"`{len(role.members) :<{padding}}\u200b` {role_name(role)}" for role in roles]
+        pages = ListPaginator(ctx, hierarchy, title=f'Roles in {ctx.guild} ({len(hierarchy)})',
+                           colour=self.bot.colour)
+        await pages.interact()
+
+    @commands.command()
+    async def emojis(self, ctx):
+        """Shows all the emojis in the server."""
+
+        if not ctx.guild.emojis:
+            return await ctx.send("This server doesn't have any custom emojis. :'(")
+
+        emojis = map('{0} = {0.name} ({0.id})'.format, ctx.guild.emojis)
+        pages = ListPaginator(ctx, emojis, title=f'Emojis in {ctx.guild}', colour=self.bot.colour)
+        await pages.interact()
 
     async def _source(self, ctx, thing):
         lines = inspect.getsourcelines(thing)[0]
         await iterable_limit_say(lines, '', ctx=ctx, prefix='```py\n', escape_code=True)
 
-    @commands.command()
+    # @commands.command(disabled=True)
     async def source(self, ctx, *, cmd: BotCommand):
         """Displays the source code for a particular command"""
         # TODO: use GitHub
         await self._source(ctx, cmd.callback)
 
-    async def _inrole(self, ctx, *roles, members):
-        joined_roles = str_join(', ', roles)
-        msg = (f"Here are the members who have the {joined_roles} role. ```css\n{str_join(', ', members)}```"
-               if members else f"There are no members who have the {joined_roles} role. \U0001f641")
-        await ctx.send(msg)
+    @staticmethod
+    async def _inrole(ctx, *roles, members, conjunction='and'):
+        # because join_and takes a sequence... -_-
+        joined_roles = join_and([str(r) for r in roles], conjunction=conjunction)
+        truncated_title = truncate(f'Members in role{"s" * (len(roles) != 1)} {joined_roles}', 256, '...')
+
+        total_color = map(sum, zip(*(role.colour.to_rgb() for role in roles)))
+        average_color = discord.Colour.from_rgb(*map(round, (c / len(roles) for c in total_color)))
+
+        if members:
+            entries = sorted(map(str, members))
+            # Make the author's name bold (assuming they have that role).
+            # We have to do it after the list was built, otherwise the author's name
+            # would be at the top.
+            with contextlib.suppress(ValueError):
+                index = entries.index(str(ctx.author))
+                entries[index] = f'**{entries[index]}**'
+        else:
+            entries = ('There are no members :(', )
+
+        pages = ListPaginator(ctx, entries, colour=average_color, title=truncated_title)
+        await pages.interact()
 
     @commands.command()
     @commands.guild_only()
     async def inrole(self, ctx, *, role: discord.Role):
-        """
-        Checks which members have a given role
-        The role is case sensitive.
+        """Checks which members have a given role. The role is case sensitive.
+
+        If you have the role, your name will be in **bold**.
         Only one role can be specified. For multiple roles, use `{prefix}inanyrole` or `{prefix}inallrole`.
         """
         await self._inrole(ctx, role, members=role.members)
@@ -361,26 +466,26 @@ class Meta:
     @commands.command()
     @commands.guild_only()
     async def inanyrole(self, ctx, *roles: discord.Role):
-        """
-        Checks which members have any of the given role(s)
+        """Checks which members have any of the given role(s). The role(s) are case sensitive.
+        If you have the role, your name will be in **bold**.
 
-        The role(s) are case sensitive.
-        If you don't want to mention a role, please put it in quotes,
-        especially if there's a space in the role name
+        If you don't want to mention a role and there's a space in the role name, 
+        you must put the role in quotes
         """
-        await self._inrole(ctx, *roles, members=set(chain.from_iterable(map(attrgetter('members'), roles))))
+        await self._inrole(ctx, *roles, members=set(chain.from_iterable(map(attrgetter('members'), roles))),
+                           conjunction='or')
 
     @commands.command()
     @commands.guild_only()
     async def inallrole(self, ctx, *roles: discord.Role):
-        """
-        Checks which members have all of the given role(s)
+        """Checks which members have all of the given role(s). The role(s) are case sensitive.
+        If you have the role, your name will be in **bold**.
 
-        The role(s) are case sensitive.
-        If you don't want to mention a role, please put it in quotes,
-        especially if there's a space in the role name
+        If you don't want to mention a role and there's a space in the role name, 
+        you must put that role in quotes
         """
-        await self._inrole(ctx, *roles, members=functools.reduce(set.intersection, map(set, map(attrgetter('members'), roles))))
+        role_members = (role.members for role in roles)
+        await self._inrole(ctx, *roles, members=set(next(role_members)).intersection(*role_members))
 
     @commands.command()
     @commands.guild_only()
@@ -391,38 +496,53 @@ class Meta:
         The permission is case insensitive.
         """
         perm_attr = perm.replace(' ', '_').lower()
-        roles_that_have_perms = [role for role in ctx.guild.roles
-                                 if getattr(role.permissions, perm_attr)]
-        fmt = f"Here are the roles who have the {perm.title()} perm."
-        await ctx.send(fmt + f"```css\n{str_join(', ', roles_that_have_perms)}```")
+        roles = filter(attrgetter(f'permissions.{perm_attr}'), ctx.guild.role_hierarchy)
+        title = f"Roles in {ctx.guild} that have {perm.replace('_', ' ').title()}"
+        entries = map(functools.partial(role_name, ctx.author), roles)
 
-    async def display_permissions(self, ctx, thing, permissions, extra=''):
+        pages = ListPaginator(ctx, entries, title=title, colour=ctx.bot.colour)
+        await pages.interact()    
+
+    @staticmethod
+    async def _display_permissions(ctx, thing, permissions, extra=''):
+        diffs = '\n'.join([f"{'-+'[value]} {attr.title().replace('_', ' ')}" for attr, value in permissions])
+        str_perms = f'```diff\n{diffs}```'
+
         value = permissions.value
-        diff_mapper = '\n'.join([f"{'-+'[value]} {attr.title().replace('_', ' ')}" for attr, value in permissions])
-
-        message = (f"The permissions {extra} for **{thing}** is **{value}**."
-                   f"\nIn binary it's {bin(value)[2:]}"
-                    "\nThis implies the following values:"
-                   f"\n```diff\n{diff_mapper}```"
-                   )
-        await ctx.send(message)
+        perm_embed = (discord.Embed(colour=thing.colour, description=str_perms)
+                     .set_author(name=f'Permissions for {thing}')
+                     .set_footer(text=f'Value: {value} | Binary: {bin(value)[2:]}')
+                     )
+        await ctx.send(embed=perm_embed)
 
     @commands.command(aliases=['perms'])
     @commands.guild_only()
     async def permissions(self, ctx, *, member_or_role: union(discord.Member, discord.Role)=None):
-        """Shows either a member's Permissions, or a role's Permissions"""
+        """Shows either a member's Permissions, or a role's Permissions
+
+        ```diff
+        + Permissions you have will be shown like this.
+        - Permissions you don't have will be shown like this.
+        ```
+        """
         if member_or_role is None:
             member_or_role = ctx.author
         permissions = getattr(member_or_role, 'permissions', None) or member_or_role.guild_permissions
-        await self.display_permissions(ctx, member_or_role, permissions)
+        await self._display_permissions(ctx, member_or_role, permissions)
 
     @commands.command(aliases=['permsin'])
     @commands.guild_only()
     async def permissionsin(self, ctx, *, member: discord.Member=None):
-        """Shows either a member's Permissions *in the channel*"""
+        """Shows either a member's Permissions *in the channel*
+
+        ```diff
+        + Permissions you have will be shown like this.
+        - Permissions you don't have will be shown like this.
+        ```
+        """
         if member is None:
             member = ctx.author
-        await self.display_permissions(ctx, member, ctx.channel.permissions_for(member), extra=f'in {ctx.channel.mention}')
+        await self._display_permissions(ctx, member, ctx.channel.permissions_for(member), extra=f'in {ctx.channel.mention}')
 
     @commands.command(aliases=['av'])
     async def avatar(self, ctx, *, user: converter.ApproximateUser=None):
@@ -466,7 +586,7 @@ class Meta:
         self.cmd_history[ctx.author].append(ctx.message.content)
         self.bot.command_leaderboard[str(ctx.command)] += 1
 
-    @commands.command(usage=['pow', 'os.system'], aliases=['pyh'])
+    # @commands.command(disabled=True, usage=['pow', 'os.system'], aliases=['pyh'])
     async def pyhelp(self, ctx, thing):
         """Gives you the help string for a builtin python function.
         (or any sort of function, for that matter)

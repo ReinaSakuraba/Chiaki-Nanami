@@ -37,10 +37,11 @@ with contextlib.suppress(FileNotFoundError):
         _back_up_tanks = f.read().splitlines()
 
 SMASHERS = ("Auto Smasher", "Landmine", "Smasher", "Spike",)
-BALL_ANSWERS = ("Yes", "No", "Maybe so", "Definitely", "I think so",
-                "Probably", "I don't think so", "Probably not",
-                "I don't know", "I have no idea",
-                )
+BALL_ANSWERS = (
+    "Yes", "No", "Maybe so", "Definitely", "I think so",
+    "Probably", "I don't think so", "Probably not",
+    "I don't know", "I have no idea",
+    )
 
 _default_letters = string.ascii_letters + string.digits
 def _password(length, alphabet=_default_letters):
@@ -125,7 +126,7 @@ class RNG:
 
         msg = await ctx.send(f"Your random {distribution.__name__} number between is...")
         await asyncio.sleep(random.uniform(0, 1))
-        await msg.edit(msg.content + f'**{result}!!**')
+        await msg.edit(content=msg.content + f'**{result}!!**')
 
     @random.command(aliases=['dists'])
     async def distributions(self, ctx):

@@ -1,4 +1,3 @@
-import ast
 import discord
 import functools
 import inspect
@@ -11,12 +10,13 @@ import re
 from collections import defaultdict, namedtuple, OrderedDict
 from collections.abc import Sequence
 from discord.ext import commands
-from operator import itemgetter
 from random import randrange
 
-from .utils.converter import item_converter
+from .utils.converter import item_converter, union
 from .utils.database import Database
 from .utils.errors import InvalidUserArgument
+from .utils.paginator import BaseReactionPaginator, page
+from .utils.vector import Vector
 
 try:
     import sympy
@@ -68,177 +68,6 @@ _sanitize = _sanitize_func(r"[0-9.+\-*/^&|<>, ()=]+", MATH_CONTEXT, _is_sane_fun
 
 #-----------Vectors-----------
 
-# Pure Python Vector class implementation by Gareth Rees
-# https://github.com/gareth-rees/geometry/blob/master/vector.py
-# TODO: Use numpy
-class IncompatibleDimensions(Exception):
-    pass
-
-class Vector(tuple):
-    def __new__(cls, *args):
-        if len(args) == 1: args = args[0]
-        return super().__new__(cls, tuple(args))
-
-    def __repr__(self):
-        fmt = '{0}({1!r})' if len(self) == 1 else '{0}{1!r}'
-        return fmt.format(type(self).__name__, tuple(self))
-
-    def __str__(self):
-        return f"[{', '.join(map(str, self))}]"
-
-    def _check_compatibility(self, other):
-        if len(self) != len(other):
-            raise IncompatibleDimensions(len(self), len(other))
-
-    def _dimension_error(self, name):
-        return ValueError(f'.{name}() is not implemented for {len(self)}-dimensional vectors.')
-
-    def _apply_operation(self, op, typ, other):
-        self._check_compatibility(other)
-        return typ(map(op, self, other))
-
-    def __add__(self, other):
-        if not isinstance(other, Sequence):
-            return NotImplemented
-        self._check_compatibility(other)
-        return type(self)(map(operator.add, self, other))
-
-    def __radd__(self, other):
-        if not isinstance(other, Sequence):
-            return NotImplemented
-        self._check_compatibility(other)
-        return type(self)(map(operator.add, other, self))
-
-    def __sub__(self, other):
-        if not isinstance(other, Sequence):
-            return NotImplemented
-        self._check_compatibility(other)
-        return type(self)(map(operator.sub, self, other))
-
-    def __rsub__(self, other):
-        if not isinstance(other, Sequence):
-            return NotImplemented
-        self._check_compatibility(other)
-        return type(self)(map(operator.sub, other, self))
-
-    def __mul__(self, s):
-        return type(self)(v * s for v in self)
-
-    def __rmul__(self, s):
-        return type(self)(v * s for v in self)
-
-    def __div__(self, s):
-        return type(self)(v / s for v in self)
-
-    def __truediv__(self, s):
-        return type(self)(v / s for v in self)
-
-    def __floordiv__(self, s):
-        return type(self)(v // s for v in self)
-
-    def __neg__(self):
-        return self * -1
-
-    def __pos__(self):
-        return self
-
-    def __abs__(self):
-        return self.magnitude
-
-    def __bool__(self):
-        return self.magnitude_squared != 0
-
-    def dot(self, other):
-        """Return the dot product with the other vector."""
-        self._check_compatibility(other)
-        return sum(map(operator.mul, other, self))
-
-    def cross(self, other):
-        """Return the cross product with another vector. For two-dimensional
-        and three-dimensional vectors only.
-        """
-        self._check_compatibility(other)
-        if len(self) == 2:
-            return self[0] * other[1] - self[1] * other[0]
-        elif len(self) == 3:
-            return Vector(self[1] * other[2] - self[2] * other[1],
-                          self[2] * other[0] - self[0] * other[2],
-                          self[0] * other[1] - self[1] * other[0])
-        else:
-            raise self._dimension_error('cross')
-
-    @property
-    def magnitude_squared(self):
-        return self.dot(self)
-
-    mag_squared = magnitude_squared
-
-    @property
-    def magnitude(self):
-        return self.mag_squared ** 0.5
-
-    mag = magnitude
-
-    @property
-    def angle(self):
-        """The signed angle [-pi, pi] between this vector and the x-axis. For
-        two-dimensional vectors only.
-        """
-        if len(self) == 2:
-            return math.atan2(self[1], self[0])
-        else:
-            raise self._dimension_error('angle')
-
-    def distance(self, other):
-        """Return the Euclidean distance to another vector
-        (understanding both vectors as points).
-        """
-        return abs(self - other)
-
-    def taxicab(self, other):
-        """Return the taxicab aka Manhattan distance to another vector
-        (understanding both vectors as points).
-        """
-        self._check_compatibility(other)
-        return sum(abs(v - w) for v, w in zip(self, other))
-
-    def projected(self, other):
-        """Return the projection of another vector onto this vector. If this
-        vector has magnitude zero, raise ZeroDivisionError.
-        """
-        return self * (self.dot(other) / self.magnitude_squared)
-
-    def rotated(self, theta):
-        """Return the vector rotated through theta radians about the
-        origin. For two-dimensional and three-dimensional vectors only.
-        """
-        if len(self) == 2:
-            s, c = sin(theta), cos(theta)
-            return Vector(self.dot((c, -s)), self.dot((s, c)))
-        else:
-            raise self._dimension_error('rotated')
-
-    def normalized(self):
-        """Return a unit vector in the same direction as this vector. If this
-        has magnitude zero, raise ZeroDivisionError.
-        """
-        return self / abs(self)
-
-    def scaled(self, s):
-        """Return a vector of magnitude s in the same direction as this vector.
-        If this has magnitude zero, raise ZeroDivisionError.
-        """
-        return self * (s / abs(self))
-
-    # namedtuple-style hax
-    x = property(itemgetter(0), doc='Alias for field number 0')
-    y = property(itemgetter(1), doc='Alias for field number 1')
-    z = property(itemgetter(2), doc='Alias for field number 2')
-
-    @classmethod
-    def zero(cls, dim=2):
-        return cls(*((0,) * dim))
-
 VECTOR_CONTEXT = _get_context(Vector)
 VECTOR_CONTEXT.update(Vector=Vector, abs=abs, bool=bool, degrees=math.degrees, __builtins__=None)
 _vector_sanitize = _sanitize_func(r"[0-9, +-/*()]+", VECTOR_CONTEXT, _is_sane_func(VECTOR_CONTEXT))
@@ -284,11 +113,12 @@ class IncompatibleUnits(Exception):
 
 Unit = namedtuple('Unit', ['type', 'ratio', 'intercept'])
 Unit.__new__.__defaults__ = (0, )
-def _length(ratio): return Unit('Length', ratio)
-def _mass(ratio):   return Unit('Mass', ratio)
-def _bit(ratio):    return Unit('Data', ratio)
-def _time(ratio):   return Unit('Time', ratio)
-def _temp(ratio, intercept=0):   return Unit('Temperature', ratio, intercept)
+_length = functools.partial(Unit, 'Length')
+_mass   = functools.partial(Unit, 'Mass')
+_bit    = functools.partial(Unit, 'Data')
+_time   = functools.partial(Unit, 'Time')
+_temp   = functools.partial(Unit, 'Temperature')
+
 _milli = 1 / 1_000
 _nano  = 1 / 1_000_000_000
 _pico  = 1 / 1_000_000_000_000
@@ -375,9 +205,9 @@ for k, v in _reverse_units.items():
     _reverse_units[k] = f"{name} {aliases}"
 del _length, _mass, _bit, _femto, _nano
 
-_unit_converter = item_converter(_units, key=str.lower, error_msg="I don't recognized **{key}** as a unit.")
+
 def _parse_unit(unit_type):
-    unit = _unit_converter(unit_type)
+    unit = _units[unit_type.lower()]
     if unit.type == 'Data':
         return _units.get(unit_type, unit)
     return unit
@@ -400,10 +230,29 @@ def convert_unit(from_unit_type, to_unit_type, value):
     return str(round(new_value, 3)) + to_unit_type
 
 
+class ConversionPages(BaseReactionPaginator):
+    def __init__(self, context, things):
+        super().__init__(context)
+        self.entries = things
+
+    def _create_embed(self, thing, colour=0):
+        return (discord.Embed(colour=colour)
+               .set_author(name='List of available units for conversion')
+               .add_field(name=thing, value=self.entries[thing])
+               )
+
+    default     = page('\N{STRAIGHT RULER}')(functools.partialmethod(_create_embed, 'Length'))
+    mass        = page('\N{SCALES}')(functools.partialmethod(_create_embed, 'Mass'))
+    storage     = page('\N{PERSONAL COMPUTER}')(functools.partialmethod(_create_embed, 'Data', 0x4CAF50))
+    time        = page('\N{ALARM CLOCK}')(functools.partialmethod(_create_embed, 'Time'))
+    temperature = page('\N{THERMOMETER}')(functools.partialmethod(_create_embed, 'Temperature', 0xFFC107))
+
+
 _default_parse_settings = {
     'e_as_E': True,
     '^_as_pow': True,
 }
+
 _e_sub_pattern = re.compile('e(?!rf)')
 _default_parses = _default_parse_settings.copy
 parse_expr = functools.partial(parse_sympy_expr, evaluate=False,
@@ -414,8 +263,7 @@ MAGIC_ERROR_THING = 'error:\x00' # prepend for any errors
 class Math:
     def __init__(self, bot):
         self.bot = bot
-        self.parsing_configs = Database('math-parsing.json', 
-                                        default_factory=_default_parses)
+        self.parsing_configs = Database('math-parsing.json', default_factory=_default_parses)
 
     @staticmethod
     def _result_embed(ctx, input, output):
@@ -488,10 +336,10 @@ class Math:
 
         Vectors can be represented either by [x, y, z] or Vector(x, y, z)
         """
-        vector_repr_func = lambda s: repr(Vector(ast.literal_eval(s.group(1))))
-        vector_expr_string = re.sub(r'(\[[^"]*?\])', vector_repr_func, expr)
+        vector_repr_func = lambda s: f'Vector({s.group(1)})'
+        vector_expr_string = re.sub(r'\[([^"]*?)\]', vector_repr_func, expr)
         output = await self._async_calculate(vector_expr_string, _vector_sanitize)
-        await self._result_say(ctx, expr, output)
+        await self._result_say(ctx, expr, str(output))
 
     @commands.command(aliases=['vectorfuncs'])
     async def vectorops(self, ctx):
@@ -526,24 +374,46 @@ class Math:
         ops = [key for key, val in VECTOR_CONTEXT.items() if val not in vector_funcs]
         await ctx.send(f"Available misc vector functions: \n```\n{', '.join(ops)}```")
 
+    _unit_or_num = union(float, str)
+
+    @staticmethod
+    def _parse_units(arg1, arg2, arg3):
+        if isinstance(arg1, float):
+            return arg2, arg3, arg1
+        if isinstance(arg2, float):
+            return arg1, arg3, arg2
+        if isinstance(arg3, float):
+            return arg1, arg2, arg3
+        raise ValueError("You need a number at least...")
+
     @commands.command()
-    async def convert(self, ctx, value: float, from_unit, to_unit):
-        """Converts a value from one unit to another"""
+    async def convert(self, ctx, arg1: _unit_or_num, arg2: _unit_or_num, arg3: _unit_or_num):
+        """Converts a value from one unit to another.
+
+        The order of the arguments can be arbitrary. 
+        You just need to make sure you have two units and a number.
+
+        The first unit mentioned will always be the "from" unit.
+        While the other one will always be the two "to" unit.
+        """
         try:
-            result = convert_unit(from_unit, to_unit, value)
+            args = self._parse_units(value, from_unit, to_unit)
+            result = convert_unit(*args)
+        except ValueError as e:
+            result = f'{MAGIC_ERROR_THING}{e}'
         except IncompatibleUnits as e:
-            result = f'{type(e).__name__}: {e}'
-        except KeyError:
-            result = f'Either {from_unit} or {to_unit} is not a recognized unit of measurement.'
+            result = f'{MAGIC_ERROR_THING}{type(e).__name__}: {e}'
+        except KeyError as e:
+            result = f'{MAGIC_ERROR_THING}{e} is not a recognized unit of measurement.'
         await self._result_say(ctx, f'{value} {from_unit} -> {to_unit}', result)
 
     @commands.command()
     async def conversions(self, ctx):
         """Lists all the available units"""
-        conversions_embed = discord.Embed(title="__List of available units for conversion__", colour=self.bot.colour)
-        for k, v in itertools.groupby(_reverse_units.items(), lambda t: t[0].type):
-            conversions_embed.add_field(name=k, value='\n'.join([t[1] for t in v]))
-        await ctx.send(embed=conversions_embed)
+        grouped = itertools.groupby(_reverse_units.items(), lambda t: t[0].type)
+        conversion_fields = {k: '\n'.join([t[1] for t in v]) for k, v in grouped}
+        pages = ConversionPages(ctx, conversion_fields)
+        await pages.interact()
 
     def _transform_expr(self, ctx, expr):
         config = self.parsing_configs[ctx.author]

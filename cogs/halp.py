@@ -15,7 +15,7 @@ from .utils.context_managers import temp_attr
 from .utils.converter import BotCogConverter, BotCommand
 from .utils.database import Database
 from .utils.misc import multi_replace, nice_time, truncate
-from .utils.paginator import iterable_limit_say
+
 
 def default_help_command(func=lambda s: s, **kwargs):
     async def help_command(self, ctx, *, command: BotCommand=None):

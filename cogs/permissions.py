@@ -4,15 +4,17 @@ import enum
 import functools
 import itertools
 
-from collections import namedtuple
+from collections import defaultdict, namedtuple
 from discord.ext import commands
 from operator import attrgetter, contains
 
 from .utils import checks, errors
 from .utils.compat import always_iterable, iterate
+from .utils.context_managers import redirect_exception
 from .utils.converter import item_converter, BotCommand, BotCogConverter
 from .utils.database import Database
-from .utils.misc import emoji_url, str_join
+from .utils.misc import emoji_url, str_join, unique
+from .utils.paginator import ListPaginator, TitleBasedPages
 
 
 def first_non_none(iterable, default=None):
@@ -39,7 +41,7 @@ def _make_doc(thing, extra=''):
 _perm_set_command_help = _make_doc('a command', extra=('This will affect aliases as well. If a command group is blocked, '
                                                       'its subcommands are blocked as well.'))
 
-class PermLevel(enum.Enum):
+class Level(enum.Enum):
     user        = (discord.Member, '({0.guild.id}, {0.author.id})'.format, False, )
     # higher roles should be prioritised
     role        = (discord.Role, lambda ctx: reversed([role.id for role in ctx.author.roles]), False, )
@@ -71,24 +73,38 @@ class PermLevel(enum.Enum):
         # Context objects don't have a "server" attribute, they have a "guild" attribute
         # The only reason why server is used in the enum is because of convenience for the user
         # As they'll be more familiar with the term "server" than "guild"
-        attr = 'guild' if self == PermLevel.server else self.name
+        attr = 'guild' if self == Level.server else self.name
         # using a 1-elem tuple is faster than making a 1-elem list O.o
         return Idable(getattr(ctx, attr)),
 
-level_getter = item_converter(PermLevel, key=str.lower, error_msg="Unrecognized level: {arg}")
+    @classmethod
+    async def convert(cls, ctx, arg):
+        with redirect_exception((KeyError, f"Unrecognized level: {arg}")):
+            return cls[arg.lower()]
 
-class PermAction(namedtuple('PermAction', 'value action emoji colour')):
-    def __new__(cls, arg):
+
+class Action(namedtuple('Action', 'value action emoji colour')):
+    @classmethod
+    def from_arg(cls, arg):
         mode = arg.lower()
-        action = functools.partial(super().__new__, cls)
 
         if mode in ('allow', 'unlock', 'enable', ):
-            return action(value=True,  action='enabled',  emoji='\U0001f513', colour=discord.Colour.green())
+            return cls(value=True,  action='enabled',  emoji='\U0001f513', colour=discord.Colour.green())
         elif mode in ('none', 'reset', 'null', ):
-            return action(value=None,  action='reset',    emoji='\U0001f504', colour=discord.Colour.default())
+            return cls(value=None,  action='reset',    emoji='\U0001f504', colour=discord.Colour.default())
         elif mode in ('deny', 'lock', 'disable', ):
-            return action(value=False, action='disabled', emoji='\U0001f512', colour=discord.Colour.red())
+            return cls(value=False, action='disabled', emoji='\U0001f512', colour=discord.Colour.red())
         raise commands.BadArgument(f"Don't know what to do with {arg}.")
+
+    @classmethod 
+    async def convert(cls, ctx, arg):
+        return cls.from_arg(arg)
+
+_value_emoji_map = {
+    True: '\N{WHITE HEAVY CHECK MARK}',
+    False: '\N{NO ENTRY}',
+    None: '\N{MEDIUM BLACK CIRCLE}',
+}
 
 class BlockType(enum.Enum):
     blacklist = (discord.Colour.red(),   '\U000026d4')
@@ -105,18 +121,13 @@ class BlockType(enum.Enum):
                .add_field(name='ID', value=user.id)
                )
 
-command_perm_default = {i: {} for i in map(str, PermLevel)}
+command_perm_default = {i: {} for i in map(str, Level)}
 ALL_MODULES_KEY = 'All Modules'
 
 class Permissions:
     def __init__(self):
         self.permissions = Database('permissions.json', default_factory=command_perm_default.copy)
         self.other_permissions = Database('permissions2.json', default_factory=list)
-        # Because checking a command's permissions will most likely be meaningless or unhelpful,
-        # (since all it would return is whether or not a user can use a command)
-        # a history is probably the best way to see the what has been inputted
-        # This approach is taken by nadeko and is probably the best one here...
-        self.permissions_history = Database('permissionshistory.json', default_factory=list)
 
     def __global_check(self, ctx):
         user_id = ctx.author.id
@@ -138,6 +149,10 @@ class Permissions:
         return self.other_permissions[BlockType.blacklist.name]
 
     @staticmethod
+    def _is_valid_cog(name):
+        return name not in {'Owner', 'Permissions'}
+
+    @staticmethod
     def _context_attribute(level, ctx):
         return map(str, always_iterable(level.ctx_key(ctx)))
 
@@ -151,8 +166,12 @@ class Permissions:
             raise errors.InvalidUserArgument(f"I can't modify permissions from the module {name}.")
 
     def _perm_iterator(self, name, ctx):
-        perms = self.permissions[name]
-        for level in PermLevel:
+        perms = self.permissions.get(name)
+        if perms is None:
+            yield
+            return
+
+        for level in Level:
             level_perms = perms[str(level)]
             try:
                 ctx_attr = self._context_attribute(level, ctx)
@@ -179,7 +198,7 @@ class Permissions:
     def set_perms(self, level, mode, name, *args):
         level_perms = self.permissions[name][str(level)]
         # members require a special key - a tuple of (server_id, member_id)
-        fmt = '({0.original.guild.id}, {0.id})' if level == PermLevel.user else '{0.id}'
+        fmt = '({0.original.guild.id}, {0.id})' if level == Level.user else '{0.id}'
         level_perms.update(zip(map(fmt.format, args), itertools.repeat(mode.value)))
 
     # We could make this function take a union of Commands and cogs.
@@ -190,8 +209,7 @@ class Permissions:
     @commands.command(name='permsetcommand', aliases=['psc'], help=_perm_set_command_help)
     @checks.is_admin()
     @commands.guild_only()
-    async def perm_set_command(self, ctx, level: level_getter, mode: PermAction,
-                               command: BotCommand, *args):
+    async def perm_set_command(self, ctx, level: Level, mode: Action, command: BotCommand, *args):
         self._assert_is_valid_cog(command)
         ids = await level.parse_args(ctx, *args)
         await self._perm_set(ctx, level, mode, command.qualified_name, *ids, thing='Command')
@@ -199,8 +217,7 @@ class Permissions:
     @commands.command(name='permsetmodule', aliases=['psm'], help=_make_doc('a module'))
     @checks.is_admin()
     @commands.guild_only()
-    async def perm_set_module(self, ctx, level: level_getter, mode: PermAction,
-                              module: BotCogConverter, *args):
+    async def perm_set_module(self, ctx, level: Level, mode: Action, module: BotCogConverter, *args):
         self._assert_is_valid_cog(module)
         ids = await level.parse_args(ctx, *args)
         await self._perm_set(ctx, level, mode, type(module).__name__, *ids, thing='Module')
@@ -208,7 +225,7 @@ class Permissions:
     @commands.command(name='permsetall', aliases=['psall'], help=_make_doc('all modules'))
     @checks.is_owner()
     @commands.guild_only()
-    async def perm_set_all(self, ctx, level: level_getter, mode: PermAction, *args):
+    async def perm_set_all(self, ctx, level: Level, mode: Action, *args):
         ids = await level.parse_args(ctx, *args)
         self.set_perms(level, mode, ALL_MODULES_KEY, *ids)
 
@@ -264,5 +281,61 @@ class Permissions:
         await self._modify_blacklist(ctx, user, 'remove', contains_op=lambda a, b: b not in a, 
                                      block_type=BlockType.whitelist)
 
-def setup(bot):
+    @commands.group(name='permshow', aliases=['pshow'])
+    async def perm_show(self, ctx):
+        pass
+
+    def _get_perm(self, name, level, key):
+        permissions = self.permissions.get(name)
+        if permissions is None:
+            return None
+        return permissions[str(level)].get(key)
+
+    async def _perm_show_commands(self, ctx, level, thing, commands):
+        # Level.parse_args is variadic
+        args = (ctx, ) + (thing, ) * (thing is not None)
+        thing, *_ = await level.parse_args(*args)
+        get_perm = functools.partial(self._get_perm, level=level, key=str(thing.id))
+
+        command_permissions = defaultdict(list)
+        for cog_name, commands in itertools.groupby(commands, key=attrgetter('cog_name')):
+            if not self._is_valid_cog(cog_name):
+                continue
+            command_permissions[cog_name].extend(f'{_value_emoji_map[get_perm(cmd)]} {cmd}'
+                                                 for cmd in map(str, commands))
+
+        title = f'Command Permissions on the {level} level for {thing.original}'
+        pages = TitleBasedPages(ctx, command_permissions, title=title, colour=ctx.bot.colour)
+        await pages.interact()
+
+
+    @perm_show.command(name='commands', aliases=['cmds'])
+    async def perm_show_commands(self, ctx, level: Level, thing=None):
+        """Shows the perms for each command on a given level"""
+        await self._perm_show_commands(ctx, level, thing, ctx.bot.commands)
+
+    @perm_show.command(name='recursivecommands', aliases=['recmds'])
+    async def perm_show_recursive_commands(self, ctx, level: Level, thing=None):
+        """Shows the perms for **all** the commands on a given level. This includes subcommands."""
+        await self._perm_show_commands(ctx, level, thing, unique(ctx.bot.walk_commands()))
+
+    @perm_show.command(name='modules', aliases=['mdls'])
+    async def perm_show_modules(self, ctx, level: Level, thing=None):
+        """Shows the perms for each module on a given level"""
+        unique_cog_names = (type(cog).__name__ for cog in unique(ctx.bot.cogs.values()))
+
+        args = (ctx, ) + (thing, ) * (thing is not None)
+        thing, = await level.parse_args(*args)
+
+        get_perm = functools.partial(self._get_perm, level=level, key=str(thing.id))
+        permissions = (f'{_value_emoji_map[get_perm(name)]} {name}'
+                       for name in unique_cog_names)
+        all_modules = f'{_value_emoji_map[get_perm(ALL_MODULES_KEY)]} **{ALL_MODULES_KEY}**'
+        permissions = itertools.chain((all_modules, ), permissions)
+
+        title = f'Modules Permissions on the {level} level for {thing.original}'
+        pages = ListPaginator(ctx, permissions, title=title, colour=ctx.bot.colour)
+        await pages.interact()
+
+def setup(bot):     
     bot.add_cog(Permissions())

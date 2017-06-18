@@ -36,7 +36,7 @@ class ApproximateUser(commands.MemberConverter):
                     await channel.send(f"(I found {ilen(filtered) + 2} occurences of '{arg}'. "
                                         "I'll take the first result, probably.)")
                 return next_member
-        return super().convert()
+        return await super().convert(ctx, arg)
 
 
 # Is there any way to make this such that there's no repetition?
@@ -53,7 +53,7 @@ class ApproximateRole(commands.RoleConverter):
                     await channel.send(f"(I found {ilen(role_filter) + 2} occurences of '{arg}'. "
                                         "I'll take the first result, probably.)")
                 return next_role
-        return super().convert()
+        return await super().convert(ctx, arg)
 
 
 class BotCogConverter(commands.Converter):
@@ -159,5 +159,19 @@ def in_(*choices):
         if lowered in choices:
             return lowered
         raise commands.BadArgument(f"{lowered} is not valid option. "
-                                    "Available options:\n{', '.join(choices)}")
+                                   f"Available options:\n{', '.join(choices)}")
     return in_converter
+
+
+def ranged(low, high=None, *, type=int):
+    'Converter to check if an argument is in a certain range INCLUSIVELY'
+    if high is None:
+        low, high = 0, low
+
+    def ranged_argument(arg):
+        result = type(arg)
+        if low <= result <= high:
+            return result
+        raise commands.BadArgument(f'Value must be between {low} and {high}, '
+                                   f'or equal to {low} or {high}.')
+    return ranged_argument

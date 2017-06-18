@@ -27,8 +27,10 @@ def all_checks(command):
     This does not account for global checks.
     """
     # Not sure if this is how the actual command framework does it tbh
+
     checks = chain.from_iterable(cmd.checks for cmd in command.walk_parents()
                                  if not getattr(cmd, 'invoke_without_command', False))
+    checks = chain(command.checks, checks)
     if command.instance is None:
         return list(checks)
     try:
