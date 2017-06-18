@@ -1,4 +1,3 @@
-import ast
 import discord
 import functools
 import inspect
@@ -11,10 +10,9 @@ import re
 from collections import defaultdict, namedtuple, OrderedDict
 from collections.abc import Sequence
 from discord.ext import commands
-from operator import itemgetter
 from random import randrange
 
-from .utils.converter import item_converter
+from .utils.converter import item_converter, union
 from .utils.database import Database
 from .utils.errors import InvalidUserArgument
 from .utils.paginator import BaseReactionPaginator, page
@@ -115,11 +113,12 @@ class IncompatibleUnits(Exception):
 
 Unit = namedtuple('Unit', ['type', 'ratio', 'intercept'])
 Unit.__new__.__defaults__ = (0, )
-def _length(ratio): return Unit('Length', ratio)
-def _mass(ratio):   return Unit('Mass', ratio)
-def _bit(ratio):    return Unit('Data', ratio)
-def _time(ratio):   return Unit('Time', ratio)
-def _temp(ratio, intercept=0):   return Unit('Temperature', ratio, intercept)
+_length = functools.partial(Unit, 'Length')
+_mass   = functools.partial(Unit, 'Mass')
+_bit    = functools.partial(Unit, 'Data')
+_time   = functools.partial(Unit, 'Time')
+_temp   = functools.partial(Unit, 'Temperature')
+
 _milli = 1 / 1_000
 _nano  = 1 / 1_000_000_000
 _pico  = 1 / 1_000_000_000_000
@@ -375,11 +374,33 @@ class Math:
         ops = [key for key, val in VECTOR_CONTEXT.items() if val not in vector_funcs]
         await ctx.send(f"Available misc vector functions: \n```\n{', '.join(ops)}```")
 
+    _unit_or_num = union(float, str)
+
+    @staticmethod
+    def _parse_units(arg1, arg2, arg3):
+        if isinstance(arg1, float):
+            return arg2, arg3, arg1
+        if isinstance(arg2, float):
+            return arg1, arg3, arg2
+        if isinstance(arg3, float):
+            return arg1, arg2, arg3
+        raise ValueError("You need a number at least...")
+
     @commands.command()
-    async def convert(self, ctx, value: float, from_unit, to_unit):
-        """Converts a value from one unit to another"""
+    async def convert(self, ctx, arg1: _unit_or_num, arg2: _unit_or_num, arg3: _unit_or_num):
+        """Converts a value from one unit to another.
+
+        The order of the arguments can be arbitrary. 
+        You just need to make sure you have two units and a number.
+
+        The first unit mentioned will always be the "from" unit.
+        While the other one will always be the two "to" unit.
+        """
         try:
-            result = convert_unit(from_unit, to_unit, value)
+            args = self._parse_units(value, from_unit, to_unit)
+            result = convert_unit(*args)
+        except ValueError as e:
+            result = f'{MAGIC_ERROR_THING}{e}'
         except IncompatibleUnits as e:
             result = f'{MAGIC_ERROR_THING}{type(e).__name__}: {e}'
         except KeyError as e:
