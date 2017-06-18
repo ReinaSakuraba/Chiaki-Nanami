@@ -33,7 +33,7 @@ def redirect_exception(*exceptions, cls=ChiakiException):
 # asynccontextmanager when
 class temp_message:
     """Sends a temporary message, then deletes it"""
-    def __init__(self, destination, content=None, file=None, embed=None):
+    def __init__(self, destination, content=None, *, file=None, embed=None):
         self.destination = destination
         self.content = content
         self.file = file
