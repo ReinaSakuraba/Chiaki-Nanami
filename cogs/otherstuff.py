@@ -3,6 +3,7 @@ import json
 import operator
 import functools
 import itertools
+import os
 import random
 import sys
 import time
@@ -98,7 +99,7 @@ class OtherStuffs:
 
     async def _load_pastas(self):
         def nobody_kanna_cross_it():
-            with open(r'data\copypastas.json', encoding='utf-8') as f:
+            with open(os.path.join('data', 'copypastas.json'), encoding='utf-8') as f:
                 return json.load(f)
         self.copypastas = await self.bot.loop.run_in_executor(None, nobody_kanna_cross_it)
 
