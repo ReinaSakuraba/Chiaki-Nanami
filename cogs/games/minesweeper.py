@@ -403,7 +403,7 @@ class Minesweeper:
             if not record_time or time is None:
                 return
 
-    @commands.group(aliases=['minesw'], invoke_without_command=True)
+    @commands.group(aliases=['msw'], invoke_without_command=True)
     async def minesweeper(self, ctx, level: Level=Level.beginner):
         board = getattr(Board, str(level).lower())()
         """Starts a game of Minesweeper."""
