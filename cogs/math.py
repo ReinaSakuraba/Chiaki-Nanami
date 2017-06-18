@@ -397,8 +397,8 @@ class Math:
         While the other one will always be the two "to" unit.
         """
         try:
-            args = self._parse_units(value, from_unit, to_unit)
-            result = convert_unit(*args)
+            from_unit, to_unit, value = self._parse_units(arg1, arg2, arg3)
+            result = convert_unit(from_unit, to_unit, value)
         except ValueError as e:
             result = f'{MAGIC_ERROR_THING}{e}'
         except IncompatibleUnits as e:

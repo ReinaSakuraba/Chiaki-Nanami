@@ -26,7 +26,8 @@ from .utils.misc import (
 )
 from .utils.paginator import BaseReactionPaginator, ListPaginator, page
 
-def _join_and(items, *, conjunction='and'):
+
+def join_and(items, *, conjunction='and'):
     if not items:
         return ''
     return f"{', '.join(items[:-1])} {conjunction} {items[-1]}" if len(items) != 1 else items[0]
