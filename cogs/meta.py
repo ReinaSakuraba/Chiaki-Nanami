@@ -13,6 +13,7 @@ from contextlib import redirect_stdout
 from discord.ext import commands
 from io import StringIO
 from itertools import chain, filterfalse, islice, starmap, tee
+from math import log10
 from operator import attrgetter, itemgetter
 
 from .utils import converter
@@ -85,7 +86,7 @@ class ServerPages(BaseReactionPaginator):
         """Shows the server's emojis"""
         guild = self.guild
         emojis = guild.emojis
-        description = '\n'.join(group_strings(map(str, guild.emojis)), 10) if emojis else 'There are no emojis :('
+        description = '\n'.join(group_strings(map(str, guild.emojis), 10)) if emojis else 'There are no emojis :('
 
         return (discord.Embed(colour=await self.server_color(), description=description)
                .set_author(name=f"{guild}'s custom emojis")
@@ -344,7 +345,7 @@ class Meta:
         icon = server.icon_url
         if icon:
             server_embed.set_thumbnail(url=icon)
-            server_embed.colour = await self.server_colour(server)
+            server_embed.colour = await Meta.server_colour(server)
         return server_embed
 
     @info.group(name='server', aliases=['guild'])
@@ -401,10 +402,10 @@ class Meta:
     async def roles(self, ctx):
         """Shows all the roles in the server. Roles in bold are the ones you have"""
         roles = ctx.guild.role_hierarchy[:-1]
-        padding = max(map(len, (role.members for role in roles))) // 10
+        padding = int(log10(max(map(len, (role.members for role in roles))))) + 1
 
-        role_name = functools.partial(_role_name, ctx.author)
-        hierarchy = [f"`{len(role.members) :<{padding}}\u200b` {role_name(role)}" for role in roles]
+        get_name = functools.partial(role_name, ctx.author)
+        hierarchy = [f"`{len(role.members) :<{padding}}\u200b` {get_name(role)}" for role in roles]
         pages = ListPaginator(ctx, hierarchy, title=f'Roles in {ctx.guild} ({len(hierarchy)})',
                            colour=self.bot.colour)
         await pages.interact()
