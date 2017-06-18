@@ -83,7 +83,8 @@ def emoji_url(emoji):
 def unique(iterable):
     return list(OrderedDict.fromkeys(iterable))
 
-async def maybe_awaitable(maybe):
+async def maybe_awaitable(func, *args, **kwargs):
+    maybe = func(*args, **kwargs)
     return await maybe if inspect.isawaitable(maybe) else maybe
 
 def role_name(member, role):

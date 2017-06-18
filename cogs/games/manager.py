@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 
 from ..utils.compat import iter_except
+from ..utils.misc import maybe_awaitable
 
 class SessionManager:
     def __init__(self):
@@ -27,5 +28,5 @@ class SessionManager:
             loop = asyncio.get_event_loop()
 
         popitem_iter = iter_except(self.sessions.popitem, KeyError)
-        stop_tasks = (inst.stop(force=True) for _, inst in popitem_iter)
+        stop_tasks = (maybe_awaitable(inst.stop) for _, inst in popitem_iter)
         loop.create_task(asyncio.gather(*stop_tasks))   

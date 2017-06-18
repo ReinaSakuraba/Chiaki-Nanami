@@ -119,7 +119,7 @@ class BaseReactionPaginator:
         def react_check(reaction, user):    
             return user.id == ctx.author.id and reaction.emoji in self._reaction_map
 
-        starting_embed = await maybe_awaitable(self.default())
+        starting_embed = await maybe_awaitable(self.default)
         message = self.message = await destination.send(embed=starting_embed)
 
         # No need to put reactions if there's only one page.
@@ -140,7 +140,7 @@ class BaseReactionPaginator:
                 else:
                     attr = self._reaction_map[react.emoji]
                     try:
-                        next_embed = await maybe_awaitable(getattr(self, attr)())
+                        next_embed = await maybe_awaitable(getattr(self, attr))
                     except StopPagination:
                         break
                     except IndexError:
