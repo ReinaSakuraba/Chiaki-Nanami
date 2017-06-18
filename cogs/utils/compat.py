@@ -13,7 +13,7 @@ from itertools import zip_longest
 _AsyncCacheInfo = namedtuple("CacheInfo", ['hits', 'misses', 'future_hits', 'maxsize', 'currsize'])
 
 # http://stackoverflow.com/a/37627076
-def async_cache(maxsize=128, loop=None):
+def async_cache(maxsize=128):
     # support use as decorator without calling, for this case maxsize will
     # not be an int
     if maxsize is None:
@@ -25,9 +25,6 @@ def async_cache(maxsize=128, loop=None):
             real_max_size = int(maxsize)
         except (ValueError, TypeError):
             raise TypeError(f"expected an int, callable, or None, received {type(maxsize).__name__}")
-
-    if loop is None:
-        loop = asyncio.get_event_loop()
 
     boundless = real_max_size is None
     cache = OrderedDict()
@@ -63,7 +60,7 @@ def async_cache(maxsize=128, loop=None):
                     hits += 1
                     return f
             else:
-                cache[key] = task = asyncio.ensure_future(run_and_cache(func, args, kwargs), loop=loop)
+                cache[key] = task = asyncio.ensure_future(run_and_cache(func, args, kwargs))
                 misses += 1
                 return task
 
@@ -107,6 +104,7 @@ async def _dominant_color_from_url(url):
     with BytesIO(await read_image_from_url(url)) as f:
         # TODO: Make my own color-grabber module. This is ugly as hell.
         loop = asyncio.get_event_loop()
+        print(loop)
         return await loop.run_in_executor(None, functools.partial(ColorThief(f).get_color, quality=1))
 
 async def url_color(url):
