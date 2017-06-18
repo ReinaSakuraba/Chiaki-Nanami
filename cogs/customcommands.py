@@ -59,7 +59,7 @@ class CustomCommands:
 
     @custom_command.command(name='add')
     @global_cc_check()
-    async def add_custom_command(self, ctx, trigger, reaction):
+    async def add_custom_command(self, ctx, trigger, *, reaction):
         server = ctx.guild or 'global'
         server_reactions = self.custom_reactions[server]
         new_trigger_id = self._random_trigger(server)
