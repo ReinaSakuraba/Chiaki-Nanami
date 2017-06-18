@@ -10,7 +10,6 @@ import time
 from collections import namedtuple
 from datetime import datetime
 from discord.ext import commands
-from PIL import Image
 
 from .utils import errors
 from .utils.compat import user_colour
@@ -66,14 +65,19 @@ _special_pairs = {
 def _calculate_compatibilty(info_pair):
     # This has to be stored as a frozenset pair to make sure that
     # switching the two users doesn't affect the result
-    info1, info2 = info_pair
+
+    try:
+        info1, info2 = info_pair
+    except ValueError:
+        # User inputted themself as the second argument
+        if len(info_pair) == 1:
+            info1, = info_pair
+            return ShipRating(0, f"RIP {info1.name}. They're forever alone.")
+        raise
+
     id_pair = frozenset((info1.id, info2.id))
     if id_pair in _special_pairs:
         return _special_pairs[id_pair]
-
-    # User inputted themself as the second argument
-    if len(id_pair) == 1:
-        return ShipRating(0, f"RIP {info1.name}. They're forever alone.")
 
     return ShipRating(random.randrange(101))
 
@@ -155,7 +159,8 @@ class OtherStuffs:
         field_name = 'I give it a...'       # In case I decide to have it choose between mulitiple field_names 
         description =  f'{user1.mention} x {user2.mention}?'
         colour = discord.Colour.from_rgb(*_lerp_red(rating.value / 100))
-        ship_embed = (discord.Embed(title='Ship', description=description, colour=colour)
+        ship_embed = (discord.Embed(description=description, colour=colour)
+                     .set_author(name='Ship')
                      .add_field(name=field_name, value=f'{rating.value} / 100')
                      .set_footer(text=rating.comment)
                      )
