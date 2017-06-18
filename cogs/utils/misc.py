@@ -9,6 +9,9 @@ from collections import namedtuple, OrderedDict
 from datetime import datetime, timezone
 from discord.ext import commands
 
+from .compat import grouper
+
+
 def code_say(bot, msg):
     return bot.say(code_msg(msg))
 
@@ -27,7 +30,7 @@ def multi_replace(string, replacements):
     pattern = re.compile("|".join(map(re.escape, substrs)))
     return pattern.sub(lambda m: replacements[m.group(0)], string)
 
-_markdown_replacements = {re.escape(c): '\\' + c for c in ('*', '`', '_', '~', '\\')}
+_markdown_replacements = {c: f'\\{c}' for c in ('*', '`', '_', '~', '\\')}
 escape_markdown = functools.partial(multi_replace, replacements=_markdown_replacements)
 
 def truncate(s, length, placeholder):
@@ -35,6 +38,9 @@ def truncate(s, length, placeholder):
 
 def str_join(delim, iterable):
     return delim.join(map(str, iterable))
+
+def group_strings(string, n):
+    return map(''.join, grouper(string, n, ''))
 
 def pairwise(t):
     it = iter(t)
@@ -79,3 +85,7 @@ def unique(iterable):
 
 async def maybe_awaitable(maybe):
     return await maybe if inspect.isawaitable(maybe) else maybe
+
+def role_name(member, role):
+    name = str(role)
+    return f'**{escape_markdown(name)}**' if role in member.roles else name

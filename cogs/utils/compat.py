@@ -7,6 +7,7 @@ import functools
 from collections import deque, namedtuple, OrderedDict
 from discord.ext import commands
 from io import BytesIO
+from itertools import zip_longest
 
 # decided to remove the aiocache one and work with this one for now
 _AsyncCacheInfo = namedtuple("CacheInfo", ['hits', 'misses', 'future_hits', 'maxsize', 'currsize'])
@@ -122,7 +123,7 @@ user_colour = user_color
 # itertools related stuff
 
 try:
-    from more_itertools import always_iterable, ilen, iterate, iter_except
+    from more_itertools import always_iterable, grouper, ilen, iterate, iter_except
 except ImportError:
     def ilen(iterable):
         d = deque(enumerate(iterable, 1), maxlen=1)
@@ -150,3 +151,10 @@ except ImportError:
                 yield func()
         except exceptions:
             pass
+
+    def grouper(iterable, n, fillvalue=None):
+        "Collect data into fixed-length chunks or blocks"
+        # grouper('ABCDEFG', 3, 'x') --> ABC DEF Gxx"
+        args = [iter(iterable)] * n
+        return zip_longest(*args, fillvalue=fillvalue)
+
