@@ -30,7 +30,7 @@ class Admin:
         if member.id == member.guild.owner.id:
             return
 
-        top_role = author.top_role
+        top_role = member.top_role
         if role >= top_role:
             raise errors.InvalidUserArgument(f"You can't {action} a role higher than or equal "
                                              f"to your highest role (**{top_role}**)")
