@@ -410,8 +410,10 @@ class Minesweeper:
         await self._do_minesweeper(ctx, level, board)
 
     @minesweeper.command(name='custom')
-    async def minesweeper_custom(self, ctx, width: ranged(7, 15), height: ranged(7, 15), mines: int):
+    async def minesweeper_custom(self, ctx, width: ranged(3, 20), height: ranged(3, 20), mines: int):
         """Starts a custom minesweeper game."""
+        if not 9 <= width * height <= 170:
+            raise ValueError("Can't have a board of that size due to emoji bugs sorry ;-;")
         board = Board(width, height, mines)
         await self._do_minesweeper(ctx, Level.custom, board, record_time=False)
 
