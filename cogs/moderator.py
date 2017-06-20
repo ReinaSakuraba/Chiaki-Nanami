@@ -39,8 +39,8 @@ def _make_entries(scheduler, data):
 
 
 class MemberID(union):
-    def __init__(self):
-        super().__init__(discord.Member, int)
+    def __init__(self, user_type=discord.Member):
+        super().__init__(user_type, int)
 
     async def convert(self, ctx, arg):
         member = await super().convert(ctx, arg)
@@ -634,7 +634,7 @@ class Moderator:
 
     @commands.command()
     @checks.mod_or_permissions(ban_members=True)
-    async def unban(self, ctx, user: discord.User, *, reason: str=None):
+    async def unban(self, ctx, user: MemberID(user_type=discord.User), *, reason: str=None):
         """Unbans the user (obviously)"""
 
         # Will not remove the scheduler (this is ok)
@@ -646,7 +646,7 @@ class Moderator:
     async def massban(self, ctx, reason, *members: MemberID):
         """Bans a series a people (obviously)"""
         for m in members:
-            await ctx.guild.ban(member, reason=reason)
+            await ctx.guild.ban(m, reason=reason)
 
         await ctx.send(f"Done. What happened...?")
 
