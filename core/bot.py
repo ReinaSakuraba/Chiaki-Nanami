@@ -1,5 +1,6 @@
 import asyncio
 import collections
+import contextlib
 import discord
 import functools
 import inspect
@@ -118,6 +119,15 @@ class ChiakiBot(commands.Bot):
             raise
         else:
             log.info(f"{name} successfully unloaded")
+
+    @contextlib.contextmanager
+    def temp_listener(self, func, name=None):
+        """Context manager for temporary listeners"""
+        self.add_listener(func, name)
+        try:
+            yield
+        finally:
+            self.remove_listener(func)
 
     def add_database(self, db):
         self.databases.append(db)
