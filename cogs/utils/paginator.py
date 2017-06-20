@@ -4,6 +4,7 @@ import discord
 import functools
 import inspect
 import itertools
+import random
 
 from collections import OrderedDict
 from discord.ext import commands
@@ -60,12 +61,23 @@ def page(emoji):
         return func
     return decorator
 
+_extra_remarks = [
+    'Does nothing', 
+    'Does absolutely nothing', 
+    'Still does nothing', 
+    'Really does nothing', 
+    'What did you expect',
+    'Make Chiaki do a hula hoop',
+    'Get slapped by Chiaki', 
+    'Hug Chiaki',
+    ]
 
 class BaseReactionPaginator:
     def __init__(self, context):
         self.context = context
         self.message = None
         self.reactions_done = asyncio.Event()
+        self._extra = set()
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -110,6 +122,12 @@ class BaseReactionPaginator:
         """Stops the interactive pagination"""
         raise StopPagination
 
+    def _check_reaction(self, reaction, user):
+        return (reaction.message.id == self.message.id 
+                and user.id == self.context.author.id 
+                and reaction.emoji in self._reaction_map
+               )
+
     async def interact(self, destination=None, *, timeout=120, delete_after=True):
         """Creates an interactive session"""
         ctx = self.context
@@ -119,16 +137,12 @@ class BaseReactionPaginator:
         starting_embed = await maybe_awaitable(self.default)
         message = self.message = await destination.send(embed=starting_embed)
 
-        def react_check(reaction, user):
-            return (reaction.message.id == self.message.id 
-                    and user.id == ctx.author.id 
-                    and reaction.emoji in self._reaction_map)
-
         # No need to put reactions if there's only one page.
         if len(self) <= 1:
             return
 
         try:
+            print(list(map(ord, self._reaction_map)))
             for emoji in self._reaction_map:
                 await asyncio.sleep(0.25)
                 await message.add_reaction(emoji)
@@ -136,7 +150,7 @@ class BaseReactionPaginator:
             self.reactions_done.set()
             while True:
                 try:
-                    react, user = await ctx.bot.wait_for('reaction_add', check=react_check, timeout=timeout)
+                    react, user = await ctx.bot.wait_for('reaction_add', check=self._check_reaction, timeout=timeout)
                 except asyncio.TimeoutError:
                     break
                 else:
@@ -173,6 +187,12 @@ class ListPaginator(BaseReactionPaginator):
         self.colour = colour or color
         self.title = title
         self._index = 0
+        self._extra = set()
+
+    def _check_reaction(self, reaction, user):
+        return (super()._check_reaction(reaction, user) 
+                or (not self._extra.difference_update(self._reaction_map)
+                and self._extra.add(reaction.emoji)))
 
     def _create_embed(self, idx, page):
         # Override this if you want paginated embeds 
@@ -263,11 +283,23 @@ class ListPaginator(BaseReactionPaginator):
         """Shows this message"""
         initial_message = "This is the interactive help thing!",
         funcs = (f'{em} => {getattr(self, f).__doc__}' for em, f in self._reaction_map.items())
-        joined = '\n'.join(itertools.chain(initial_message, funcs))
+        extras = zip(self._extra, (random.choice(_extra_remarks) for _ in itertools.count()))
+        remarks = itertools.starmap('{0} => {1}'.format, extras)
+
+        joined = '\n'.join(itertools.chain(initial_message, funcs, remarks))
 
         return (discord.Embed(title=self.title, colour=self.colour, description=joined)
                .set_footer(text=f"From page {self._index + 1}")
                )
+
+    async def interact(self, destination=None, *, timeout=120, delete_after=True):
+        bot = self.context.bot
+        with bot.temp_listener(self.on_reaction_remove):
+            await super().interact(destination, timeout=timeout, delete_after=delete_after)
+
+    async def on_reaction_remove(self, reaction, user):
+        self._extra.discard(reaction.emoji)
+
 
 
 class TitleBasedPages(ListPaginator):
