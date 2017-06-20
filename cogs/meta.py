@@ -362,17 +362,32 @@ class Meta:
 
     @commands.command(aliases=['chnls'])
     async def channels(self, ctx):
-        """Shows all the channels in the server."""
-        permissions_in = ctx.author.permissions_in
-        def get_channels(type_):
-            sorted_channels = sorted((c for c in ctx.guild.channels if isinstance(c, type_)),
-                                     key=attrgetter('position'))
-            return [c.mention if permissions_in(c).read_messages else f'#{c.name}'
-                    for c in sorted_channels]
+        """Shows all the channels in the server. Channels you can access are **bolded**
 
-        text_channels, voice_channels = get_channels(discord.TextChannel), get_channels(discord.VoiceChannel)
-        channels = chain(('', f'**List of Text Channelels ({len(text_channels)})**', ), text_channels,
-                         ('', f'**List of Voice Channels ({len(voice_channels)})**', ), voice_channels)
+        If you're in a voice channel, that channel is ***italicized and bolded***
+        """
+        permissions_in = ctx.author.permissions_in
+
+        def get_channels(channels, prefix, permission):
+            return [f'**{prefix}{escape_markdown(str(c))}**' if getattr(permissions_in(c), permission) 
+                    else f'{prefix}{escape_markdown(str(c))}' for c in channels]
+
+        text_channels  = get_channels(ctx.guild.text_channels,  prefix='#', permission='read_messages')
+        voice_channels = get_channels(ctx.guild.voice_channels, prefix='', permission='connect')
+
+        voice = ctx.author.voice
+        if voice is not None:
+            index = voice.channel.position
+            name = voice_channels[index]
+            # Name was already bolded
+            if not name.startswith('**'):
+                name = f'**{name}**'
+            voice_channels[index] = f'*{name}*'
+
+        channels = chain(
+            ('', f'**List of Text Channels ({len(text_channels)})**', '-' * 20, ), text_channels,
+            ('', f'**List of Voice Channels ({len(voice_channels)})**', '-' * 20, ), voice_channels
+        )
 
         pages = ListPaginator(ctx, channels, title=f'Channels in {ctx.guild}', colour=self.bot.colour)
         await pages.interact()
