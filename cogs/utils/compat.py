@@ -104,7 +104,6 @@ async def _dominant_color_from_url(url):
     with BytesIO(await read_image_from_url(url)) as f:
         # TODO: Make my own color-grabber module. This is ugly as hell.
         loop = asyncio.get_event_loop()
-        print(loop)
         return await loop.run_in_executor(None, functools.partial(ColorThief(f).get_color, quality=1))
 
 async def url_color(url):
