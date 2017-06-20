@@ -116,11 +116,13 @@ class BaseReactionPaginator:
         if destination is None:
             destination = ctx
 
-        def react_check(reaction, user):    
-            return user.id == ctx.author.id and reaction.emoji in self._reaction_map
-
         starting_embed = await maybe_awaitable(self.default)
         message = self.message = await destination.send(embed=starting_embed)
+
+        def react_check(reaction, user):
+            return (reaction.message.id == self.message.id 
+                    and user.id == ctx.author.id 
+                    and reaction.emoji in self._reaction_map)
 
         # No need to put reactions if there's only one page.
         if len(self) <= 1:
@@ -206,6 +208,16 @@ class ListPaginator(BaseReactionPaginator):
         """Returns the first page"""
         return self[0]
 
+    @page('\N{BLACK LEFT-POINTING TRIANGLE}')
+    def previous(self):
+        """Returns the previous page"""
+        return self.page_at(self._index - 1)
+
+    @page('\N{BLACK RIGHT-POINTING TRIANGLE}')
+    def next(self):
+        """Returns the next page"""
+        return self.page_at(self._index + 1)
+
     @page('\N{BLACK RIGHT-POINTING DOUBLE TRIANGLE WITH VERTICAL BAR}')
     def last(self):
         """Returns the last page"""
@@ -220,16 +232,6 @@ class ListPaginator(BaseReactionPaginator):
         if not 0 <= index < len(self):
             raise IndexError("page index out of range")
         return self[index]
-
-    @page('\N{BLACK LEFT-POINTING TRIANGLE}')
-    def previous(self):
-        """Returns the previous page"""
-        return self.page_at(self._index - 1)
-
-    @page('\N{BLACK RIGHT-POINTING TRIANGLE}')
-    def next(self):
-        """Returns the next page"""
-        return self.page_at(self._index + 1)
 
     @page('\N{INPUT SYMBOL FOR NUMBERS}')
     async def numbered(self):
