@@ -52,6 +52,7 @@ class RussianRouletteSession:
         # some local declarations to avoid excessive dot lookup.
         wait_for = self.context.bot.wait_for
         send = self.context.send
+        self._running = True
 
         while len(self.players) != 1:
             await asyncio.sleep(random.uniform(1, 2))
