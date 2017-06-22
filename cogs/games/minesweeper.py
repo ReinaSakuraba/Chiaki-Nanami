@@ -79,19 +79,16 @@ class Board:
         if mines <= 0:
             raise ValueError("A least one mine is required")
 
-        self._num_mines = mines
+        self._first_step = True
         
         self._board = [[Tile.blank] * width for _ in range(height)]
         self.visible = set()
         self.flags = set()
         self.unsures = set()
-        self.mines = set()
-
-    def place_mines(self):
+        
         coords = list(itertools.product(range(self.width), range(self.height)))
         random.shuffle(coords)
-        self.mines.update(itertools.islice(coords, self._num_mines))
-        del self._num_mines
+        self.mines = set(itertools.islice(coords, mines))
 
     def __contains__(self, xy):
         return 0 <= xy[0] < self.width and 0 <= xy[1] < self.height
@@ -125,17 +122,26 @@ class Board:
         pairs = ((x + surr_x, y + surr_y) for (surr_x, surr_y) in SURROUNDING)
         return (p for p in pairs if p in self)
 
+    def place_mines(self):
+        del self._num_mines
+
     def show(self, x, y):
         if self.is_visible(x, y):
             return
 
-        if not self.mines:
-            self.place_mines()
-
         self.visible.add((x, y))
         if self.is_mine(x, y) and not self.is_flag(x, y):
-            raise HitMine(x, y)
+            if not self._first_step:
+                raise HitMine(x, y)
 
+            # Add a new mine in the place of the old one.
+            # This is to prevent players from dying on the first go.
+            coords = itertools.product(range(self.width), range(self.height))
+            available_spaces = list(itertools.filterfalse(self.mines.__contains__, coords))
+            self.mines.add(random.choice(available_spaces))
+            self.mines.remove((x, y))
+
+        self._first_step = False
         surrounding = sum(self.is_mine(nx, ny) for nx, ny in self._get_neighbours(x, y))
         if not surrounding:
             self._board[y][x] = Tile.shown
@@ -235,13 +241,27 @@ class MinesweeperDisplay(BaseReactionPaginator):
         # By putting a zero-width space we bypass that
         return f'\u200b     {top_row}\n{self.board}' 
 
+    @staticmethod
+    def _possible_spaces():
+        number = random.randint(1, 9)
+        return textwrap.dedent(f'''
+        {Tile.shown} - Empty tile, reveals other empty or numbered tiles near it
+
+        {Tile.numbered(number)} - Displays the number of mines surrounding it.
+        This one shows that they are {number} mines around it.
+
+        {Tile.boom} - BOOM! Selecting a mine makes it explode, causing all other mines to explode 
+        and thus ending the game. Avoid mines at any costs!
+        \u200b
+        ''')
+
     @property
     def board(self):
         return self.game.board
 
     @page('\N{INPUT SYMBOL FOR NUMBERS}')
     def default(self):
-        """Shows the default game screen"""
+        """Returns you to the game"""
         self.state = self.State.GAME
         board = self.board
         return (discord.Embed(colour=self.context.bot.colour, description=self._board_repr())
@@ -249,6 +269,7 @@ class MinesweeperDisplay(BaseReactionPaginator):
                .add_field(name='Player', value=self.context.author)
                .add_field(name='Mines Found', value=f'{board.mines_marked} / {len(board.mines)}')
                .add_field(name='Flags Remaining', value=board.remaining_flags)
+               .add_field(name='\u200b', value='Stuck? Click the \N{INFORMATION SOURCE} reaction for some help.')
                )
 
     @page('\N{INFORMATION SOURCE}')
@@ -262,19 +283,26 @@ class MinesweeperDisplay(BaseReactionPaginator):
         ```
         <x> <y> [f|flag|u|unsure]
         ```
-        Inputting `f` or `flag` will mark the tile with a flag.
-        Inputting `u` or `unsure` will mark the tile as unsure.
-        Inputting nothing, well you know what it will do.
+        Typing `f` or `flag` will mark the tile with a flag.
+        Typing `u` or `unsure` will mark the tile as unsure.
+        Typing nothing, well you know what it will do.
 
         Note that you can only input it if you're in this actual game.
-        (ie inputting anything in this screen won't do anything.)
+        (ie typing anything in this screen won't do anything.)
+        \u200b
         ''')
+
+        reaction_text = '\n'.join(f'{em} => {getattr(self, f).__doc__}' 
+                                  for em, f in self._reaction_map.items())
         return (discord.Embed(colour=self.context.bot.colour, description=text)
                .set_author(name='Welcome to Minesweeper!')
+               .add_field(name='If you select a tile, chances are you will hit one of these 3 things', value=self._possible_spaces())
+               .add_field(name='Reaction Buttons', value=reaction_text)
                )
 
     @page('\N{BLACK SQUARE FOR STOP}')
     def stop(self):
+        """Stops the game"""
         self.game.stop()
         return super().stop()
 
@@ -333,7 +361,7 @@ class MinesweeperSession:
             try:
                 message = await self.ctx.bot.wait_for('message', timeout=120, check=self.check_message)
             except asyncio.TimeoutError:
-                await self.ctx.send('You took too long!')
+                await self.ctx.send(f'{self.ctx.author.mention} You took too long!')
                 break
 
             parsed = self.parse_message(message.content)
@@ -403,13 +431,15 @@ class Minesweeper:
         await ctx.send(f'Starting a {level} minesweeper game...')
         with manager.temp_session(ctx.author.id, MinesweeperSession(ctx, board)) as inst:
             time = await inst.run()
+            if time is None:
+                return
+
             text = f'You beat game in {time: .2f} seconds.'
             win_embed = (discord.Embed(title='A winner is you!', colour=0x00FF00, timestamp=datetime.utcnow(), description=text)
                         .set_thumbnail(url=ctx.author.avatar_url)
                         )
+
             await ctx.send(embed=win_embed)
-            if not record_time or time is None:
-                return
 
     @commands.group(aliases=['msw'], invoke_without_command=True)
     async def minesweeper(self, ctx, level: Level=Level.beginner):
