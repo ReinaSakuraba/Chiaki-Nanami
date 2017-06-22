@@ -120,27 +120,27 @@ class Owner:
     async def load(self, ctx, cog: str):
         """Loads a bot-extension (one with a setup method)"""
         ctx.bot.load_extension(cog)
-        await ctx.send('ok')
+        await ctx.send('Ok onii-chan~')
 
     @commands.command(hidden=True)
     async def unload(self, ctx, cog: str):
         """Unloads a bot-extension (one with a setup method)"""
         ctx.bot.unload_extension(cog)
-        await ctx.send('ok')
+        await ctx.send('Ok onii-chan~')
 
     @commands.command(hidden=True)
     async def reload(self, ctx, cog: str):
         """Reloads a bot-extension (one with a setup method)"""
         ctx.bot.unload_extension(cog)
         ctx.bot.load_extension(cog)
-        await ctx.send('ok')
+        await ctx.send('Ok onii-chan~')
 
     @load.error
     @unload.error
     @reload.error
     async def load_error(self, ctx, error):
         traceback.print_exc()
-        await ctx.send('no')
+        await ctx.send("Baka! You didn't code me properly  >///<")
 
     @commands.command(hidden=True, aliases=['kys'])
     async def die(self, ctx):
