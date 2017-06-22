@@ -78,15 +78,20 @@ class Board:
             raise ValueError(f'Too many mines (expected max {width * height}, got {mines})')
         if mines <= 0:
             raise ValueError("A least one mine is required")
+
+        self._num_mines = mines
         
         self._board = [[Tile.blank] * width for _ in range(height)]
         self.visible = set()
         self.flags = set()
         self.unsures = set()
+        self.mines = set()
 
+    def place_mines(self):
         coords = list(itertools.product(range(self.width), range(self.height)))
         random.shuffle(coords)
-        self.mines = set(itertools.islice(coords, mines))
+        self.mines.update(itertools.islice(coords, self._num_mines))
+        del self._num_mines
 
     def __contains__(self, xy):
         return 0 <= xy[0] < self.width and 0 <= xy[1] < self.height
@@ -123,6 +128,9 @@ class Board:
     def show(self, x, y):
         if self.is_visible(x, y):
             return
+
+        if not self.mines:
+            self.place_mines()
 
         self.visible.add((x, y))
         if self.is_mine(x, y) and not self.is_flag(x, y):
