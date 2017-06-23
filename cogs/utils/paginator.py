@@ -77,6 +77,7 @@ class BaseReactionPaginator:
         self.context = context
         self.message = None
         self.reactions_done = asyncio.Event()
+        self._current = None
         self._extra = set()
 
     def __init_subclass__(cls, **kwargs):
@@ -128,24 +129,43 @@ class BaseReactionPaginator:
                 and reaction.emoji in self._reaction_map
                )
 
-    async def interact(self, destination=None, *, timeout=120, delete_after=True):
+    async def _set_message(self, destination, message):
+        self._current = starting_embed = await maybe_awaitable(self.default)
+        if message is None:
+            self.message = await destination.send(embed=starting_embed)
+        else:
+            self.message = message
+            await self.message.edit(embed=starting_embed)
+            await message.clear_reactions()
+            await asyncio.sleep(random.uniform(0.75, 1))
+
+    async def add_buttons(self):
+        for emoji in self._reaction_map:
+            await asyncio.sleep(0.25 + random.random() * 0.1)
+            await self.message.add_reaction(emoji)
+
+    async def on_only_one_page(self):
+        # Override this if you need custom behaviour if there's only one page
+        # If you would like stop pagination, simply raise StopPagination
+        await self.message.add_reaction(self.stop.__reaction_emoji__)
+
+    async def interact(self, destination=None, *, message=None, timeout=120, delete_after=True):
         """Creates an interactive session"""
         ctx = self.context
         if destination is None:
             destination = ctx
 
-        starting_embed = await maybe_awaitable(self.default)
-        message = self.message = await destination.send(embed=starting_embed)
-
-        # No need to put reactions if there's only one page.
-        if len(self) <= 1:
-            return
+        await self._set_message(destination, message)
+        print(self.message)
+        message = self.message
 
         try:
-            print(list(map(ord, self._reaction_map)))
-            for emoji in self._reaction_map:
-                await asyncio.sleep(0.25)
-                await message.add_reaction(emoji)
+            # We need at least the stop button for killing the pagination
+            # Otherwise it would kill the page immediately.
+            if len(self) <= 1:
+                await self.on_only_one_page()
+            else:
+                await self.add_buttons()
 
             self.reactions_done.set()
             while True:
@@ -156,18 +176,23 @@ class BaseReactionPaginator:
                 else:
                     attr = self._reaction_map[react.emoji]
                     try:
-                        next_embed = await maybe_awaitable(getattr(self, attr))
+                        next_ = await maybe_awaitable(getattr(self, attr))
                     except StopPagination:
                         break
                     except IndexError:
                         continue
-                    try:
-                        print(next_embed.description, self._index, next_embed.to_dict())   
-                    except:
-                        pass
 
-                    await message.remove_reaction(react.emoji, user)
-                    await message.edit(embed=next_embed)
+                    if isinstance(next_, BaseReactionPaginator):
+                        with contextlib.suppress(StopPagination):
+                            await next_.interact(destination, message=self.message, timeout=timeout, delete_after=False)
+                        # restore the old embed before we delegated
+                        await self.message.edit(embed=self._current)
+                        # since upon stopping, the reactions would be cleared.
+                        await self.add_buttons()
+                    else:
+                        self._current = next_
+                        await message.remove_reaction(react.emoji, user)
+                        await message.edit(embed=next_)
         finally:
             if delete_after:
                 await message.delete()
@@ -292,10 +317,10 @@ class ListPaginator(BaseReactionPaginator):
                .set_footer(text=f"From page {self._index + 1}")
                )
 
-    async def interact(self, destination=None, *, timeout=120, delete_after=True):
+    async def interact(self, destination=None, *, message=None, timeout=120, delete_after=True):
         bot = self.context.bot
         with bot.temp_listener(self.on_reaction_remove):
-            await super().interact(destination, timeout=timeout, delete_after=delete_after)
+            await super().interact(destination, message=message, timeout=timeout, delete_after=delete_after)
 
     async def on_reaction_remove(self, reaction, user):
         self._extra.discard(reaction.emoji)
