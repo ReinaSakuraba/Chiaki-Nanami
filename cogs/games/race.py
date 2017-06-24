@@ -2,7 +2,6 @@ import asyncio
 import contextlib
 import discord
 import heapq
-import operator
 import random
 import time
 
@@ -55,6 +54,7 @@ class RacingSession:
         self.ctx = ctx
         self.players = OrderedDict()
         self.running = False
+        self._start = None
         self._track = (discord.Embed(colour=self.ctx.bot.colour)
                       .set_author(name='Race has started!')
                       .set_footer(text='Current Leader: None')
@@ -66,11 +66,23 @@ class RacingSession:
         if len(self.players) >= self.MAXIMUM_REQUIRED_MEMBERS:
             self._is_full.set()
 
+    async def add_member_checked(self, member):
+        if self.running:
+            return await self.ctx.send('You were a little late to the party!')
+        if self.already_joined(ctx.author):
+            return await self.ctx.send("You're already in the race!")
+
+        self.add_member(ctx.author)
+        return await self.ctx.send(f"Okay, {member.mention}. Good luck!")
+
     def already_joined(self, m):
         return m in self.players
 
     def has_enough_members(self):
         return len(self.players) >= self.MINIMUM_REQUIRED_MEMBERS
+
+    def close_early(self):
+        self._is_full.set()
 
     def update_game(self):
         for player in self.players.values():
@@ -108,14 +120,17 @@ class RacingSession:
                 break
 
     async def _display_winners(self):
-        names = ['Winner', 'Runner Up', 'Third Runner']
-        embed = discord.Embed(title='Results', colour=0x00FF00)
+        names = ['Winner', 'Runner Up', 'Third Runner Up']
+
+        duration = time.perf_counter() - self._start
+        embed = (discord.Embed(title='Results', colour=0x00FF00)
+                .set_footer(text='Race took {duration :.2f} seconds to finish.')
+                )
+
         # Cannot use '\N' because the medal characters don't have a name
         # I can only refer to them by their code points.
         for title, (char, (member, racer)) in zip(names, enumerate(self.top_racers(), start=0x1f947)):
             use_flag = "\N{CHEQUERED FLAG}" * racer.is_finished()
-            # We have to bold just the username in the event of a win.
-            # So we can't just f'{member}' here.
             name = f'{title} {use_flag}'
             value = f'{chr(char)} {racer.animal} {member}'
             embed.add_field(name=name, value=value, inline=False)
@@ -123,9 +138,8 @@ class RacingSession:
         await self.ctx.send(embed=embed)
 
     async def run(self):
-        start = time.perf_counter()
+        self._start = time.perf_counter()
         await self._loop()
-        seconds = time.perf_counter() - start
         await self._display_winners()
 
     def top_racers(self, n=3):
@@ -138,26 +152,22 @@ class RacingSession:
     def leader(self):
         return max(self.players, key=lambda m: self.players[m].distance)
 
-    async def stop(self, force=True):
-        pass
-
 
 class Racing:
+    """Be the animal you wish to beat. Wait."""
     def __init__(self, bot):
         self.bot = bot
         self.manager = SessionManager()
 
-    @commands.command()
-    async def race(self, ctx, bet: int=0):
+    @commands.group(invoke_without_command=True)
+    async def race(self, ctx):
+        if ctx.subcommand_passed:
+            # Just fail silently if someone input something like ->race Nadeko aaaa
+            return
+
         session = self.manager.get_session(ctx.channel)
         if session is not None:
-            if session.running:
-                return await ctx.send('You were a little late to the party!')
-            if session.already_joined(ctx.author):
-                return await ctx.send("You're already in the race!")
-
-            session.add_member(ctx.author)
-            return await ctx.send(f"Okay, {ctx.author.mention}. Good luck!")
+            return await session.add_member_checked(ctx.author)
 
         with self.manager.temp_session(ctx.channel, RacingSession(ctx)) as inst:
             inst.add_member(ctx.author)
@@ -171,9 +181,18 @@ class Racing:
             await asyncio.sleep(random.uniform(0.25, 0.75))
             await inst.run()
 
-    async def race_close(self):
+    @race.command(name='close')
+    async def race_close(self, ctx):
         """Stops registration of a race early."""
-        pass
+        session = self.manager.get_session(ctx.channel)
+        if session is None:
+            return await ctx.send('There is no session to close, silly...')
+        elif session.running:
+            return await ctx.send("Um, I don't think you can close a race that's "
+                                  "running right now...")
+        session.close_early()
+        await ctx.send("Ok onii-chan... I've closed it now. I'll get on to starting the race...")
+
 
 def setup(bot):
     bot.add_cog(Racing(bot))
