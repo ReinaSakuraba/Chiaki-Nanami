@@ -18,6 +18,20 @@ def special_message(message):
 def welcome_leave_message_check():
     return checks.admin_or_permissions(manag_guild=True)
 
+
+class LowerRole(commands.RoleConverter):
+    async def convert(self, ctx, arg):
+        role = await super().convert(ctx, arg)
+        author = ctx.author
+
+        top_role = author.top_role
+        if role >= top_role and author != ctx.guild.owner:
+            raise commands.BadArgument(f"This role ({role}) is higher than or equal "
+                                       f"to your highest role ({top_role}).")
+
+        return role
+
+
 class Admin:
     """Admin-only commands"""
     __aliases__ = "Administrator", "Administration"
@@ -33,19 +47,7 @@ class Admin:
         return bool(ctx.guild)
 
     @staticmethod
-    def _check_role_position(member, role, action):
-        if member.id == member.guild.owner.id:
-            return
-
-        top_role = member.top_role
-        if role >= top_role:
-            raise errors.InvalidUserArgument(f"You can't {action} a role higher than or equal "
-                                             f"to your highest role (**{top_role}**)")
-
-    @staticmethod
     async def _set_chiaki_role(ctx, key, role, action):
-        # if role is not None:
-            # self._check_role_position(ctx.author, role, action)
         checks.assign_role(ctx.guild, key, role)
         msg = (f"Made {role} an **{key} role**!" if role is not None else
                f"Reset the **{key}** role to **{checks.DEFAULT}**")
@@ -66,7 +68,7 @@ class Admin:
 
     @commands.command(name='adminrole', aliases=['adr'])
     @checks.is_admin()
-    async def admin_role(self, ctx, *, role: discord.Role=None):
+    async def admin_role(self, ctx, *, role: LowerRole=None):
         """Sets a role for the 'Admin' role. If no role is specified, it shows what role is assigned as the Admin role.
 
         Admins are a special type of administrator. They have access to most of the permission-related
@@ -77,7 +79,7 @@ class Admin:
 
     @commands.command(name='modrole', aliases=['mr'])
     @checks.is_admin()
-    async def mod_role(self, ctx, *, role: discord.Role=None):
+    async def mod_role(self, ctx, *, role: LowerRole=None):
         """Sets a role for the 'Moderator' role.
         If no role is specified, it shows what role is assigned as the Moderator role.
 
@@ -100,7 +102,7 @@ class Admin:
 
     @commands.command(name='addselfrole', aliases=['asar', ])
     @checks.is_admin()
-    async def add_self_role(self, ctx, *, role: discord.Role):
+    async def add_self_role(self, ctx, *, role: LowerRole):
         """Adds a self-assignable role to the server
 
         A self-assignable role is one that you can assign to yourself
@@ -108,20 +110,20 @@ class Admin:
         """
         self_roles = self.self_roles[ctx.guild]
         if role.id in self_roles:
-            raise errors.InvalidUserArgument("That role is already self-assignable... I think")
-        self._check_role_position(ctx.author, role, "assign as a self role")
+            return await ctx.send("That role is already self-assignable... I think")
+
         self_roles.append(role.id)
         await ctx.send(f"**{role}** is now a self-assignable role!")
 
     @commands.command(name='removeselfrole', aliases=['rsar', ])
     @checks.is_admin()
-    async def remove_self_role(self, ctx, *, role: discord.Role):
+    async def remove_self_role(self, ctx, *, role: LowerRole):
         """Removes a self-assignable role from the server
 
         A self-assignable role is one that you can assign to yourself
         using `{prefix}iam` or `{prefix}selfrole`
         """
-        self._check_role_position(ctx.author, role, "remove as a self role")
+
         with redirect_exception((ValueError, "That role was never self-assignable... I think.")):
             self.self_roles[ctx.guild].remove(role.id)
         await ctx.send(f"**{role}** is no longer a self-assignable role!")
@@ -175,13 +177,11 @@ class Admin:
 
     @commands.command(name='addrole', aliases=['ar'])
     @checks.admin_or_permissions(manage_roles=True)
-    async def add_role(self, ctx, user: discord.Member, *, role: discord.Role):
+    async def add_role(self, ctx, user: discord.Member, *, role: LowerRole):
         """Adds a role to a user
 
         This role must be lower than both the bot's highest role and your highest role.
         """
-        # This normally won't raise an exception, so we have to check for that
-        self._check_role_position(ctx.author, role, 'add')
         with redirect_exception((discord.Forbidden, f"I can't give {user} {role}. Either I don't have the right perms, "
                                                      "or you're trying to add a role that's higher than mine"),
                                 (discord.HTTPException, f"Giving {role} to {user} failed. Not sure why though...")):
@@ -190,13 +190,12 @@ class Admin:
 
     @commands.command(name='removerole', aliases=['rr'])
     @checks.admin_or_permissions(manage_roles=True)
-    async def remove_role(self, ctx, user: discord.Member, *, role: discord.Role):
+    async def remove_role(self, ctx, user: discord.Member, *, role: LowerRole):
         """Removes a role from a user
 
         This role must be lower than both the bot's highest role and your highest role.
         Do not confuse this with `{prefix}deleterole`, which deletes a role from the server.
         """
-        self._check_role_position(ctx.author, role, 'remove')
         with redirect_exception((discord.Forbidden, f"I can't remove **{role}** from {user}. Either I don't have the right perms, "
                                                      "or you're trying to remove a role that's higher than mine"),
                                 (discord.HTTPException, f"Removing {role} from {user} failed. Not sure why though...")):
@@ -257,7 +256,7 @@ class Admin:
 
     @commands.command(name='editrole', aliases=['er'])
     @checks.is_admin()
-    async def edit_role(self, ctx, old_role: discord.Role, *args: str):
+    async def edit_role(self, ctx, old_role: LowerRole, *args: str):
         """Edits a role with some custom arguments:
 
         `name`
@@ -312,12 +311,11 @@ class Admin:
 
     @commands.command(name='deleterole', aliases=['delr'])
     @checks.is_admin()
-    async def delete_role(self, ctx, *, role: discord.Role):
+    async def delete_role(self, ctx, *, role: LowerRole):
         """Deletes a role from the server
 
         Do not confuse this with `{prefix}removerole`, which removes a role from a member.
         """
-        self._check_role_position(ctx.author, role, "delete")
         with redirect_exception((discord.Forbidden, "I need the **Manage Roles** perm to delete roles, I think."),
                                 (discord.HTTPException, f"Deleting role **{role.name}** failed, for some reason.")):
             await role.delete()
