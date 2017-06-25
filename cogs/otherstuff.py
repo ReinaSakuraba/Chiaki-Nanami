@@ -176,7 +176,7 @@ class OtherStuffs:
         start = time.perf_counter()     # fuck time.monotonic()
         message = await ctx.send('Poing...')
         end = time.perf_counter()       # fuck time.monotonic()
-        ms = (end - start) * 100
+        ms = (end - start) * 1000
         await message.edit(content=f'Poing! ({ms :.3f} ms)')
 
     @commands.command()
