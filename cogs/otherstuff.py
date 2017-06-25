@@ -14,6 +14,7 @@ from discord.ext import commands
 
 from .utils import errors
 from .utils.compat import user_colour
+from .utils.misc import emoji_url
 
 
 # ---------------- Ship-related utilities -------------------
@@ -84,6 +85,7 @@ def _calculate_compatibilty(info_pair):
 
 #--------------- End ship stuffs ---------------------
 
+TEN_SEC_REACTION = '\N{BLACK SQUARE FOR STOP}'
 
 class OtherStuffs:
     def __init__(self, bot):
@@ -220,7 +222,7 @@ class OtherStuffs:
                      )
         await ctx.send(embed=slap_embed)
 
-    @commands.command(name='lastseen')
+    @commands.command(name='lastseen', enabled=False)
     async def last_seen(self, ctx, user: discord.User):
         """Shows the last words of a user"""
 
@@ -241,6 +243,35 @@ class OtherStuffs:
                     .set_footer(text='Last seen ')
                     )
         await ctx.send(embed=embed)
+
+    @commands.command(name='10s')
+    async def ten_seconds(self, ctx):
+        """Starts a 10s test. How well can you judge 10 seconds?"""
+
+        description = f'Click the {TEN_SEC_REACTION} when you think 10 second have passed'
+        embed = (discord.Embed(colour=0xFFFF00, description=description)
+                .set_author(name=f'10 Seconds Test - {ctx.author}', icon_url=emoji_url('\N{ALARM CLOCK}'))
+                )
+
+        message = await ctx.send(embed=embed)
+        await message.add_reaction(TEN_SEC_REACTION)
+
+        def check(reaction, user):
+            return (reaction.message.id == message.id 
+                    and user.id == ctx.author.id
+                    and reaction.emoji == TEN_SEC_REACTION
+                   )
+
+        reaction, user = await ctx.bot.wait_for('reaction_add', check=check)
+        now = datetime.utcnow()
+        duration = (now - message.created_at).total_seconds()
+
+        embed.colour = 0x00FF00
+        embed.description = (f'When you clicked the {TEN_SEC_REACTION} button, \n'
+                             f'**{duration: .2f} seconds** have passed.')
+        embed.set_author(name=f'Test completed', icon_url=embed.author.icon_url)
+        embed.set_thumbnail(url=ctx.author.avatar_url)
+        await message.edit(embed=embed)
 
     async def on_message(self, message):
         self.last_messages[message.author.id] = message
