@@ -17,7 +17,7 @@ from math import log10
 from operator import attrgetter, itemgetter
 
 from .utils import converter
-from .utils.compat import grouper, ilen, url_color, user_color
+from .utils.compat import url_color, user_color
 from .utils.context_managers import redirect_exception, temp_message
 from .utils.converter import BotCommand, union
 from .utils.errors import InvalidUserArgument, ResultsNotFound
@@ -276,7 +276,7 @@ class Meta:
     def text_channel_embed(channel):
         topic = '\n'.join(group_strings(channel.topic, 70)) if channel.topic else discord.Embed.Empty
         member_count = len(channel.members)
-        empty_overwrites = ilen(ow for _, ow in channel.overwrites if ow.is_empty())
+        empty_overwrites = sum(ow.is_empty() for _, ow in channel.overwrites)
         overwrite_message = f'{len(channel.overwrites)} ({empty_overwrites} empty)'
 
         return (discord.Embed(description=topic, timestamp=channel.created_at)
@@ -290,7 +290,7 @@ class Meta:
 
     @staticmethod
     def voice_channel_embed(channel):
-        empty_overwrites = ilen(ow for _, ow in channel.overwrites if ow.is_empty())
+        empty_overwrites = sum(ow.is_empty() for _, ow in channel.overwrites)
         overwrite_message = f'{len(channel.overwrites)} ({empty_overwrites} empty)'
 
         return (discord.Embed(timestamp=channel.created_at)

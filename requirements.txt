@@ -1,8 +1,9 @@
 git+https://github.com/Rapptz/discord.py@rewrite#egg=discord.py[voice]
 beautifulsoup4
-mpmath
-psutil
-parsedatetime
-sympy
 colorthief
+more-itertools
+mpmath
+parsedatetime
+psutil
+sympy
 webcolors

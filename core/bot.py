@@ -9,10 +9,10 @@ import random
 
 from datetime import datetime
 from discord.ext import commands
+from more_itertools import always_iterable
 
 from .formatter import ChiakiFormatter
 
-from cogs.utils.compat import always_iterable
 from cogs.utils.database import Database
 from cogs.utils.misc import cycle_shuffle, duration_units, file_handler
 

@@ -7,9 +7,9 @@ import itertools
 from collections import defaultdict, namedtuple
 from discord.ext import commands
 from operator import attrgetter, contains
+from more_itertools import always_iterable, iterate
 
 from .utils import checks, errors
-from .utils.compat import always_iterable, iterate
 from .utils.context_managers import redirect_exception
 from .utils.converter import item_converter, BotCommand, BotCogConverter
 from .utils.database import Database

@@ -6,8 +6,8 @@ import re
 from collections import namedtuple
 from discord.ext import commands
 from functools import partial
+from more_itertools import ilen
 
-from .compat import ilen
 from .context_managers import redirect_exception
 from .errors import InvalidUserArgument
 from .misc import pairwise, parse_int

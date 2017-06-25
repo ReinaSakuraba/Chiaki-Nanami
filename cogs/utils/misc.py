@@ -8,8 +8,7 @@ import re
 from collections import namedtuple, OrderedDict
 from datetime import datetime, timezone
 from discord.ext import commands
-
-from .compat import grouper
+from more_itertools import grouper
 
 
 def code_say(bot, msg):
