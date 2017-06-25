@@ -56,6 +56,25 @@ class ApproximateRole(commands.RoleConverter):
         return await super().convert(ctx, arg)
 
 
+class CheckedMember(commands.MemberConverter):
+    def __init__(self, *, offline=True, bot=True, include_self=False):
+        super().__init__()
+        self.self = include_self
+        self.offline = offline
+        self.bot = bot
+
+    async def convert(self, ctx, arg):
+        member = await super().convert(ctx, arg)
+        if member.status is discord.Status.offline and not self.offline:
+            raise commands.BadArgument(f'{member} is offline...')
+        if member.bot and not self.bot:
+            raise commands.BadArgument(f"{member} is a bot. You can't use a bot here.")
+        if member == ctx.author:
+            raise commands.BadArgument("You can't use yourself. lol.")
+
+        return member
+
+
 class BotCogConverter(commands.Converter):
     async def convert(self, ctx, arg):
         bot = ctx.bot
