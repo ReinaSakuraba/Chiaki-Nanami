@@ -137,11 +137,9 @@ class BaseReactionPaginator:
             self.message = message
             await self.message.edit(embed=starting_embed)
             await message.clear_reactions()
-            await asyncio.sleep(random.uniform(0.75, 1))
 
     async def add_buttons(self):
         for emoji in self._reaction_map:
-            await asyncio.sleep(0.25 + random.random() * 0.1)
             await self.message.add_reaction(emoji)
 
     async def on_only_one_page(self):
@@ -200,7 +198,11 @@ class BaseReactionPaginator:
                 await message.clear_reactions()
 
     async def wait_until_ready(self):
-        await self.reactions_done.wait() 
+        await self.reactions_done.wait()
+
+    @property
+    def reaction_help(self):
+        return '\n'.join(f'{em} => {getattr(self, f).__doc__}' for em, f in self._reaction_map.items())
 
 
 class ListPaginator(BaseReactionPaginator):
