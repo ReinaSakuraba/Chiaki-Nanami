@@ -13,6 +13,16 @@ from .errors import InvalidUserArgument
 from .misc import pairwise, parse_int
 
 
+class NoBots(commands.BadArgument):
+    """Exception raised in CheckedMember when the author passes a bot"""
+
+class NoOfflineMembers(commands.BadArgument):
+    """Exception raised in CheckedMember when the author passes a user who is offline"""
+
+class NoSelfArgument(commands.BadArgument):
+    """Exception raised in CheckedMember when the author passes themself as an argument"""
+
+
 # Custom ArgumentParser because the one in argparse raises SystemExit upon failure, 
 # which kills the bot
 class ArgumentParser(argparse.ArgumentParser):
@@ -66,11 +76,11 @@ class CheckedMember(commands.MemberConverter):
     async def convert(self, ctx, arg):
         member = await super().convert(ctx, arg)
         if member.status is discord.Status.offline and not self.offline:
-            raise commands.BadArgument(f'{member} is offline...')
+            raise NoOfflineMembers(f'{member} is offline...')
         if member.bot and not self.bot:
-            raise commands.BadArgument(f"{member} is a bot. You can't use a bot here.")
+            raise NoBots(f"{member} is a bot. You can't use a bot here.")
         if member == ctx.author:
-            raise commands.BadArgument("You can't use yourself. lol.")
+            raise NoSelfArgument("You can't use yourself. lol.")
 
         return member
 
