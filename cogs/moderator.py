@@ -401,7 +401,7 @@ class Moderator:
             return await default_warn()
 
         # warn is too old, ignore it.
-        if (current_time - warn_queue[0][0]).total_seconds() > warn_config['warn_timeout']:
+        if (current_time - warn_queue[0][0]).total_seconds() > warn_config['timeout']:
             return await default_warn()
 
         # Auto-punish the user
