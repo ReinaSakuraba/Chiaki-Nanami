@@ -11,6 +11,8 @@ from discord.ext import commands
 from more_itertools import grouper
 
 
+REGIONAL_INDICATORS = [chr(i + 0x1f1e6) for i in range(26)]
+
 def code_say(bot, msg):
     return bot.say(code_msg(msg))
 
