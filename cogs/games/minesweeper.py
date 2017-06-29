@@ -9,11 +9,13 @@ import time
 
 from datetime import datetime
 from discord.ext import commands
+from string import ascii_lowercase
 
 from .manager import SessionManager
 
 from ..utils.converter import in_, ranged
 from ..utils.database import Database
+from ..utils.misc import REGIONAL_INDICATORS
 from ..utils.paginator import BaseReactionPaginator, page
 
 
@@ -100,9 +102,9 @@ class Board:
         padding = len(str(self.width - 1))
         numbers = ''.join(map(str, range(self.height)))
         board_string = ''# f"Mines: {len(self.mines)}\n"#  {numbers :>{padding + 1}}\n"
-        board_string += '\n'.join([f"`{i :<{padding + 1}}\u200b`{' '.join(map(str, cells))}"
-                                   for i, cells in enumerate(self._board, start=1)])
-        print(len(board_string))
+        board_string += '\n'.join([f"{char}{' '.join(map(str, cells))}"
+                                   for char, cells in zip(REGIONAL_INDICATORS, self._board)])
+        # print(len(board_string))
         #board_string += f"\n  {numbers}"
         return board_string
 
@@ -220,7 +222,7 @@ class Board:
     @classmethod
     def expert(cls):
         """Returns an expert minesweeper board"""
-        return cls(14, 13, 40)
+        return cls(13, 13, 40)
 
 
 class MinesweeperDisplay(BaseReactionPaginator):
@@ -235,11 +237,10 @@ class MinesweeperDisplay(BaseReactionPaginator):
         self.game = game
 
     def _board_repr(self):
-        small_squares = itertools.cycle(('\N{WHITE SMALL SQUARE}', '\N{BLACK SMALL SQUARE}'))
-        top_row = ' '.join(itertools.islice(small_squares, self.board.width))
+        top_row = ' '.join(REGIONAL_INDICATORS[:self.board.width])
         # Discord strips any leading and trailing spaces.
         # By putting a zero-width space we bypass that
-        return f'\u200b     {top_row}\n{self.board}' 
+        return f'\N{BLACK LARGE SQUARE}{top_row}\n{self.board}' 
 
     @staticmethod
     def _possible_spaces():
@@ -323,7 +324,7 @@ class MinesweeperSession:
                 message.author == self.ctx.author)
 
     def parse_message(self, content):
-        splitted = content.split()
+        splitted = content.lower().split()
         chars = len(splitted)
         # print(chars, self.board.width, self.board.height)
         if chars == 2:
@@ -334,9 +335,7 @@ class MinesweeperSession:
             return None
 
         try:
-            # offset for the fact that the board starts at 1
-            x, y = int(splitted[0]) - 1, int(splitted[1]) - 1
-
+            x, y = map(ascii_lowercase.index, splitted[:2])
         except ValueError:
             return None
         else: 
@@ -368,7 +367,8 @@ class MinesweeperSession:
             if parsed is None:      # garbage input, ignore.
                 continue
             x, y, thing = parsed
-            await message.delete()
+            with contextlib.suppress(discord.NotFound):
+                await message.delete()
 
             try:
                 if thing.value:
