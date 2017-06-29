@@ -81,16 +81,13 @@ class Board:
         if mines <= 0:
             raise ValueError("A least one mine is required")
 
-        self._first_step = True
+        self._mine_count = mines
         
         self._board = [[Tile.blank] * width for _ in range(height)]
         self.visible = set()
         self.flags = set()
         self.unsures = set()
-        
-        coords = list(itertools.product(range(self.width), range(self.height)))
-        random.shuffle(coords)
-        self.mines = set(itertools.islice(coords, mines))
+        self.mines = set()
 
     def __contains__(self, xy):
         return 0 <= xy[0] < self.width and 0 <= xy[1] < self.height
@@ -102,11 +99,23 @@ class Board:
         padding = len(str(self.width - 1))
         numbers = ''.join(map(str, range(self.height)))
         board_string = ''# f"Mines: {len(self.mines)}\n"#  {numbers :>{padding + 1}}\n"
-        board_string += '\n'.join([f"{char}{' '.join(map(str, cells))}"
+        board_string += '\n'.join([f"{char} {' '.join(map(str, cells))}"
                                    for char, cells in zip(REGIONAL_INDICATORS, self._board)])
         # print(len(board_string))
-        #board_string += f"\n  {numbers}"
+        # board_string += f"\n  {numbers}"
         return board_string
+
+    def _place_mines_from(self, x, y):
+        click_area = set(self._get_neighbours(x, y)) | {(x, y)}
+
+        coords = list(itertools.filterfalse(click_area.__contains__, 
+                                            itertools.product(range(self.width), range(self.height))))
+        random.shuffle(coords)
+        self.mines = set(itertools.islice(coords, self._mine_count))
+
+        remaining = list(click_area)
+        random.shuffle(remaining)
+        self.mines.update(remaining[:len(self.mines) - self._mine_count])
 
     def is_mine(self, x, y):
         return (x, y) in self.mines
@@ -124,26 +133,17 @@ class Board:
         pairs = ((x + surr_x, y + surr_y) for (surr_x, surr_y) in SURROUNDING)
         return (p for p in pairs if p in self)
 
-    def place_mines(self):
-        del self._num_mines
-
     def show(self, x, y):
+        if not self.mines:
+            self._place_mines_from(x, y)
+
         if self.is_visible(x, y):
             return
 
         self.visible.add((x, y))
         if self.is_mine(x, y) and not self.is_flag(x, y):
-            if not self._first_step:
-                raise HitMine(x, y)
+            raise HitMine(x, y)
 
-            # Add a new mine in the place of the old one.
-            # This is to prevent players from dying on the first go.
-            coords = itertools.product(range(self.width), range(self.height))
-            available_spaces = list(itertools.filterfalse(self.mines.__contains__, coords))
-            self.mines.add(random.choice(available_spaces))
-            self.mines.remove((x, y))
-
-        self._first_step = False
         surrounding = sum(self.is_mine(nx, ny) for nx, ny in self._get_neighbours(x, y))
         if not surrounding:
             self._board[y][x] = Tile.shown
@@ -198,12 +198,16 @@ class Board:
         return len(self._board)
 
     @property
+    def mine_count(self):
+        return len(self.mines) or self._mine_count
+
+    @property
     def mines_marked(self):
         return len(self.flags)
 
     @property
     def remaining_flags(self):
-        return len(self.mines) - self.mines_marked
+        return self.mine_count - self.mines_marked
 
     @property
     def remaining_mines(self):
@@ -240,7 +244,7 @@ class MinesweeperDisplay(BaseReactionPaginator):
         top_row = ' '.join(REGIONAL_INDICATORS[:self.board.width])
         # Discord strips any leading and trailing spaces.
         # By putting a zero-width space we bypass that
-        return f'\N{BLACK LARGE SQUARE}{top_row}\n{self.board}' 
+        return f'\N{BLACK LARGE SQUARE} {top_row}\n{self.board}' 
 
     @staticmethod
     def _possible_spaces():
@@ -268,7 +272,7 @@ class MinesweeperDisplay(BaseReactionPaginator):
         return (discord.Embed(colour=self.context.bot.colour, description=self._board_repr())
                .set_author(name=f'Minesweeper - {board.width} x {board.height}')
                .add_field(name='Player', value=self.context.author)
-               .add_field(name='Mines Found', value=f'{board.mines_marked} / {len(board.mines)}')
+               .add_field(name='Mines Found', value=f'{board.mines_marked} / {board.mine_count}')
                .add_field(name='Flags Remaining', value=board.remaining_flags)
                .add_field(name='\u200b', value='Stuck? Click the \N{INFORMATION SOURCE} reaction for some help.')
                )
@@ -277,13 +281,14 @@ class MinesweeperDisplay(BaseReactionPaginator):
     def help_page(self):
         """Shows this page"""
         self.state = self.State.HELP
-        text = textwrap.dedent('''
+        text = textwrap.dedent(f'''
         Basically the goal is to reveal all of the board and NOT get hit with a mine!
 
         To make a move, send a message in this format:
         ```
-        <x> <y> [f|flag|u|unsure]
+        <column> <row> [f|flag|u|unsure]
         ```
+        Column and row must be from **A-{ascii_lowercase[self.board.width - 1].upper()}**
         Typing `f` or `flag` will mark the tile with a flag.
         Typing `u` or `unsure` will mark the tile as unsure.
         Typing nothing, well you know what it will do.
@@ -326,7 +331,7 @@ class MinesweeperSession:
     def parse_message(self, content):
         splitted = content.lower().split()
         chars = len(splitted)
-        # print(chars, self.board.width, self.board.height)
+
         if chars == 2:
             flag = FlagType.default
         elif chars == 3:
