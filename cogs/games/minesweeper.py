@@ -76,7 +76,7 @@ SURROUNDING = ((-1, -1), (-1,  0), (-1,  1),
 
 class Board:
     def __init__(self, width, height, mines):
-        if mines > width * height:
+        if mines >= width * height:
             raise ValueError(f'Too many mines (expected max {width * height}, got {mines})')
         if mines <= 0:
             raise ValueError("A least one mine is required")
@@ -106,16 +106,17 @@ class Board:
         return board_string
 
     def _place_mines_from(self, x, y):
-        click_area = set(self._get_neighbours(x, y)) | {(x, y)}
+        surrounding = set(self._get_neighbours(x, y))
+        click_area = surrounding | {(x, y)}
 
-        coords = list(itertools.filterfalse(click_area.__contains__, 
-                                            itertools.product(range(self.width), range(self.height))))
-        random.shuffle(coords)
-        self.mines = set(itertools.islice(coords, self._mine_count))
+        possible_coords = itertools.product(range(self.width), range(self.height))
+        coords = [p for p in possible_coords if p not in click_area]
 
-        remaining = list(click_area)
-        random.shuffle(remaining)
-        self.mines.update(remaining[:len(self.mines) - self._mine_count])
+        self.mines = set(random.sample(coords, k=min(self._mine_count, len(coords))))
+        self.mines.update(random.sample(surrounding, self._mine_count - len(self.mines)))
+
+        # All mines should be exhausted, unless we somehow made a malformed board.
+        assert len(self.mines) != self._mine_count
 
     def is_mine(self, x, y):
         return (x, y) in self.mines
@@ -173,9 +174,10 @@ class Board:
     def unsure(self, x, y):
         self._modify_board(x, y, 'unsure')
 
-    def reveal_mines(self):
+    def reveal_mines(self, success=False):
+        tile = Tile.flag if success else Tile.boom
         for mx, my in self.mines:
-            self._board[my][mx] = Tile.boom
+            self._board[my][mx] = tile
 
     def hide_mines(self):
         for mx, my in self.mines:
@@ -393,6 +395,7 @@ class MinesweeperSession:
             else:
                 if self.board.is_solved():
                     colour = 0x00FF00
+                    self.board.reveal_mines(success=True)
                     return time.perf_counter() - start
             finally:
                 await self.edit_board(colour)
@@ -439,7 +442,7 @@ class Minesweeper:
             if time is None:
                 return
 
-            text = f'You beat game in {time: .2f} seconds.'
+            text = f'You beat game in {time :.2f} seconds.'
             win_embed = (discord.Embed(title='A winner is you!', colour=0x00FF00, timestamp=datetime.utcnow(), description=text)
                         .set_thumbnail(url=ctx.author.avatar_url)
                         )
