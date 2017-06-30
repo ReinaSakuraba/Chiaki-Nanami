@@ -298,7 +298,7 @@ class Meta:
                .add_field(name='ID', value=channel.id)
                .add_field(name='Position', value=channel.position)
                .add_field(name='Bitrate', value=channel.bitrate)
-               .add_field(name='Max Members', value=channel.user_limit)
+               .add_field(name='Max Members', value=channel.user_limit or '\N{INFINITY}')
                .add_field(name='Permission Overwrites', value=overwrite_message)
                .set_footer(text='Created')
                )
