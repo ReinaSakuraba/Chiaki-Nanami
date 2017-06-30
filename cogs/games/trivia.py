@@ -10,6 +10,7 @@ import os
 import random
 
 from discord.ext import commands
+from fuzzywuzzy import process
 
 from .manager import SessionManager
 from ..utils.misc import base_filename, emoji_url
@@ -37,9 +38,8 @@ class TriviaSession:
         if m.author.bot:
             return False
         self._answered.set()
-        user_answer = m.content.lower()
-        # Use the bad answer recognition in x^3 for some nice disrespect
-        return any(a.lower() in user_answer for a in self.question.answers)
+        _, ratio = process.extractOne(m.content, self.question.answers)
+        return ratio >= 85
 
     def _question_embed(self, n):
         leader = self.leader
@@ -71,7 +71,7 @@ class TriviaSession:
             self.question = self.next_question()
             await self.ctx.send(embed=self._question_embed(q))
             try:
-                msg = await self.ctx.bot.wait_for('message', timeout=10, check=self._check_answer)
+                msg = await self.ctx.bot.wait_for('message', timeout=20, check=self._check_answer)
             except asyncio.TimeoutError:
                 await self.ctx.send(embed=self._timeout_embed(self.question.answers[0]))
             else:
@@ -98,6 +98,8 @@ class TriviaSession:
             # When TimeoutError is raised in the second coro, it doesn't stop the
             # asyncio.wait due to the return_when kwarg.
             self._runner.cancel()
+            # Also for some reason the timeout check task doesn't get cancelled.
+            pending.pop().cancel()
 
     def stop(self, force=False):
         self._runner.cancel()
@@ -173,7 +175,7 @@ class Trivia:
                .add_field(name=field_name, value=message)
                )
 
-    @commands.group(invoke_without_command=True)
+    @commands.group(aliases=['t'], invoke_without_command=True)
     async def trivia(self, ctx, category):
         """It's trivia..."""
         if self.manager.session_exists(ctx.channel):
