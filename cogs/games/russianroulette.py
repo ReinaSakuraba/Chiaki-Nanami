@@ -19,6 +19,7 @@ class RussianRouletteSession:
     def __init__(self, ctx):
         self.context = ctx
         self.players = deque()
+
         self._running = False
         self._full = asyncio.Event()
         self._required_message = f'{ctx.prefix}click'
@@ -64,6 +65,7 @@ class RussianRouletteSession:
             
             await send(f'Alright {current.mention}, it is now your turn. '
                        f'Type `{self._required_message}` to pull the trigger...')
+
             try:
                 message = await wait_for('message', timeout=30, check=check)
             except asyncio.TimeoutError:
@@ -81,14 +83,14 @@ class RussianRouletteSession:
             await send(f'{current.mention} lives to see another day...')
             self.players.append(current)
 
-        await asyncio.sleep(random.uniform(1, 2))
-
     async def run(self):
         with contextlib.suppress(asyncio.TimeoutError):
             await self.wait_until_full()
 
         self._check_number_players()
         await self._loop()
+
+        await asyncio.sleep(random.uniform(1, 2))
         return self.players.popleft()
 
 
@@ -108,6 +110,7 @@ class RussianRoulette:
                                f'type {ctx.prefix}{ctx.invoked_with} to join')
                 winner = await inst.run()
             await ctx.send(f'{winner.mention} is the lone survivor. Congratulations...')
+
         else:
             session.add_member_checked(ctx.author)
             await ctx.send(f'Alright {ctx.author.mention}. Good luck.')
