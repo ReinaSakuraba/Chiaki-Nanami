@@ -376,6 +376,7 @@ class Moderator:
     @checks.is_mod()
     async def warn(self, ctx, member: discord.Member, *, reason: str):
         """Warns a user (obviously)"""
+        self._check_user(ctx, member)
         author, current_time = ctx.author, ctx.message.created_at
         warn_queue = self.warn_log[_member_key(member)]
         warn_queue.append((current_time, author.id, reason))
@@ -417,6 +418,7 @@ class Moderator:
     @commands.command(name='clearwarns')
     @checks.is_mod()
     async def clear_warns(self, ctx, member: discord.Member):
+        """Clears a member's warns."""
         self.warn_log[_member_key(member)].clear()
         await ctx.send(f"{member}'s warns have been reset!")
 
@@ -514,6 +516,7 @@ class Moderator:
     @checks.mod_or_permissions(manage_roles=True)
     async def mute(self, ctx, member: discord.Member, duration: duration, *, reason: str=None):
         """Mutes a user (obviously)"""
+        self._check_user(ctx, member)
         when = datetime.utcnow() + timedelta(seconds=duration)
         await self._default_mute_command(ctx, member, when.timestamp(), duration=duration, reason=reason)
 
