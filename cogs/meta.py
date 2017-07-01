@@ -167,7 +167,7 @@ class Meta:
                        .add_field(name='Created by', value=str(creator))
                        .add_field(name='Servers', value=len(self.bot.guilds))
                        .add_field(name='Modules', value=extension_stats)
-                       .add_field(name='CPU Usage', value=f'{cpu_usage}%\n{memory_usage_in_mb: .2f}MB')
+                       .add_field(name='CPU Usage', value=f'{cpu_usage}%\n{memory_usage_in_mb :.2f}MB')
                        .add_field(name='Commands', value=command_stats)
                        .add_field(name='Uptime', value=self.bot.str_uptime.replace(', ', '\n'))
                        .set_footer(text=f'Made with discord.py {discord.__version__} | Python {python_version}')
