@@ -225,14 +225,14 @@ class Moderator:
                 return await ctx.send(message)
 
             self.slowusers[_member_key(member)] = duration
-            await ctx.send('{member.mention} is now in slowmode! They must wait {duration} '
-                           'between each message they send.')
+            await ctx.send(f'{member.mention} is now in slowmode! They must wait {duration} '
+                            'between each message they send.')
         else:
             channel = ctx.channel
             current_slowmode = self.slowmodes.get(channel)
             if current_slowmode and current_slowmode.no_immune:
-                return await ctx.send('{channel.mention} is already in **no-immune** slowmode. '
-                                      'You need to turn it off first.')
+                return await ctx.send(f'{channel.mention} is already in **no-immune** slowmode. '
+                                       'You need to turn it off first.')
 
             self.slowmodes[ctx.channel] = SlowmodeEntry(duration, False)
             await ctx.send(f'{channel.mention} is now in slowmode! '
@@ -263,11 +263,11 @@ class Moderator:
         if member is None:
             member = ctx.channel
             del self.slowmodes[member]
-            del self.slowmode_bucket[member]
+            self.slowmode_bucket.pop(member, None)
         else:
             key = _member_key(member)
             del self.slowusers[key]
-            del self.slowuser_bucket[key]
+            self.slowuser_bucket(key, None)
         await ctx.send(f'{member.mention} is no longer in slowmode... \N{SMILING FACE WITH OPEN MOUTH AND COLD SWEAT}')
 
     @commands.command()
