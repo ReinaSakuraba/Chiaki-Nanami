@@ -44,7 +44,7 @@ _perm_set_command_help = _make_doc('a command', extra=('This will affect aliases
 class Level(enum.Enum):
     user        = (discord.Member, '({0.guild.id}, {0.author.id})'.format, False, )
     # higher roles should be prioritised
-    role        = (discord.Role, lambda ctx: reversed([role.id for role in ctx.author.roles]), False, )
+    role        = (discord.Role, lambda ctx: (role.id for role in sorted(ctx.author.roles, reverse=False)), False, )
     channel     = (discord.TextChannel, attrgetter('channel.id'), None, )
     server      = (discord.Guild, attrgetter('guild.id'), True, )
 
