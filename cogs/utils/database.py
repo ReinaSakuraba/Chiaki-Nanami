@@ -10,7 +10,7 @@ from .misc import file_handler
 from .transformdict import IDAbleDict
 
 DATA_PATH = 'data/'
-DB_PATH = DATA_PATH + 'databases/'
+DB_PATH = 'databases/'
 
 log = logging.getLogger(f"chiaki-{__name__}")
 log.addHandler(file_handler('databases'))

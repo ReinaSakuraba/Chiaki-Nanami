@@ -166,7 +166,7 @@ def _load_hangman(filename):
 
 class Hangman:
     """So you don't have to hang people in real life."""
-    FILE_PATH = os.path.join('.', 'data', 'games', 'hangman')
+    FILE_PATH = os.path.join('.', 'data', 'words')
 
     def __init__(self, bot):
         self.bot = bot
