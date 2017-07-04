@@ -69,10 +69,10 @@ class RacingSession:
     async def add_member_checked(self, member):
         if self.running:
             return await self.ctx.send('You were a little late to the party!')
-        if self.already_joined(ctx.author):
+        if self.already_joined(member):
             return await self.ctx.send("You're already in the race!")
 
-        self.add_member(ctx.author)
+        self.add_member(member)
         return await self.ctx.send(f"Okay, {member.mention}. Good luck!")
 
     def already_joined(self, m):
