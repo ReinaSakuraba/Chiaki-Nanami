@@ -91,13 +91,6 @@ async def read_image_from_url(url):
         async with session.get(url) as resp:
             return await resp.read()
 
-async def chunk_image_from_url(url, chunk_size=1024):
-    while True:
-        chunk = await resp.content.read(chunk_size)
-        if not chunk:
-            break
-        yield chunk
-
 @async_cache(maxsize=16384)
 async def _dominant_color_from_url(url):
     """Returns an rgb tuple consisting the dominant color given a image url."""
