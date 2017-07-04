@@ -1,5 +1,7 @@
+import asyncio
 import functools
 import inspect
+import json
 import logging
 import os
 import random
@@ -91,3 +93,12 @@ async def maybe_awaitable(func, *args, **kwargs):
 def role_name(member, role):
     name = str(role)
     return f'**{escape_markdown(name)}**' if role in member.roles else name
+
+async def load_async(filename, loop=None):
+    loop = loop or asyncio.get_event_loop()
+
+    def nobody_kanna_cross_it():
+        with open(filename, encoding='utf-8') as f:
+            return json.load(f)
+
+    return await loop.run_in_executor(None, nobody_kanna_cross_it)

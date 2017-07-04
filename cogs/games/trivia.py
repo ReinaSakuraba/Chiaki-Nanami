@@ -13,7 +13,7 @@ from discord.ext import commands
 from fuzzywuzzy import process
 
 from .manager import SessionManager
-from ..utils.misc import base_filename, emoji_url
+from ..utils.misc import base_filename, emoji_url, load_async
 from ..utils.paginator import EmbedFieldPages
 
 
@@ -117,11 +117,6 @@ class TriviaSession:
         return self.scoreboard.most_common()
 
 
-def _load_json(file):
-    with open(file) as f:
-        return json.load(f)
-
-
 class Trivia:
     """It's trivia and stuff"""
     FILE_PATH = os.path.join('.', 'data', 'games', 'trivia')
@@ -142,7 +137,6 @@ class Trivia:
         return self.default_categories
 
     async def _load_categories(self):
-        load_async = functools.partial(self.bot.loop.run_in_executor, None, _load_json)
         files = glob.glob(f'{self.FILE_PATH}/*.json')
         load_tasks = (load_async(name) for name in files)
         file_names = (base_filename(name) for name in files)
