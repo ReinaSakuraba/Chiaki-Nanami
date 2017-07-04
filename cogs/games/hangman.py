@@ -14,7 +14,7 @@ from discord.ext import commands
 from .manager import SessionManager
 
 from ..utils import errors
-from ..utils.misc import base_filename, escape_markdown, group_strings, load_async, truncate
+from ..utils.misc import base_filename, escape_markdown, group_strings, truncate
 from ..utils.paginator import ListPaginator
 
 
@@ -179,6 +179,7 @@ class Hangman:
         self.manager.cancel_all()
 
     async def _load_categories(self):
+        load_async = functools.partial(self.bot.loop.run_in_executor, None, _load_hangman)
         files = glob.glob(f'{self.FILE_PATH}/*.txt')
         load_tasks = (load_async(name) for name in files)
         file_names = (base_filename(name) for name in files)
