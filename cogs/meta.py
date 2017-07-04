@@ -324,19 +324,24 @@ class Meta:
         highest_role = server.role_hierarchy[0]
         description = f"Owned by {server.owner}"
         features = '\n'.join(server.features) or 'None'
-        counts = (f'{len(getattr(server, thing))} {thing}' for thing in ('channels', 'roles', 'emojis'))
+        counts = (f'{len(getattr(server, thing))} {thing.title()}' for thing in ('channels', 'roles', 'emojis'))
 
-        statuses = collections.OrderedDict.fromkeys(['online', 'idle', 'dnd', 'offline'], 0)
-        statuses.update(collections.Counter(m.status.name for m in server.members))
-        statuses['bots'] = sum(m.bot for m in server.members)
+        statuses = collections.OrderedDict.fromkeys(['Online', 'Idle', 'Dnd', 'Offline'], 0)
+        statuses.update(collections.Counter(m.status.name.title() for m in server.members if not m.bot))
+        statuses['DND'] = statuses.pop('Dnd')
+        statuses.move_to_end('Offline')
+        statuses['Bots'] = sum(m.bot for m in server.members)
         member_stats = '\n'.join(starmap('{1} {0}'.format, statuses.items()))
 
-        server_embed = (discord.Embed(title=server.name, description=description, timestamp=server.created_at)
-                       .add_field(name="Default Channel", value=server.default_channel.mention)
+        explicit_filter = server.explicit_content_filter.name.title().replace('_', ' ')
+
+        server_embed = (discord.Embed(description=description, timestamp=server.created_at)
+                       .set_author(name=server.name)
+                       .add_field(name="Default Channel", value=f'#{server.default_channel}')
                        .add_field(name="Highest Role", value=highest_role)
                        .add_field(name="Region", value=server.region.value.title())
-                       .add_field(name="Verification Level", value=server.verification_level)
-                       .add_field(name="Explicit Content Filter", value=server.explicit_content_filter)
+                       .add_field(name="Verification Level", value=server.verification_level.name.title())
+                       .add_field(name="Explicit Content Filter", value=explicit_filter)
                        .add_field(name="Special Features", value=features)
                        .add_field(name='Counts', value='\n'.join(counts))
                        .add_field(name=f'{len(server.members)} Members', value=member_stats)
