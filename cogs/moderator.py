@@ -6,7 +6,7 @@ import itertools
 import json
 import os
 
-from collections import defaultdict, deque, namedtuple
+from collections import Counter, defaultdict, deque, namedtuple
 from datetime import datetime, timedelta
 from discord.ext import commands
 from operator import attrgetter, contains, itemgetter
@@ -362,7 +362,59 @@ class Moderator:
         is_plural = 's'*(deleted_count != 1)
         await ctx.send(f"Deleted {deleted_count} message{is_plural} successfully!", delete_after=1.5)
 
+    @commands.command(aliases='clean')
+    @commands.guild_only()
+    @checks.mod_or_permissions(manage_messages=True)
+    async def cleanup(self, ctx, limit=100):
+        """Cleans up my messages from the channel.
+
+        If I have the Manage Messages and Read Message History perms, I can also
+        try to delete messages that look like they invoked my commands.
+
+        When I'm done cleaning up. I will show the stats of whose messages got deleted
+        and how many. This should give you an idea as to who are spamming me.
+
+        You can also use this if `{prefix}clear` fails.
+        """
+
+        prefixes = await ctx.bot.get_prefix(ctx.message)
+        bot_id = ctx.bot.user.id
+
+        bot_perms = ctx.channel.permissions_for(ctx.me)
+        can_bulk_delete = bot_perms.manage_messages and bot_perms.read_message_history
+
+        if can_bulk_delete:
+            def is_possible_command_invoke(m):
+                if m.author.id == bot_id:
+                    return True
+                return m.content.startswith(prefixes) and not m.content[1:2].isspace()
+
+            deleted = await ctx.channel.purge(limit=limit, before=ctx.message, check=is_possible_command_invoke)
+            spammers = Counter(str(m.author) for m in deleted)
+        else:
+            # We can only delete the bot's messages, because trying to delete
+            # other users' messages without Manage Messages will raise an error.
+            # Also we can't use bulk-deleting for the same reason.
+            counter = 0
+            async for m in ctx.history(limit=limit, before=ctx.message):
+                if m.author.id == bot_id:
+                    await m.delete()
+                    counter += 1
+            spammers = Counter({ctx.me.display_name: counter})
+
+        deleted = sum(spammers.values())
+        second_part = 's was' if deleted == 1 else ' were'
+        title = f'{deleted} messages{second_part} removed.'
+        joined = '\n'.join(itertools.starmap('**{0}**: {1}'.format, spammers.most_common()))
+        spammer_stats = joined or discord.Embed.Empty
+
+        embed = (discord.Embed(colour=0x00FF00, description=spammer_stats, timestamp=ctx.message.created_at)
+                .set_author(name=title)
+                )
+        await ctx.send(embed=embed)
+
     @clear.error
+    @cleanup.error
     async def clear_error(self, ctx, error):
         # We need to use the __cause__ because any non-CommandErrors will be 
         # wrapped in CommandInvokeError
@@ -370,7 +422,8 @@ class Moderator:
         if isinstance(cause, discord.Forbidden):
             await ctx.send("I need the Manage Messages perm to clear messages.")
         elif isinstance(cause, discord.HTTPException):
-            await ctx.send("Couldn't delete the messages for some reason...")
+            await ctx.send("Couldn't delete the messages for some reason... Here's the error:\n"
+                          f"```py\n{type(cause).__name__}: {cause}```")
 
     @commands.command()
     @checks.is_mod()
@@ -414,6 +467,8 @@ class Moderator:
         punish = punishment['punish']
         await ctx.invoke(getattr(self, punish), *args, reason=reason + f'\n({ordinal(current_warn_num)} warning)')
         check_warn_num()
+
+    # XXX: Should this be a group?
 
     @commands.command(name='clearwarns')
     @checks.is_mod()
