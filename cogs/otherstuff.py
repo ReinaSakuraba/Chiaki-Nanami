@@ -9,12 +9,14 @@ import sys
 import time
 
 from collections import namedtuple
+from contextlib import suppress
 from datetime import datetime
 from discord.ext import commands
+from more_itertools import always_iterable
 
 from .utils import errors
 from .utils.compat import user_colour
-from .utils.misc import emoji_url
+from .utils.misc import emoji_url, load_async
 
 
 # ---------------- Ship-related utilities -------------------
@@ -60,50 +62,62 @@ class ShipRating(namedtuple('ShipRating', 'value comment')):
         return super().__new__(cls, value, comment) 
 
 _special_pairs = {
-    # frozenset((239110748180054017, 192060404501839872)) : ShipRating(100, 'testing special pairs')
 }
 
-@functools.lru_cache(maxsize=2 ** 20)
-def _calculate_compatibilty(info_pair):
-    # This has to be stored as a frozenset pair to make sure that
-    # switching the two users doesn't affect the result
+def _get_special_pairing(user1, user2):
+    keys = f'{user1.id}/{user2.id}', f'{user2.id}/{user1.id}'
+
+    # Don't wanna use more_itertools.first_true because of its dumb signature
+    result = next(filter(None, map(_special_pairs.get, keys)), None)
+    if result is None:
+        return result
+
+    value = result.get('value', random.randrange(101))
 
     try:
-        info1, info2 = info_pair
-    except ValueError:
-        # User inputted themself as the second argument
-        if len(info_pair) == 1:
-            info1, = info_pair
-            return ShipRating(0, f"RIP {info1.name}. They're forever alone.")
-        raise
+        comment = random.choice(always_iterable(result.get('comments')))
+    except IndexError:      # most likely no comment field was specified
+        comment = None
 
-    id_pair = frozenset((info1.id, info2.id))
-    if id_pair in _special_pairs:
-        return _special_pairs[id_pair]
+    return ShipRating(value=value, comment=comment)
 
-    return ShipRating(random.randrange(101))
+
+@functools.lru_cache(maxsize=2 ** 20)
+def _calculate_compatibilty(pair):
+    # This has to be stored as a frozenset pair to make sure that
+    # switching the two users doesn't affect the result
+    if len(pair) == 1:
+        info1, = pair
+        return ShipRating(0, f"RIP {info1.name}. They're forever alone.")
+
+    info1, info2 = pair
+
+    special = _get_special_pairing(info1, info2)
+    return special or ShipRating(random.randrange(101))
 
 #--------------- End ship stuffs ---------------------
 
 TEN_SEC_REACTION = '\N{BLACK SQUARE FOR STOP}'
+
 
 class OtherStuffs:
     def __init__(self, bot):
         self.bot = bot
         self.last_messages = {}
         self.default_time = datetime.utcnow()
-        self.bot.loop.create_task(self._load_pastas())
+        self.bot.loop.create_task(self._load())
 
     def __unload(self):
         # unload the cache if necessary...
         _calculate_compatibilty.cache_clear()
         pass
 
-    async def _load_pastas(self):
-        def nobody_kanna_cross_it():
-            with open(os.path.join('data', 'copypastas.json'), encoding='utf-8') as f:
-                return json.load(f)
-        self.copypastas = await self.bot.loop.run_in_executor(None, nobody_kanna_cross_it)
+    async def _load(self):
+        global _special_pairs
+        self.copypastas = await load_async(os.path.join('data', 'copypastas.json'))
+
+        with suppress(FileNotFoundError):
+            _special_pairs  = await load_async(os.path.join('data', 'pairings.json'))
 
     @commands.group(invoke_without_command=True, aliases=['c+v'])
     async def copypasta(self, ctx, index: int, *, name=None):
