@@ -225,7 +225,7 @@ class Moderator:
                 return await ctx.send(message)
 
             self.slowusers[_member_key(member)] = duration
-            await ctx.send(f'{member.mention} is now in slowmode! They must wait {duration} '
+            await ctx.send(f'{member.mention} is now in slowmode! They must wait {duration_units(duration)} '
                             'between each message they send.')
         else:
             channel = ctx.channel
@@ -236,7 +236,7 @@ class Moderator:
 
             self.slowmodes[ctx.channel] = SlowmodeEntry(duration, False)
             await ctx.send(f'{channel.mention} is now in slowmode! '
-                            'Everyone must wait {duration} between each message they send.')
+                           f'Everyone must wait {duration_units(duration)} between each message they send.')
 
     @slowmode.command(name='noimmune', aliases=['n-i'], invoke_without_command=True)
     @checks.mod_or_permissions(manage_messages=True)
@@ -271,6 +271,7 @@ class Moderator:
         await ctx.send(f'{member.mention} is no longer in slowmode... \N{SMILING FACE WITH OPEN MOUTH AND COLD SWEAT}')
 
     @commands.command()
+    @checks.mod_or_permissions(manage_messages=True)
     async def slowoff(self, ctx, *, member: discord.Member=None):
         """Alias for `{prefix}slowmode off`"""
         await ctx.invoke(self.slowmode_off, member=member)

@@ -63,8 +63,18 @@ def duration_units(secs):
     h, m = divmod(m, 60)
     d, h = divmod(h, 24)
     w, d = divmod(d, 7)
-    unit_list = [(w, 'weeks'), (d, 'days'), (h, 'hours'), (m, 'mins'), (s, 'seconds')]
-    return ', '.join([f"{round(n)} {u}" for n, u in unit_list if n])
+    # Weeks, days, hours, and minutes are guaranteed to be integral due to being
+    # the quotient rather than the remainder, so these can be safely made to ints.
+    # The reason for the int cast is because of the seconds is a float.
+    # The other units will be floats too.
+    unit_list = [(int(w), 'weeks'), (int(d), 'days'), (int(h), 'hours'), (int(m), 'mins')]
+    joined = ', '.join([f"{n} {u}" for n, u in unit_list if n])
+    if s:
+        if joined:
+            joined += ', '
+    s = round(s, 2) if s % 1 else int(s)
+    joined += f'{s} seconds'
+    return joined
 
 def ordinal(num):
     # pay no attention to this ugliness
