@@ -65,15 +65,15 @@ def duration_units(secs):
     w, d = divmod(d, 7)
     # Weeks, days, hours, and minutes are guaranteed to be integral due to being
     # the quotient rather than the remainder, so these can be safely made to ints.
-    # The reason for the int cast is because of the seconds is a float.
-    # The other units will be floats too.
+    # The reason for the int cast is because if the seconds is a float,
+    # the other units will be floats too.
     unit_list = [(int(w), 'weeks'), (int(d), 'days'), (int(h), 'hours'), (int(m), 'mins')]
     joined = ', '.join([f"{n} {u}" for n, u in unit_list if n])
     if s:
         if joined:
             joined += ', '
-    s = round(s, 2) if s % 1 else int(s)
-    joined += f'{s} seconds'
+        s = round(s, 2) if s % 1 else int(s)
+        joined += f'{s} seconds'
     return joined
 
 def ordinal(num):
