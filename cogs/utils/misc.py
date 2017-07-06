@@ -43,7 +43,7 @@ def str_join(delim, iterable):
     return delim.join(map(str, iterable))
 
 def group_strings(string, n):
-    return map(''.join, grouper(string, n, ''))
+    return map(''.join, grouper(n, string, ''))
 
 def pairwise(t):
     it = iter(t)
