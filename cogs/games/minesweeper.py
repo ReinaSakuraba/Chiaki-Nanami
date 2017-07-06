@@ -116,7 +116,7 @@ class Board:
         self.mines.update(random.sample(surrounding, self._mine_count - len(self.mines)))
 
         # All mines should be exhausted, unless we somehow made a malformed board.
-        assert len(self.mines) != self._mine_count
+        assert len(self.mines) == self._mine_count, f"only {len(self.mines)} mines were placed"
 
     def is_mine(self, x, y):
         return (x, y) in self.mines
