@@ -4,6 +4,7 @@ import inspect
 import re
 
 from collections import namedtuple
+from contextlib import suppress
 from discord.ext import commands
 from functools import partial
 from more_itertools import ilen
@@ -26,6 +27,11 @@ class NoSelfArgument(commands.BadArgument):
 # Custom ArgumentParser because the one in argparse raises SystemExit upon failure, 
 # which kills the bot
 class ArgumentParser(argparse.ArgumentParser):
+    def parse_args(self, args):
+        with contextlib.suppress(SystemExit):
+            return super().parse_args(args)
+        return None
+
     def error(self, message):
         raise commands.BadArgument(f'Failed to parse args.```\n{message}```')
 
