@@ -51,6 +51,14 @@ class MemberID(union):
             return obj
         return member
 
+def positive_duration(arg):
+    amount = duration(arg)
+    if amount <= 0:
+        rounded = round(amount, 2) if amount % 1 else int(amount)
+        raise commands.BadArgument(f"I can't go forward {rounded} seconds. "
+                                    "Do you want me to go back in time or something?")
+    return amount
+
 
 ModAction = namedtuple('ModAction', 'repr emoji colour')
 mod_action_types = {
@@ -205,9 +213,11 @@ class Moderator:
 
         await self._delete_if_rate_limited(self.slowuser_bucket, key, duration, message)
 
+
+
     @commands.group(invoke_without_command=True)
     @checks.mod_or_permissions(manage_messages=True)
-    async def slowmode(self, ctx, duration: duration, *, member: discord.Member=None):
+    async def slowmode(self, ctx, duration: positive_duration, *, member: discord.Member=None):
         """Puts a thing in slowmode.
 
         An optional member argument can be provided. If it's given, it puts only 
@@ -216,6 +226,7 @@ class Moderator:
         Those with a slowmode-immune role will not be affected. 
         If you want to put them in slowmode too, use `{prefix}slowmode noimmune`
         """
+
         if member is not None:
             if self._is_slowmode_immune(member):
                 message = (f"{member} is immune from slowmode due to having a "
@@ -238,15 +249,18 @@ class Moderator:
             await ctx.send(f'{channel.mention} is now in slowmode! '
                            f'Everyone must wait {duration_units(duration)} between each message they send.')
 
-    @slowmode.command(name='noimmune', aliases=['n-i'], invoke_without_command=True)
+    @slowmode.command(name='noimmune', aliases=['n-i'])
     @checks.mod_or_permissions(manage_messages=True)
-    async def slowmode_no_immune(self, ctx, duration: duration, *, member: discord.Member=None):
+    async def slowmode_no_immune(self, ctx, duration: positive_duration, *, member: discord.Member=None):
         """Puts the channel or member in "no-immune" slowmode.
 
         Unlike `{prefix}slowmode`, no one is immune to this slowmode,
         even those with a slowmode-immune role, which means everyone's messages
         will be deleted if they are within the duration given.
         """
+        if duration <= 0:
+            return await ctx.send(f"I can't put this in slowmode for {duration} seconds. "
+                                   "Do you want me to go back in time or something?")
         if member is None:
             member, pronoun = ctx.channel, 'Everyone'
             self.slowmodes[member] =  SlowmodeEntry(duration, True)
@@ -570,7 +584,7 @@ class Moderator:
 
     @commands.command()
     @checks.mod_or_permissions(manage_roles=True)
-    async def mute(self, ctx, member: discord.Member, duration: duration, *, reason: str=None):
+    async def mute(self, ctx, member: discord.Member, duration: positive_duration, *, reason: str=None):
         """Mutes a user (obviously)"""
         self._check_user(ctx, member)
         when = datetime.utcnow() + timedelta(seconds=duration)
@@ -663,7 +677,7 @@ class Moderator:
 
     @commands.command(aliases=['tb'])
     @checks.mod_or_permissions(ban_members=True)
-    async def tempban(self, ctx, member: discord.Member, duration: duration, *, reason: str=None):
+    async def tempban(self, ctx, member: discord.Member, duration: positive_duration, *, reason: str=None):
         """Temporarily bans a user (obviously)"""
 
         self._check_user(ctx, member)
