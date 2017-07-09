@@ -16,7 +16,7 @@ def special_message(message):
     return message if '{user}' in message else f'{{user}}{message}'
 
 def welcome_leave_message_check():
-    return checks.admin_or_permissions(manag_guild=True)
+    return checks.admin_or_permissions(manage_guild=True)
 
 
 class LowerRole(commands.RoleConverter):
@@ -203,7 +203,7 @@ class Admin:
         await ctx.send(f"Successfully removed **{role}** from {user}, I think.")
 
     @commands.command(name='createrole', aliases=['crr'])
-    @checks.is_admin()
+    @checks.admin_or_permissions(manage_roles=True)
     async def create_role(self, ctx, *args: str):
         """Creates a role with some custom arguments:
 
@@ -217,10 +217,11 @@ class Admin:
         Permissions of the new role. Default is no permissions (0).
 
         `-h / --hoist`
-        Whether or not the role can be displayed separately. Default is false.
+        Whether or not the role can be displayed separately. This is a flag. If it's not specified, it's False.
 
         `-m / --mentionable`
-        Whether or not the role can be mentioned. Default is false.
+        Whether or not the role can be mentioned. This is a flag. If it's not specified , it's False.
+
 
         """
         author, guild = ctx.author, ctx.guild
@@ -228,7 +229,7 @@ class Admin:
         parser = ArgumentParser(description='Just a random role thing')
         parser.add_argument('name')
         parser.add_argument('-c', '--color', '--colour', nargs='?', default='#000000')
-        parser.add_argument('--permissions', '--perms', nargs='+', type=int, default=0)
+        parser.add_argument('--permissions', '--perms', nargs='?', type=int, default=0)
         parser.add_argument('--hoist', action='store_true')
         parser.add_argument('-m', '--mentionable', action='store_true')
 
@@ -255,7 +256,7 @@ class Admin:
         await ctx.send(f"Successfully created **{args.name}**!")
 
     @commands.command(name='editrole', aliases=['er'])
-    @checks.is_admin()
+    @checks.admin_or_permissions(manage_roles=True)
     async def edit_role(self, ctx, old_role: LowerRole, *args: str):
         """Edits a role with some custom arguments:
 
@@ -272,7 +273,7 @@ class Admin:
         Whether or not the role can be displayed separately. Default is false.
 
         `-m / --mentionable`
-        Whether or not the role can be mentioned. Default is false.
+        Whether or not the role can be mentioned. This is a flag. If it's not added, it's False.
 
         `--pos, --position`
         The new position of the role. This cannot be zero.
@@ -282,8 +283,8 @@ class Admin:
         parser.add_argument('-n', '--name', nargs='?', default=old_role.name)
         parser.add_argument('-c', '--color', '--colour', nargs='?', default=str(old_role.colour))
         parser.add_argument('--permissions', '--perms', nargs='+', type=int, default=old_role.permissions.value)
-        parser.add_argument('--hoist', action='store_true')
-        parser.add_argument('-m', '--mentionable', action='store_true')
+        parser.add_argument('--hoist', nargs='?', default=old_role.hoist)
+        parser.add_argument('-m', '--mentionable', nargs='?', default=old_role.mentionable)
         parser.add_argument('--pos', '--position', nargs='?', type=int, default=old_role.position)
 
         args = parser.parse_args(args)
@@ -301,16 +302,16 @@ class Admin:
             'permissions': permissions,
             'hoist': args.hoist,
             'mentionable': args.mentionable,
-            'position': args.position,
+            'position': args.pos,
         }
 
         with redirect_exception((discord.Forbidden, "I need the **Manage Roles** perm to edit roles, I think."),
-                                (discord.HTTPException, f"Editing role **{role.name}** failed, for some reason.")):
+                                (discord.HTTPException, f"Editing role **{old_role.name}** failed, for some reason.")):
             await old_role.edit(**fields)
         await ctx.send(f"Successfully edited **{old_role}**!")
 
     @commands.command(name='deleterole', aliases=['delr'])
-    @checks.is_admin()
+    @checks.admin_or_permissions(manage_roles=True)
     async def delete_role(self, ctx, *, role: LowerRole):
         """Deletes a role from the server
 
