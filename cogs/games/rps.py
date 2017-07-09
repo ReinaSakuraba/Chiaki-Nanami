@@ -31,7 +31,6 @@ class RockPaperScissors:
 
     @staticmethod
     def _cmp(elem1, elem2, counters):
-        print(elem1, elem2)
         lowered1, lowered2 = elem1.lower(), elem2.lower()
 
         if lowered1 == lowered2:
