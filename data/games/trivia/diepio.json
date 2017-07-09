@@ -384,6 +384,68 @@
             "answers" : [
                 "Vertically"
             ]
+        },
+        {
+            "question" : "In an **all-round build**, what's the maximum number of points you can put in each stat?",
+            "answers" : [
+                "4",
+                "Four"
+            ]
+        },
+        {
+            "question" : "The \"dragon\" is a build that has zero bullet speed (but max bullet stats otherwise). What tank is commonly used for a dragon build?",
+            "answers" : [
+                "Fighter"
+            ]
+        },
+        {
+            "question" : "What colour is a contested Dominator?",
+            "answers" : [
+                "yellow"
+            ]
+        },
+        {
+            "question" : "In sandbox, what class comes **after** Mothership?",
+            "answers" : [
+                "Manager"
+            ]
+        },
+        {
+            "question" : "In sandbox, what class comes **after** Mothership?",
+            "answers" : [
+                "Manager"
+            ]
+        },
+        {
+            "question" : "What tank has the most barrels?",
+            "answers" : [
+                "Spread Shot"
+            ]
+        },
+        {
+            "question" : "What score do you need to reach level 15?",
+            "answers" : [
+                "787"
+            ]
+        },
+        {
+            "question" : "What score do you need to reach level 30?",
+            "answers" : [
+                "6184"
+            ]
+        },
+        {
+            "question" : "What score do you need to reach level 45?",
+            "answers" : [
+                "23536"
+            ]
+        },
+        {
+            "question" : "How many tanks were there in the very first version of Diep.io?",
+            "answers" : [
+                "3",
+                "three"
+            ]
         }
     ]
 }
