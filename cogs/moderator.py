@@ -213,8 +213,6 @@ class Moderator:
 
         await self._delete_if_rate_limited(self.slowuser_bucket, key, duration, message)
 
-
-
     @commands.group(invoke_without_command=True)
     @checks.mod_or_permissions(manage_messages=True)
     async def slowmode(self, ctx, duration: positive_duration, *, member: discord.Member=None):
