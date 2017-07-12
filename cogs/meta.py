@@ -17,7 +17,7 @@ from math import log10
 from operator import attrgetter, itemgetter
 
 from .utils import converter
-from .utils.compat import grouper, ilen, url_color, user_color
+from .utils.compat import url_color, user_color
 from .utils.context_managers import redirect_exception, temp_message
 from .utils.converter import BotCommand, union
 from .utils.errors import InvalidUserArgument, ResultsNotFound
@@ -26,7 +26,8 @@ from .utils.misc import (
 )
 from .utils.paginator import BaseReactionPaginator, ListPaginator, page
 
-def _join_and(items, *, conjunction='and'):
+
+def join_and(items, *, conjunction='and'):
     if not items:
         return ''
     return f"{', '.join(items[:-1])} {conjunction} {items[-1]}" if len(items) != 1 else items[0]
@@ -166,7 +167,7 @@ class Meta:
                        .add_field(name='Created by', value=str(creator))
                        .add_field(name='Servers', value=len(self.bot.guilds))
                        .add_field(name='Modules', value=extension_stats)
-                       .add_field(name='CPU Usage', value=f'{cpu_usage}%\n{memory_usage_in_mb: .2f}MB')
+                       .add_field(name='CPU Usage', value=f'{cpu_usage}%\n{memory_usage_in_mb :.2f}MB')
                        .add_field(name='Commands', value=command_stats)
                        .add_field(name='Uptime', value=self.bot.str_uptime.replace(', ', '\n'))
                        .set_footer(text=f'Made with discord.py {discord.__version__} | Python {python_version}')
@@ -275,7 +276,7 @@ class Meta:
     def text_channel_embed(channel):
         topic = '\n'.join(group_strings(channel.topic, 70)) if channel.topic else discord.Embed.Empty
         member_count = len(channel.members)
-        empty_overwrites = ilen(ow for _, ow in channel.overwrites if ow.is_empty())
+        empty_overwrites = sum(ow.is_empty() for _, ow in channel.overwrites)
         overwrite_message = f'{len(channel.overwrites)} ({empty_overwrites} empty)'
 
         return (discord.Embed(description=topic, timestamp=channel.created_at)
@@ -289,7 +290,7 @@ class Meta:
 
     @staticmethod
     def voice_channel_embed(channel):
-        empty_overwrites = ilen(ow for _, ow in channel.overwrites if ow.is_empty())
+        empty_overwrites = sum(ow.is_empty() for _, ow in channel.overwrites)
         overwrite_message = f'{len(channel.overwrites)} ({empty_overwrites} empty)'
 
         return (discord.Embed(timestamp=channel.created_at)
@@ -297,7 +298,7 @@ class Meta:
                .add_field(name='ID', value=channel.id)
                .add_field(name='Position', value=channel.position)
                .add_field(name='Bitrate', value=channel.bitrate)
-               .add_field(name='Max Members', value=channel.user_limit)
+               .add_field(name='Max Members', value=channel.user_limit or '\N{INFINITY}')
                .add_field(name='Permission Overwrites', value=overwrite_message)
                .set_footer(text='Created')
                )
@@ -323,19 +324,24 @@ class Meta:
         highest_role = server.role_hierarchy[0]
         description = f"Owned by {server.owner}"
         features = '\n'.join(server.features) or 'None'
-        counts = (f'{len(getattr(server, thing))} {thing}' for thing in ('channels', 'roles', 'emojis'))
+        counts = (f'{len(getattr(server, thing))} {thing.title()}' for thing in ('channels', 'roles', 'emojis'))
 
-        statuses = collections.OrderedDict.fromkeys(['online', 'idle', 'dnd', 'offline'], 0)
-        statuses.update(collections.Counter(m.status.name for m in server.members))
-        statuses['bots'] = sum(m.bot for m in server.members)
+        statuses = collections.OrderedDict.fromkeys(['Online', 'Idle', 'Dnd', 'Offline'], 0)
+        statuses.update(collections.Counter(m.status.name.title() for m in server.members if not m.bot))
+        statuses['DND'] = statuses.pop('Dnd')
+        statuses.move_to_end('Offline')
+        statuses['Bots'] = sum(m.bot for m in server.members)
         member_stats = '\n'.join(starmap('{1} {0}'.format, statuses.items()))
 
-        server_embed = (discord.Embed(title=server.name, description=description, timestamp=server.created_at)
-                       .add_field(name="Default Channel", value=server.default_channel.mention)
+        explicit_filter = server.explicit_content_filter.name.title().replace('_', ' ')
+
+        server_embed = (discord.Embed(description=description, timestamp=server.created_at)
+                       .set_author(name=server.name)
+                       .add_field(name="Default Channel", value=f'#{server.default_channel}')
                        .add_field(name="Highest Role", value=highest_role)
                        .add_field(name="Region", value=server.region.value.title())
-                       .add_field(name="Verification Level", value=server.verification_level)
-                       .add_field(name="Explicit Content Filter", value=server.explicit_content_filter)
+                       .add_field(name="Verification Level", value=server.verification_level.name.title())
+                       .add_field(name="Explicit Content Filter", value=explicit_filter)
                        .add_field(name="Special Features", value=features)
                        .add_field(name='Counts', value='\n'.join(counts))
                        .add_field(name=f'{len(server.members)} Members', value=member_stats)
@@ -361,17 +367,32 @@ class Meta:
 
     @commands.command(aliases=['chnls'])
     async def channels(self, ctx):
-        """Shows all the channels in the server."""
-        permissions_in = ctx.author.permissions_in
-        def get_channels(type_):
-            sorted_channels = sorted((c for c in ctx.guild.channels if isinstance(c, type_)),
-                                     key=attrgetter('position'))
-            return [c.mention if permissions_in(c).read_messages else f'#{c.name}'
-                    for c in sorted_channels]
+        """Shows all the channels in the server. Channels you can access are **bolded**
 
-        text_channels, voice_channels = get_channels(discord.TextChannel), get_channels(discord.VoiceChannel)
-        channels = chain(('', f'**List of Text Channelels ({len(text_channels)})**', ), text_channels,
-                         ('', f'**List of Voice Channels ({len(voice_channels)})**', ), voice_channels)
+        If you're in a voice channel, that channel is ***italicized and bolded***
+        """
+        permissions_in = ctx.author.permissions_in
+
+        def get_channels(channels, prefix, permission):
+            return [f'**{prefix}{escape_markdown(str(c))}**' if getattr(permissions_in(c), permission) 
+                    else f'{prefix}{escape_markdown(str(c))}' for c in channels]
+
+        text_channels  = get_channels(ctx.guild.text_channels,  prefix='#', permission='read_messages')
+        voice_channels = get_channels(ctx.guild.voice_channels, prefix='', permission='connect')
+
+        voice = ctx.author.voice
+        if voice is not None:
+            index = voice.channel.position
+            name = voice_channels[index]
+            # Name was already bolded
+            if not name.startswith('**'):
+                name = f'**{name}**'
+            voice_channels[index] = f'*{name}*'
+
+        channels = chain(
+            ('', f'**List of Text Channels ({len(text_channels)})**', '-' * 20, ), text_channels,
+            ('', f'**List of Voice Channels ({len(voice_channels)})**', '-' * 20, ), voice_channels
+        )
 
         pages = ListPaginator(ctx, channels, title=f'Channels in {ctx.guild}', colour=self.bot.colour)
         await pages.interact()

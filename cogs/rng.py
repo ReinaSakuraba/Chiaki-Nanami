@@ -105,13 +105,16 @@ class RNG:
         #         await asyncio.sleep(random.uniform(0.75, 1.25) * 2)
         #         await msg.edit(content=f"{question_fmt}\n\N{BILLIARDS}: {answer}")
 
-    @commands.command(usage='Nadeko;Salt;PvPCraft;mee6;Chiaki Nanami')
-    async def choose(self, ctx, *, choices: str):
+    @commands.command(usage='Nadeko Salt PvPCraft mee6 "Chiaki Nanami"')
+    async def choose(self, ctx, *choices: commands.clean_content):
         """Chooses between a list of choices separated by semicolons"""
+        if len(set(choices)) < 2:
+            return await ctx.send('I need more choices than that...')
+
         with ctx.channel.typing():
             msg = await ctx.send('\N{THINKING FACE}')
             await asyncio.sleep(random.uniform(0.25, 1))
-            await msg.edit(content=random.choice(choices.split(';')))
+            await msg.edit(content=random.choice(choices))
 
     @commands.group(aliases=['rand'], invoke_without_command=True)
     async def random(self, ctx, lo: number, hi: number=None, dist='range'):

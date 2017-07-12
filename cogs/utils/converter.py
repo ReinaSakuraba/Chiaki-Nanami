@@ -4,18 +4,34 @@ import inspect
 import re
 
 from collections import namedtuple
+from contextlib import suppress
 from discord.ext import commands
 from functools import partial
+from more_itertools import ilen
 
-from .compat import ilen
 from .context_managers import redirect_exception
 from .errors import InvalidUserArgument
 from .misc import pairwise, parse_int
 
 
+class NoBots(commands.BadArgument):
+    """Exception raised in CheckedMember when the author passes a bot"""
+
+class NoOfflineMembers(commands.BadArgument):
+    """Exception raised in CheckedMember when the author passes a user who is offline"""
+
+class NoSelfArgument(commands.BadArgument):
+    """Exception raised in CheckedMember when the author passes themself as an argument"""
+
+
 # Custom ArgumentParser because the one in argparse raises SystemExit upon failure, 
 # which kills the bot
 class ArgumentParser(argparse.ArgumentParser):
+    def parse_args(self, args):
+        with suppress(SystemExit):
+            return super().parse_args(args)
+        return None
+
     def error(self, message):
         raise commands.BadArgument(f'Failed to parse args.```\n{message}```')
 
@@ -54,6 +70,25 @@ class ApproximateRole(commands.RoleConverter):
                                         "I'll take the first result, probably.)")
                 return next_role
         return await super().convert(ctx, arg)
+
+
+class CheckedMember(commands.MemberConverter):
+    def __init__(self, *, offline=True, bot=True, include_self=False):
+        super().__init__()
+        self.self = include_self
+        self.offline = offline
+        self.bot = bot
+
+    async def convert(self, ctx, arg):
+        member = await super().convert(ctx, arg)
+        if member.status is discord.Status.offline and not self.offline:
+            raise NoOfflineMembers(f'{member} is offline...')
+        if member.bot and not self.bot:
+            raise NoBots(f"{member} is a bot. You can't use a bot here.")
+        if member == ctx.author:
+            raise NoSelfArgument("You can't use yourself. lol.")
+
+        return member
 
 
 class BotCogConverter(commands.Converter):

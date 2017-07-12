@@ -6,7 +6,7 @@ import itertools
 import json
 import os
 
-from collections import defaultdict, deque, namedtuple
+from collections import Counter, defaultdict, deque, namedtuple
 from datetime import datetime, timedelta
 from discord.ext import commands
 from operator import attrgetter, contains, itemgetter
@@ -39,8 +39,8 @@ def _make_entries(scheduler, data):
 
 
 class MemberID(union):
-    def __init__(self):
-        super().__init__(discord.Member, int)
+    def __init__(self, user_type=discord.Member):
+        super().__init__(user_type, int)
 
     async def convert(self, ctx, arg):
         member = await super().convert(ctx, arg)
@@ -50,6 +50,14 @@ class MemberID(union):
             obj.guild = ctx.guild
             return obj
         return member
+
+def positive_duration(arg):
+    amount = duration(arg)
+    if amount <= 0:
+        rounded = round(amount, 2) if amount % 1 else int(amount)
+        raise commands.BadArgument(f"I can't go forward {rounded} seconds. "
+                                    "Do you want me to go back in time or something?")
+    return amount
 
 
 ModAction = namedtuple('ModAction', 'repr emoji colour')
@@ -207,7 +215,7 @@ class Moderator:
 
     @commands.group(invoke_without_command=True)
     @checks.mod_or_permissions(manage_messages=True)
-    async def slowmode(self, ctx, duration: duration, *, member: discord.Member=None):
+    async def slowmode(self, ctx, duration: positive_duration, *, member: discord.Member=None):
         """Puts a thing in slowmode.
 
         An optional member argument can be provided. If it's given, it puts only 
@@ -216,6 +224,7 @@ class Moderator:
         Those with a slowmode-immune role will not be affected. 
         If you want to put them in slowmode too, use `{prefix}slowmode noimmune`
         """
+
         if member is not None:
             if self._is_slowmode_immune(member):
                 message = (f"{member} is immune from slowmode due to having a "
@@ -225,28 +234,31 @@ class Moderator:
                 return await ctx.send(message)
 
             self.slowusers[_member_key(member)] = duration
-            await ctx.send('{member.mention} is now in slowmode! They must wait {duration} '
-                           'between each message they send.')
+            await ctx.send(f'{member.mention} is now in slowmode! They must wait {duration_units(duration)} '
+                            'between each message they send.')
         else:
             channel = ctx.channel
             current_slowmode = self.slowmodes.get(channel)
             if current_slowmode and current_slowmode.no_immune:
-                return await ctx.send('{channel.mention} is already in **no-immune** slowmode. '
-                                      'You need to turn it off first.')
+                return await ctx.send(f'{channel.mention} is already in **no-immune** slowmode. '
+                                       'You need to turn it off first.')
 
             self.slowmodes[ctx.channel] = SlowmodeEntry(duration, False)
             await ctx.send(f'{channel.mention} is now in slowmode! '
-                            'Everyone must wait {duration} between each message they send.')
+                           f'Everyone must wait {duration_units(duration)} between each message they send.')
 
-    @slowmode.command(name='noimmune', aliases=['n-i'], invoke_without_command=True)
+    @slowmode.command(name='noimmune', aliases=['n-i'])
     @checks.mod_or_permissions(manage_messages=True)
-    async def slowmode_no_immune(self, ctx, duration: duration, *, member: discord.Member=None):
+    async def slowmode_no_immune(self, ctx, duration: positive_duration, *, member: discord.Member=None):
         """Puts the channel or member in "no-immune" slowmode.
 
         Unlike `{prefix}slowmode`, no one is immune to this slowmode,
         even those with a slowmode-immune role, which means everyone's messages
         will be deleted if they are within the duration given.
         """
+        if duration <= 0:
+            return await ctx.send(f"I can't put this in slowmode for {duration} seconds. "
+                                   "Do you want me to go back in time or something?")
         if member is None:
             member, pronoun = ctx.channel, 'Everyone'
             self.slowmodes[member] =  SlowmodeEntry(duration, True)
@@ -263,14 +275,15 @@ class Moderator:
         if member is None:
             member = ctx.channel
             del self.slowmodes[member]
-            del self.slowmode_bucket[member]
+            self.slowmode_bucket.pop(member, None)
         else:
             key = _member_key(member)
             del self.slowusers[key]
-            del self.slowuser_bucket[key]
+            self.slowuser_bucket(key, None)
         await ctx.send(f'{member.mention} is no longer in slowmode... \N{SMILING FACE WITH OPEN MOUTH AND COLD SWEAT}')
 
     @commands.command()
+    @checks.mod_or_permissions(manage_messages=True)
     async def slowoff(self, ctx, *, member: discord.Member=None):
         """Alias for `{prefix}slowmode off`"""
         await ctx.invoke(self.slowmode_off, member=member)
@@ -362,7 +375,59 @@ class Moderator:
         is_plural = 's'*(deleted_count != 1)
         await ctx.send(f"Deleted {deleted_count} message{is_plural} successfully!", delete_after=1.5)
 
+    @commands.command(aliases='clean')
+    @commands.guild_only()
+    @checks.mod_or_permissions(manage_messages=True)
+    async def cleanup(self, ctx, limit=100):
+        """Cleans up my messages from the channel.
+
+        If I have the Manage Messages and Read Message History perms, I can also
+        try to delete messages that look like they invoked my commands.
+
+        When I'm done cleaning up. I will show the stats of whose messages got deleted
+        and how many. This should give you an idea as to who are spamming me.
+
+        You can also use this if `{prefix}clear` fails.
+        """
+
+        prefixes = await ctx.bot.get_prefix(ctx.message)
+        bot_id = ctx.bot.user.id
+
+        bot_perms = ctx.channel.permissions_for(ctx.me)
+        can_bulk_delete = bot_perms.manage_messages and bot_perms.read_message_history
+
+        if can_bulk_delete:
+            def is_possible_command_invoke(m):
+                if m.author.id == bot_id:
+                    return True
+                return m.content.startswith(prefixes) and not m.content[1:2].isspace()
+
+            deleted = await ctx.channel.purge(limit=limit, before=ctx.message, check=is_possible_command_invoke)
+            spammers = Counter(str(m.author) for m in deleted)
+        else:
+            # We can only delete the bot's messages, because trying to delete
+            # other users' messages without Manage Messages will raise an error.
+            # Also we can't use bulk-deleting for the same reason.
+            counter = 0
+            async for m in ctx.history(limit=limit, before=ctx.message):
+                if m.author.id == bot_id:
+                    await m.delete()
+                    counter += 1
+            spammers = Counter({ctx.me.display_name: counter})
+
+        deleted = sum(spammers.values())
+        second_part = 's was' if deleted == 1 else ' were'
+        title = f'{deleted} messages{second_part} removed.'
+        joined = '\n'.join(itertools.starmap('**{0}**: {1}'.format, spammers.most_common()))
+        spammer_stats = joined or discord.Embed.Empty
+
+        embed = (discord.Embed(colour=0x00FF00, description=spammer_stats, timestamp=ctx.message.created_at)
+                .set_author(name=title)
+                )
+        await ctx.send(embed=embed)
+
     @clear.error
+    @cleanup.error
     async def clear_error(self, ctx, error):
         # We need to use the __cause__ because any non-CommandErrors will be 
         # wrapped in CommandInvokeError
@@ -370,12 +435,14 @@ class Moderator:
         if isinstance(cause, discord.Forbidden):
             await ctx.send("I need the Manage Messages perm to clear messages.")
         elif isinstance(cause, discord.HTTPException):
-            await ctx.send("Couldn't delete the messages for some reason...")
+            await ctx.send("Couldn't delete the messages for some reason... Here's the error:\n"
+                          f"```py\n{type(cause).__name__}: {cause}```")
 
     @commands.command()
     @checks.is_mod()
     async def warn(self, ctx, member: discord.Member, *, reason: str):
         """Warns a user (obviously)"""
+        self._check_user(ctx, member)
         author, current_time = ctx.author, ctx.message.created_at
         warn_queue = self.warn_log[_member_key(member)]
         warn_queue.append((current_time, author.id, reason))
@@ -401,7 +468,7 @@ class Moderator:
             return await default_warn()
 
         # warn is too old, ignore it.
-        if (current_time - warn_queue[0][0]).total_seconds() > warn_config['warn_timeout']:
+        if (current_time - warn_queue[0][0]).total_seconds() > warn_config['timeout']:
             return await default_warn()
 
         # Auto-punish the user
@@ -414,9 +481,12 @@ class Moderator:
         await ctx.invoke(getattr(self, punish), *args, reason=reason + f'\n({ordinal(current_warn_num)} warning)')
         check_warn_num()
 
+    # XXX: Should this be a group?
+
     @commands.command(name='clearwarns')
     @checks.is_mod()
     async def clear_warns(self, ctx, member: discord.Member):
+        """Clears a member's warns."""
         self.warn_log[_member_key(member)].clear()
         await ctx.send(f"{member}'s warns have been reset!")
 
@@ -512,8 +582,9 @@ class Moderator:
 
     @commands.command()
     @checks.mod_or_permissions(manage_roles=True)
-    async def mute(self, ctx, member: discord.Member, duration: duration, *, reason: str=None):
+    async def mute(self, ctx, member: discord.Member, duration: positive_duration, *, reason: str=None):
         """Mutes a user (obviously)"""
+        self._check_user(ctx, member)
         when = datetime.utcnow() + timedelta(seconds=duration)
         await self._default_mute_command(ctx, member, when.timestamp(), duration=duration, reason=reason)
 
@@ -604,7 +675,7 @@ class Moderator:
 
     @commands.command(aliases=['tb'])
     @checks.mod_or_permissions(ban_members=True)
-    async def tempban(self, ctx, member: discord.Member, duration: duration, *, reason: str=None):
+    async def tempban(self, ctx, member: discord.Member, duration: positive_duration, *, reason: str=None):
         """Temporarily bans a user (obviously)"""
 
         self._check_user(ctx, member)
@@ -634,7 +705,7 @@ class Moderator:
 
     @commands.command()
     @checks.mod_or_permissions(ban_members=True)
-    async def unban(self, ctx, user: discord.User, *, reason: str=None):
+    async def unban(self, ctx, user: MemberID(user_type=discord.User), *, reason: str=None):
         """Unbans the user (obviously)"""
 
         # Will not remove the scheduler (this is ok)
@@ -646,7 +717,7 @@ class Moderator:
     async def massban(self, ctx, reason, *members: MemberID):
         """Bans a series a people (obviously)"""
         for m in members:
-            await ctx.guild.ban(member, reason=reason)
+            await ctx.guild.ban(m, reason=reason)
 
         await ctx.send(f"Done. What happened...?")
 

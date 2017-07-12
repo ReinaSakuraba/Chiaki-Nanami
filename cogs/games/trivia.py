@@ -10,10 +10,15 @@ import os
 import random
 
 from discord.ext import commands
+from fuzzywuzzy import process
 
 from .manager import SessionManager
-from ..utils.misc import base_filename, emoji_url
+from ..utils.misc import base_filename, emoji_url, load_async
 from ..utils.paginator import EmbedFieldPages
+
+
+Question = collections.namedtuple('Question', 'question answers')
+
 
 QUESTION_GAME_TIMEOUT = 60
 class TriviaSession:
@@ -21,7 +26,7 @@ class TriviaSession:
         self.ctx = ctx
         self.category = category
         self.finished = asyncio.Event()
-        self.answered = asyncio.Event()
+        self._answered = asyncio.Event()
         self.scoreboard = collections.Counter()
         self._runner = self._time_out_checker = None
 
@@ -32,10 +37,9 @@ class TriviaSession:
         # This issue has happened numberous times with other bots.
         if m.author.bot:
             return False
-        self.answered.set()
-        user_answer = m.content.lower()
-        # Use the bad answer recognition in x^3 for some nice disrespect
-        return any(a.lower() in user_answer for a in self.answers)
+        self._answered.set()
+        _, ratio = process.extractOne(m.content, self.question.answers)
+        return ratio >= 85
 
     def _question_embed(self, n):
         leader = self.leader
@@ -43,15 +47,15 @@ class TriviaSession:
         description = self.category.get('description', discord.Embed.Empty)
         return (discord.Embed(description=description, colour=random.randint(0, 0xFFFFFF))
                .set_author(name=self.category.get('title', 'Trivia'))
-               .add_field(name=f'Question #{n}', value=self.question)
+               .add_field(name=f'Question #{n}', value=self.question.question)
                .set_footer(text=f'Current leader: {leader_text}')
-               ) 
+               )
 
     def _answer_embed(self, answerer, action):
-        description = f'The answer was **{self.answers[0]}**.'
+        description = f'The answer was **{self.question.answers[0]}**.'
         return (discord.Embed(colour=0x00FF00, description=description)
                .set_author(name=f'{answerer} {action}!')
-               .set_thumbnail(url=answerer.avatar_url_as(format=None))
+               .set_thumbnail(url=answerer.avatar_url)
                .set_footer(text=f'{answerer} now has {self.scoreboard[answerer]} points.')
                )
 
@@ -62,52 +66,46 @@ class TriviaSession:
                .set_footer(text='No one got any points :(')
                )
 
-    async def __run(self):
+    async def _loop(self):
         for q in itertools.count(1):
-            self.question, self.answers = self.next_question()
+            self.question = self.next_question()
             await self.ctx.send(embed=self._question_embed(q))
             try:
-                msg = await self.ctx.bot.wait_for('message', timeout=10, check=self._check_answer)
+                msg = await self.ctx.bot.wait_for('message', timeout=20, check=self._check_answer)
             except asyncio.TimeoutError:
-                await self.ctx.send(embed=self._timeout_embed(self.answers[0]))
+                await self.ctx.send(embed=self._timeout_embed(self.question.answers[0]))
             else:
                 self.scoreboard[msg.author] += 1
                 if self.scoreboard[msg.author] >= 10:
                     await self.ctx.send(embed=self._answer_embed(msg.author, 'wins the game'))
-                    break
-                else:
-                    await self.ctx.send(embed=self._answer_embed(msg.author, 'got it'))
+                    return msg.author
+                await self.ctx.send(embed=self._answer_embed(msg.author, 'got it'))
             finally:
                 await asyncio.sleep(random.uniform(1.5, 3))
-        await self.stop()
+
+    async def _check_time_out(self):
+        while True:
+            await asyncio.wait_for(self._answered.wait(), QUESTION_GAME_TIMEOUT)
+            self._answered.clear()
 
     async def run(self):
-        self._runner = asyncio.ensure_future(self.__run())
-        self._time_out_checker = asyncio.ensure_future(self.check_time_out())
-        await self.finished.wait()
-
-    async def stop(self, force=False):
-        self.force_closed = force
-        with contextlib.suppress(BaseException):
+        self._runner = asyncio.ensure_future(self._loop())
+        done, pending = await asyncio.wait([self._runner, self._check_time_out()],
+                                           return_when=asyncio.FIRST_COMPLETED)
+        try:
+            return await done.pop()
+        finally:
+            # When TimeoutError is raised in the second coro, it doesn't stop the
+            # asyncio.wait due to the return_when kwarg.
             self._runner.cancel()
-        with contextlib.suppress(BaseException):
-            self._time_out_checker.cancel()
-        self.finished.set()
+            # Also for some reason the timeout check task doesn't get cancelled.
+            pending.pop().cancel()
 
-    async def check_time_out(self):
-        while True:
-            try:
-                await asyncio.wait_for(self.answered.wait(), QUESTION_GAME_TIMEOUT)
-            except asyncio.TimeoutError:
-                await self.ctx.send("Um, is anyone here...?")
-                break
-            else:
-                self.answered.clear()
-        await self.stop(force=True)
+    def stop(self, force=False):
+        self._runner.cancel()
 
     def next_question(self):
-        question = random.choice(self.category['questions'])
-        return question['question'], question['answers']
+        return Question(**random.choice(self.category['questions']))
 
     @property
     def leader(self):
@@ -117,11 +115,6 @@ class TriviaSession:
     @property
     def leaderboard(self):
         return self.scoreboard.most_common()
-
-
-def _load_json(file):
-    with open(file) as f:
-        return json.load(f)
 
 
 class Trivia:
@@ -135,16 +128,15 @@ class Trivia:
         self.default_categories = {}
         self.bot.loop.create_task(self._load_categories())
 
-    def __unload(self):
+    # def __unload(self):
         # stop running any currently running trivia games
-        self.manager.cancel_all(loop=self.bot.loop)
+        # self.manager.cancel_all(loop=self.bot.loop)
 
     def all_categories(self, guild):
         # This will be ChainMapped with custom categories
         return self.default_categories
 
     async def _load_categories(self):
-        load_async = functools.partial(self.bot.loop.run_in_executor, None, _load_json)
         files = glob.glob(f'{self.FILE_PATH}/*.json')
         load_tasks = (load_async(name) for name in files)
         file_names = (base_filename(name) for name in files)
@@ -177,7 +169,7 @@ class Trivia:
                .add_field(name=field_name, value=message)
                )
 
-    @commands.group(invoke_without_command=True)
+    @commands.group(aliases=['t'], invoke_without_command=True)
     async def trivia(self, ctx, category):
         """It's trivia..."""
         if self.manager.session_exists(ctx.channel):
@@ -185,13 +177,16 @@ class Trivia:
 
         category = await self._get_category(ctx, category)
         with self.manager.temp_session(ctx.channel, TriviaSession(ctx, category)) as inst:
-            await inst.run()
-            if inst.force_closed:
-                return
+            winner = await inst.run()
 
             await asyncio.sleep(1.5)
             results_embed = self._leaderboard_embed(inst, 'Trivia Game Ended', 'Final Results', past=True)
             await ctx.send(embed=results_embed)
+
+    @trivia.error
+    async def trivia_error(self, ctx, error):
+        if isinstance(error.__cause__, asyncio.TimeoutError):
+            await ctx.send('Where did everyone go... ;-;')
 
     @trivia.command(name='categories')
     async def trivia_categories(self, ctx):
@@ -208,7 +203,7 @@ class Trivia:
         if game is None:
             return await ctx.send("There is no trivia game to stop... :|")
 
-        await game.stop()
+        game.stop()
         await ctx.send(f"Trivia stopped...")
 
     @trivia.command(name='score', aliases=['leaderboard'])

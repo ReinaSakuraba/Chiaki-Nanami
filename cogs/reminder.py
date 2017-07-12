@@ -89,7 +89,7 @@ class Reminder:
             return await ctx.send('You have no pending reminders...')
 
         embed = (discord.Embed(colour=self.bot.colour)
-                .set_author(name='Reminders for {ctx.author}')
+                .set_author(name=f'Reminders for {ctx.author}')
                 )
 
         for i, entry in enumerate(self.reminder_data[ctx.author][:], start=1):

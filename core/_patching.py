@@ -3,8 +3,8 @@ import operator
 
 from discord.ext import commands
 from itertools import chain
+from more_itertools import iterate
 
-from cogs.utils.compat import iterate
 
 commands.Command.all_names = property(lambda self: [self.name, *self.aliases],
                                       doc='Returns all the possible names for a command')

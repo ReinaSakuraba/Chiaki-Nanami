@@ -8,9 +8,9 @@ from collections import OrderedDict
 from collections.abc import Sequence
 from discord.ext import commands
 from itertools import chain
+from more_itertools import always_iterable
 
 from cogs.utils.context_managers import temp_attr
-from cogs.utils.compat import always_iterable, iterate
 from cogs.utils.misc import truncate
 from cogs.utils.paginator import DelimPaginator
 

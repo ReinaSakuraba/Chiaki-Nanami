@@ -1,5 +1,7 @@
+import asyncio
 import functools
 import inspect
+import json
 import logging
 import os
 import random
@@ -8,9 +10,10 @@ import re
 from collections import namedtuple, OrderedDict
 from datetime import datetime, timezone
 from discord.ext import commands
+from more_itertools import grouper
 
-from .compat import grouper
 
+REGIONAL_INDICATORS = [chr(i + 0x1f1e6) for i in range(26)]
 
 def code_say(bot, msg):
     return bot.say(code_msg(msg))
@@ -40,7 +43,7 @@ def str_join(delim, iterable):
     return delim.join(map(str, iterable))
 
 def group_strings(string, n):
-    return map(''.join, grouper(string, n, ''))
+    return map(''.join, grouper(n, string, ''))
 
 def pairwise(t):
     it = iter(t)
@@ -60,8 +63,18 @@ def duration_units(secs):
     h, m = divmod(m, 60)
     d, h = divmod(h, 24)
     w, d = divmod(d, 7)
-    unit_list = [(w, 'weeks'), (d, 'days'), (h, 'hours'), (m, 'mins'), (s, 'seconds')]
-    return ', '.join([f"{round(n)} {u}" for n, u in unit_list if n])
+    # Weeks, days, hours, and minutes are guaranteed to be integral due to being
+    # the quotient rather than the remainder, so these can be safely made to ints.
+    # The reason for the int cast is because if the seconds is a float,
+    # the other units will be floats too.
+    unit_list = [(int(w), 'weeks'), (int(d), 'days'), (int(h), 'hours'), (int(m), 'mins')]
+    joined = ', '.join([f"{n} {u}" for n, u in unit_list if n])
+    if s:
+        if joined:
+            joined += ', '
+        s = round(s, 2) if s % 1 else int(s)
+        joined += f'{s} seconds'
+    return joined
 
 def ordinal(num):
     # pay no attention to this ugliness
@@ -90,3 +103,12 @@ async def maybe_awaitable(func, *args, **kwargs):
 def role_name(member, role):
     name = str(role)
     return f'**{escape_markdown(name)}**' if role in member.roles else name
+
+async def load_async(filename, loop=None):
+    loop = loop or asyncio.get_event_loop()
+
+    def nobody_kanna_cross_it():
+        with open(filename, encoding='utf-8') as f:
+            return json.load(f)
+
+    return await loop.run_in_executor(None, nobody_kanna_cross_it)

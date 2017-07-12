@@ -1,7 +1,8 @@
 import asyncio
 import contextlib
 
-from ..utils.compat import iter_except
+from more_itertools import iter_except
+
 from ..utils.misc import maybe_awaitable
 
 class SessionManager:

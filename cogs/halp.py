@@ -10,7 +10,6 @@ from discord.ext import commands
 from functools import partial
 
 from .utils import checks, errors
-from .utils.compat import always_iterable
 from .utils.context_managers import temp_attr
 from .utils.converter import BotCogConverter, BotCommand
 from .utils.database import Database

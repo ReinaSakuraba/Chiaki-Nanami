@@ -1,6 +1,7 @@
 import contextlib
 import discord
 
+from datetime import datetime
 from discord.ext import commands
 from functools import partial
 from itertools import starmap
@@ -10,6 +11,27 @@ from .utils.converter import ArgumentParser, duration
 from .utils.context_managers import redirect_exception
 from .utils.database import Database
 from .utils.misc import duration_units, multi_replace, nice_time, ordinal, str_join
+
+
+def special_message(message):
+    return message if '{user}' in message else f'{{user}}{message}'
+
+def welcome_leave_message_check():
+    return checks.admin_or_permissions(manage_guild=True)
+
+
+class LowerRole(commands.RoleConverter):
+    async def convert(self, ctx, arg):
+        role = await super().convert(ctx, arg)
+        author = ctx.author
+
+        top_role = author.top_role
+        if role >= top_role and author != ctx.guild.owner:
+            raise commands.BadArgument(f"This role ({role}) is higher than or equal "
+                                       f"to your highest role ({top_role}).")
+
+        return role
+
 
 class Admin:
     """Admin-only commands"""
@@ -26,19 +48,7 @@ class Admin:
         return bool(ctx.guild)
 
     @staticmethod
-    def _check_role_position(member, role, action):
-        if member.id == member.guild.owner.id:
-            return
-
-        top_role = author.top_role
-        if role >= top_role:
-            raise errors.InvalidUserArgument(f"You can't {action} a role higher than or equal "
-                                             f"to your highest role (**{top_role}**)")
-
-    @staticmethod
     async def _set_chiaki_role(ctx, key, role, action):
-        # if role is not None:
-            # self._check_role_position(ctx.author, role, action)
         checks.assign_role(ctx.guild, key, role)
         msg = (f"Made {role} an **{key} role**!" if role is not None else
                f"Reset the **{key}** role to **{checks.DEFAULT}**")
@@ -59,7 +69,7 @@ class Admin:
 
     @commands.command(name='adminrole', aliases=['adr'])
     @checks.is_admin()
-    async def admin_role(self, ctx, *, role: discord.Role=None):
+    async def admin_role(self, ctx, *, role: LowerRole=None):
         """Sets a role for the 'Admin' role. If no role is specified, it shows what role is assigned as the Admin role.
 
         Admins are a special type of administrator. They have access to most of the permission-related
@@ -70,7 +80,7 @@ class Admin:
 
     @commands.command(name='modrole', aliases=['mr'])
     @checks.is_admin()
-    async def mod_role(self, ctx, *, role: discord.Role=None):
+    async def mod_role(self, ctx, *, role: LowerRole=None):
         """Sets a role for the 'Moderator' role.
         If no role is specified, it shows what role is assigned as the Moderator role.
 
@@ -93,7 +103,7 @@ class Admin:
 
     @commands.command(name='addselfrole', aliases=['asar', ])
     @checks.is_admin()
-    async def add_self_role(self, ctx, *, role: discord.Role):
+    async def add_self_role(self, ctx, *, role: LowerRole):
         """Adds a self-assignable role to the server
 
         A self-assignable role is one that you can assign to yourself
@@ -101,20 +111,20 @@ class Admin:
         """
         self_roles = self.self_roles[ctx.guild]
         if role.id in self_roles:
-            raise errors.InvalidUserArgument("That role is already self-assignable... I think")
-        self._check_role_position(ctx.author, role, "assign as a self role")
+            return await ctx.send("That role is already self-assignable... I think")
+
         self_roles.append(role.id)
         await ctx.send(f"**{role}** is now a self-assignable role!")
 
     @commands.command(name='removeselfrole', aliases=['rsar', ])
     @checks.is_admin()
-    async def remove_self_role(self, ctx, *, role: discord.Role):
+    async def remove_self_role(self, ctx, *, role: LowerRole):
         """Removes a self-assignable role from the server
 
         A self-assignable role is one that you can assign to yourself
         using `{prefix}iam` or `{prefix}selfrole`
         """
-        self._check_role_position(ctx.author, role, "remove as a self role")
+
         with redirect_exception((ValueError, "That role was never self-assignable... I think.")):
             self.self_roles[ctx.guild].remove(role.id)
         await ctx.send(f"**{role}** is no longer a self-assignable role!")
@@ -168,13 +178,11 @@ class Admin:
 
     @commands.command(name='addrole', aliases=['ar'])
     @checks.admin_or_permissions(manage_roles=True)
-    async def add_role(self, ctx, user: discord.Member, *, role: discord.Role):
+    async def add_role(self, ctx, user: discord.Member, *, role: LowerRole):
         """Adds a role to a user
 
         This role must be lower than both the bot's highest role and your highest role.
         """
-        # This normally won't raise an exception, so we have to check for that
-        self._check_role_position(ctx.author, role, 'add')
         with redirect_exception((discord.Forbidden, f"I can't give {user} {role}. Either I don't have the right perms, "
                                                      "or you're trying to add a role that's higher than mine"),
                                 (discord.HTTPException, f"Giving {role} to {user} failed. Not sure why though...")):
@@ -183,13 +191,12 @@ class Admin:
 
     @commands.command(name='removerole', aliases=['rr'])
     @checks.admin_or_permissions(manage_roles=True)
-    async def remove_role(self, ctx, user: discord.Member, *, role: discord.Role):
+    async def remove_role(self, ctx, user: discord.Member, *, role: LowerRole):
         """Removes a role from a user
 
         This role must be lower than both the bot's highest role and your highest role.
         Do not confuse this with `{prefix}deleterole`, which deletes a role from the server.
         """
-        self._check_role_position(ctx.author, role, 'remove')
         with redirect_exception((discord.Forbidden, f"I can't remove **{role}** from {user}. Either I don't have the right perms, "
                                                      "or you're trying to remove a role that's higher than mine"),
                                 (discord.HTTPException, f"Removing {role} from {user} failed. Not sure why though...")):
@@ -197,7 +204,7 @@ class Admin:
         await ctx.send(f"Successfully removed **{role}** from {user}, I think.")
 
     @commands.command(name='createrole', aliases=['crr'])
-    @checks.is_admin()
+    @checks.admin_or_permissions(manage_roles=True)
     async def create_role(self, ctx, *args: str):
         """Creates a role with some custom arguments:
 
@@ -211,10 +218,11 @@ class Admin:
         Permissions of the new role. Default is no permissions (0).
 
         `-h / --hoist`
-        Whether or not the role can be displayed separately. Default is false.
+        Whether or not the role can be displayed separately. This is a flag. If it's not specified, it's False.
 
         `-m / --mentionable`
-        Whether or not the role can be mentioned. Default is false.
+        Whether or not the role can be mentioned. This is a flag. If it's not specified , it's False.
+
 
         """
         author, guild = ctx.author, ctx.guild
@@ -222,7 +230,7 @@ class Admin:
         parser = ArgumentParser(description='Just a random role thing')
         parser.add_argument('name')
         parser.add_argument('-c', '--color', '--colour', nargs='?', default='#000000')
-        parser.add_argument('--permissions', '--perms', nargs='+', type=int, default=0)
+        parser.add_argument('--permissions', '--perms', nargs='?', type=int, default=0)
         parser.add_argument('--hoist', action='store_true')
         parser.add_argument('-m', '--mentionable', action='store_true')
 
@@ -249,8 +257,8 @@ class Admin:
         await ctx.send(f"Successfully created **{args.name}**!")
 
     @commands.command(name='editrole', aliases=['er'])
-    @checks.is_admin()
-    async def edit_role(self, ctx, old_role: discord.Role, *args: str):
+    @checks.admin_or_permissions(manage_roles=True)
+    async def edit_role(self, ctx, old_role: LowerRole, *args: str):
         """Edits a role with some custom arguments:
 
         `name`
@@ -266,7 +274,7 @@ class Admin:
         Whether or not the role can be displayed separately. Default is false.
 
         `-m / --mentionable`
-        Whether or not the role can be mentioned. Default is false.
+        Whether or not the role can be mentioned. This is a flag. If it's not added, it's False.
 
         `--pos, --position`
         The new position of the role. This cannot be zero.
@@ -276,8 +284,8 @@ class Admin:
         parser.add_argument('-n', '--name', nargs='?', default=old_role.name)
         parser.add_argument('-c', '--color', '--colour', nargs='?', default=str(old_role.colour))
         parser.add_argument('--permissions', '--perms', nargs='+', type=int, default=old_role.permissions.value)
-        parser.add_argument('--hoist', action='store_true')
-        parser.add_argument('-m', '--mentionable', action='store_true')
+        parser.add_argument('--hoist', nargs='?', default=old_role.hoist)
+        parser.add_argument('-m', '--mentionable', nargs='?', default=old_role.mentionable)
         parser.add_argument('--pos', '--position', nargs='?', type=int, default=old_role.position)
 
         args = parser.parse_args(args)
@@ -295,22 +303,21 @@ class Admin:
             'permissions': permissions,
             'hoist': args.hoist,
             'mentionable': args.mentionable,
-            'position': args.position,
+            'position': args.pos,
         }
 
         with redirect_exception((discord.Forbidden, "I need the **Manage Roles** perm to edit roles, I think."),
-                                (discord.HTTPException, f"Editing role **{role.name}** failed, for some reason.")):
+                                (discord.HTTPException, f"Editing role **{old_role.name}** failed, for some reason.")):
             await old_role.edit(**fields)
         await ctx.send(f"Successfully edited **{old_role}**!")
 
     @commands.command(name='deleterole', aliases=['delr'])
-    @checks.is_admin()
-    async def delete_role(self, ctx, *, role: discord.Role):
+    @checks.admin_or_permissions(manage_roles=True)
+    async def delete_role(self, ctx, *, role: LowerRole):
         """Deletes a role from the server
 
         Do not confuse this with `{prefix}removerole`, which removes a role from a member.
         """
-        self._check_role_position(ctx.author, role, "delete")
         with redirect_exception((discord.Forbidden, "I need the **Manage Roles** perm to delete roles, I think."),
                                 (discord.HTTPException, f"Deleting role **{role.name}** failed, for some reason.")):
             await role.delete()
@@ -318,7 +325,7 @@ class Admin:
 
     # ---------------- WELCOME AND LEAVE MESSAGE STUFF -------------
 
-    _message_format = """
+    _channel_format = """
         Sets the channel where I will {thing}. 
         If no arguments are given, it shows the current channel.
 
@@ -334,150 +341,187 @@ class Admin:
         A number less than or equal 0 will disable automatic deletion.
         """
 
+    async def _toggle_config(self, ctx, do_thing, *, thing, text):
+        db = getattr(self, f'{thing}_message_config')[ctx.guild]
+        if do_thing is None:
+            do_thing = not db.get('enabled', False)
+
+        print(do_thing)
+        db['enabled'] = do_thing
+        to_say = (f"Yay I will {text}" if do_thing else 
+                  "Oki I'll just sit in my corner then :~")
+        await ctx.send(to_say)
+
+    async def _message_config(self, ctx, message, *, thing):
+        db = getattr(self, f'{thing}_message_config')[ctx.guild]
+        if message:
+            db['message'] = message
+            await ctx.send(f"Welcome message has been set to *{message}*")
+        else:
+            message = db.get('message')
+            to_say = f"I will say {message} to a new user." if message else "I won't say anything..."
+            await ctx.send(to_say)
+
     async def _channel_config(self, ctx, channel, *, thing):
-        db = getattr(self, f'{thing}_message_config')
+        db = getattr(self, f'{thing}_message_config')[ctx.guild]
         if channel:
-            db[ctx.guild]['channel'] = channel.id
+            db['channel'] = channel.id
             await ctx.send(f'Ok, {channel.mention} it is then!')
         else:
-            channel_id = db[ctx.guild].get('channel')
+            channel_id = db.get('channel')
             channel = self.bot.get_channel(channel_id) or ctx.guild.default_channel
             await ctx.send(f"I'm gonna say the {thing} message in {channel.mention}")
 
     async def _delete_after_config(self, ctx, duration, *, thing):
-        db = getattr(self, f'{thing}_message_config')
+        db = getattr(self, f'{thing}_message_config')[ctx.guild]
         if duration is None:
-            duration = db[ctx.guild].get('delete_after')
+            duration = db.get('delete_after')
             message = (f"I won't delete the {thing} message." if not duration else 
                        f"I will delete the {thing} message after {duration_units(duration)}.")
             await ctx.send(message)
         else:
             auto_delete = duration > 0
-            db[ctx.guild]['delete_after'] = duration if auto_delete else None
+            db['delete_after'] = duration if auto_delete else None
             message = (f"Ok, I'm deleting the {thing} message after {duration_units(duration)}" if auto_delete else
                        f"Ok, I won't delete the {thing} message.")
             await ctx.send(message)
 
     # TODO: Allow embeds in welcome messages
     # XXX: Should I actually do it though? It will be very complicated and Nadeko-like
-    @commands.group(aliases=['hi'])
-    @checks.admin_or_permissions(manage_guild=True)
-    async def welcome(self, ctx):
-        """Shows the current welcome message for the server, if one was provided."""
-        if ctx.invoked_subcommand is None and not ctx.subcommand_passed:
-            message = self.welcome_message_config[ctx.guild].get('message')
-            await ctx.send(f'The current welcome message is {message}')
+    @commands.group(aliases=['hi'], invoke_without_command=True)
+    @welcome_leave_message_check()
+    async def welcome(self, ctx, do_welcome: bool = None):
+        """Sets whether or not I announce when someone joins the server. 
+        Specifying with no arguments will toggle it.
+        """
+        await self._toggle_config(ctx, do_welcome, thing='welcome', 
+                                  text='welcome all new members to the server! ^o^')
 
     @welcome.command(name='message', aliases=['msg'])
-    async def welcome_message(self, ctx, *, message: str):
+    @welcome_leave_message_check()
+    async def welcome_message(self, ctx, *, message: special_message = None):
         """Sets the bot's message when a member joins this server.
 
         The following special formats can be in the message:
-        `{{user}}`     = the member that joined. If one isn't placed, it's placed at the beginning of the message.
-        `{{server}}`   = Optional, the name of the server.
-        `{{count}}`    = how many members are in the server now. ,
-        `{{countord}}` = like `{{count}}`, but as an ordinal.
-        `{{joinedat}}` = The date and time when the member joined
+        `{{user}}`     = The member that joined. If one isn't placed, it's placed at the beginning of the message.
+        `{{uid}}`      = The ID of member that joined.
+        `{{server}}`   = The name of the server.
+        `{{count}}`    = How many members are in the server now.
+        `{{countord}}` = Like `{{count}}`, but as an ordinal, eg instead of `5` it becomes `5th`.
+        `{{time}}`     = The date and time when the member joined.
         """
-        if "{user}" not in message:
-            message = "{user} " + message
-
-        self.welcome_message_config[ctx.guild]['message'] = message
-        await ctx.send(f"Welcome message has been set to *{message}*")
+        await self._message_config(ctx, message, thing='welcome')
 
     @welcome.command(name='channel', aliases=['chnl'],
-                     help=_message_format.format(thing='greet the user'))
+                     help=_channel_format.format(thing='greet the user'))
+    @welcome_leave_message_check()
     async def welcome_channel(self, ctx, *, channel: discord.TextChannel=None):
         await self._channel_config(ctx, channel, thing='welcome')
 
     @welcome.command(name='delete', aliases=['del'], help=_delete_after_format.format(thing='welcome'))
-    @checks.admin_or_permissions(manage_guild=True)
-    async def welcome_delete(self, ctx, duration: duration=None):
+    @welcome_leave_message_check()
+    async def welcome_delete(self, ctx, duration: duration = None):
         await self._delete_after_config(ctx, duration, thing='welcome')
 
-    @welcome.command(name='remove', aliases=['disable'])
-    async def remove_welcome(self, ctx):
-        """Removes the bot's message when a member joins this server."""
-        with redirect_exception((KeyError, 'This server never had a welcome message.')):
-            del self.welcome_message_config[ctx.guild]['message']
-        await ctx.send('Successfully removed the welcome message.')
+    @commands.group(aliases=['bye'], invoke_without_command=True)
+    @welcome_leave_message_check()
+    async def byebye(self, ctx, do_bye: bool = None):
+        """Sets whether or not I announce when someone leaves the server. 
+        Specifying with no arguments will toggle it.
+        """
+        await self._toggle_config(ctx, do_bye, thing='leave', 
+                                  text='mourn the loss of members. ;-;')
+
+    @byebye.command(name='message', aliases=['msg'])
+    @welcome_leave_message_check()
+    async def byebye_message(self, ctx, *, message: special_message = None):
+        """Sets the bot's message when a member leaves this server
+
+        The following special formats can be in the message:
+        `{{user}}`     = The member that joined. If one isn't placed, it's placed at the beginning of the message.
+        `{{uid}}`      = The ID of member that left.
+        `{{server}}`   = The name of the server.
+        `{{count}}`    = How many members are in the server now.
+        `{{countord}}` = Like `{{count}}`, but as an ordinal, eg instead of `5` it becomes `5th`.
+        `{{time}}`     = The date and time when the member left the server.
+        """
+
+        await self._message_config(ctx, message, thing='leave')
+
+    @byebye.command(name='channel', aliases=['chnl'],
+                    help=_channel_format.format(thing='mourn for the user'))
+    @welcome_leave_message_check()
+    async def byebye_channel(self, ctx, *, channel: discord.TextChannel = None):  
+        await self._channel_config(ctx, channel, thing='leave')
+
+    @byebye.command(name='delete', aliases=['del'], help=_delete_after_format.format(thing='leave'))
+    @welcome_leave_message_check()
+    async def byebye_delete(self, ctx, duration: duration = None):
+        await self._delete_after_config(ctx, duration, thing='leave')    
 
     async def on_member_join(self, member):
         guild = member.guild
-        data = self.welcome_message_config[member.guild]
-        message = data.get('message')
+        config = self.welcome_message_config[member.guild]
+        if not config.get('enabled', False):
+            return
+
+        message = config.get('message')
         if not message:
             return
 
-        channel_id = data.get('channel')
+        channel_id = config.get('channel')
         channel = self.bot.get_channel(channel_id) or guild.default_channel
+        delete_after = config.get('delete_after')
 
         member_count = len(guild.members)
 
         replacements = {
             '{user}': member.mention,
+            '{uid}': str(member.id),
             '{server}': str(guild),
             '{count}': str(member_count),
             '{countord}': ordinal(member_count),
             # TODO: Should I use %c...?
-            '{joinedat}': nice_time(member.joined_at)
+            '{time}': nice_time(member.joined_at)
         }
 
-        delete_after = data.get('delete_after')
 
         # Not using str.format because that will raise KeyError on anything surrounded in {}
         message = multi_replace(message, replacements)
         await channel.send(message, delete_after=delete_after)
 
-    @commands.group(aliases=['bye'])
-    @checks.admin_or_permissions(manage_guild=True)
-    async def byebye(self, ctx):
-        if ctx.invoked_subcommand is None and not ctx.subcommand_passed:
-            message = self.leave_message_config[ctx.guild.id].get('message')
-            await ctx.send(f'The current leave message is {message}')
-
-    @byebye.command(name='message', aliases=['msg'])
-    async def byebye_message(self, ctx, *, message):
-        """Sets the bot's message when a member leaves this server
-
-        Unlike {prefix}welcome, the only prefix you can specify is {{user}}.
-        """
-
-        if "{user}" not in message:
-            message = "{user} " + message
-        self.leave_message_config[str(ctx.guild.id)]['message'] = message
-        await ctx.send(f"Leave message has been set to *{message}*")
-
-    @byebye.command(name='channel', aliases=['chnl'],
-                    help=_message_format.format(thing='mourn for the user'))
-    async def byebye_channel(self, ctx, *, channel: discord.TextChannel=None):  
-        await self._channel_config(ctx, channel, thing='leave')
-
-    @byebye.command(name='delete', aliases=['del'], help=_delete_after_format.format(thing='leave'))
-    async def byebye_delete(self, ctx, duration: duration=None):
-        await self._delete_after_config(ctx, duration, thing='leave')
-
-    @byebye.command(name='remove', aliases=['disable'])
-    async def remove_byebye(self, ctx):
-        """Removes the bot's message when a member leaves this server."""
-        with redirect_exception((KeyError, 'This server never had a leave message.')):
-            del self.leave_message_config[ctx.guild]['message']
-        await ctx.send('Successfully removed the leave message.')
-
     # Hm, this needs less repetition
     # XXX: Lower the repetition
     async def on_member_remove(self, member):
         guild = member.guild
-        data = self.leave_message_config[guild]
-        message = data.get('message')
+        config = self.leave_message_config[guild]
+        if not config.get('enabled', False):
+            return
+
+        message = config.get('message')
         if not message:
             return
 
-        channel_id = data.get('channel')
-        channel = self.bot.get_channel(channel_id) or guild.default_channel
-        delete_after = data.get('delete_after')
 
-        message = message.replace("{user}", str(member))
+        channel_id = config.get('channel')
+        channel = self.bot.get_channel(channel_id) or guild.default_channel
+        delete_after = config.get('delete_after')
+
+
+        member_count = len(guild.members)
+
+        replacements = {
+            '{user}': member.mention,
+            '{uid}': str(member.id),
+            '{server}': str(guild),
+            '{count}': str(member_count),
+            '{countord}': ordinal(member_count),
+            # TODO: Should I use %c...?
+            '{time}': nice_time(datetime.utcnow())
+        }
+        
+
+        message = multi_replace(message, replacements)
         await channel.send(message, delete_after=delete_after)
 
     # ------------------------- PREFIX RELATED STUFF -------------------

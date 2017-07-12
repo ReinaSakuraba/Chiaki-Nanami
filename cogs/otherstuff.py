@@ -3,16 +3,20 @@ import json
 import operator
 import functools
 import itertools
+import os
 import random
 import sys
 import time
 
 from collections import namedtuple
+from contextlib import suppress
 from datetime import datetime
 from discord.ext import commands
+from more_itertools import always_iterable
 
 from .utils import errors
 from .utils.compat import user_colour
+from .utils.misc import emoji_url, load_async
 
 
 # ---------------- Ship-related utilities -------------------
@@ -58,30 +62,42 @@ class ShipRating(namedtuple('ShipRating', 'value comment')):
         return super().__new__(cls, value, comment) 
 
 _special_pairs = {
-    # frozenset((239110748180054017, 192060404501839872)) : ShipRating(100, 'testing special pairs')
 }
 
-@functools.lru_cache(maxsize=2 ** 20)
-def _calculate_compatibilty(info_pair):
-    # This has to be stored as a frozenset pair to make sure that
-    # switching the two users doesn't affect the result
+def _get_special_pairing(user1, user2):
+    keys = f'{user1.id}/{user2.id}', f'{user2.id}/{user1.id}'
+
+    # Don't wanna use more_itertools.first_true because of its dumb signature
+    result = next(filter(None, map(_special_pairs.get, keys)), None)
+    if result is None:
+        return result
+
+    value = result.get('value', random.randrange(101))
 
     try:
-        info1, info2 = info_pair
-    except ValueError:
-        # User inputted themself as the second argument
-        if len(info_pair) == 1:
-            info1, = info_pair
-            return ShipRating(0, f"RIP {info1.name}. They're forever alone.")
-        raise
+        comment = random.choice(always_iterable(result.get('comments')))
+    except IndexError:      # most likely no comment field was specified
+        comment = None
 
-    id_pair = frozenset((info1.id, info2.id))
-    if id_pair in _special_pairs:
-        return _special_pairs[id_pair]
+    return ShipRating(value=value, comment=comment)
 
-    return ShipRating(random.randrange(101))
+
+@functools.lru_cache(maxsize=2 ** 20)
+def _calculate_compatibilty(pair):
+    # This has to be stored as a frozenset pair to make sure that
+    # switching the two users doesn't affect the result
+    if len(pair) == 1:
+        info1, = pair
+        return ShipRating(0, f"RIP {info1.name}. They're forever alone.")
+
+    info1, info2 = pair
+
+    special = _get_special_pairing(info1, info2)
+    return special or ShipRating(random.randrange(101))
 
 #--------------- End ship stuffs ---------------------
+
+TEN_SEC_REACTION = '\N{BLACK SQUARE FOR STOP}'
 
 
 class OtherStuffs:
@@ -89,18 +105,19 @@ class OtherStuffs:
         self.bot = bot
         self.last_messages = {}
         self.default_time = datetime.utcnow()
-        self.bot.loop.create_task(self._load_pastas())
+        self.bot.loop.create_task(self._load())
 
     def __unload(self):
         # unload the cache if necessary...
         _calculate_compatibilty.cache_clear()
         pass
 
-    async def _load_pastas(self):
-        def nobody_kanna_cross_it():
-            with open(r'data\copypastas.json', encoding='utf-8') as f:
-                return json.load(f)
-        self.copypastas = await self.bot.loop.run_in_executor(None, nobody_kanna_cross_it)
+    async def _load(self):
+        global _special_pairs
+        self.copypastas = await load_async(os.path.join('data', 'copypastas.json'))
+
+        with suppress(FileNotFoundError):
+            _special_pairs  = await load_async(os.path.join('data', 'pairings.json'))
 
     @commands.group(invoke_without_command=True, aliases=['c+v'])
     async def copypasta(self, ctx, index: int, *, name=None):
@@ -173,7 +190,7 @@ class OtherStuffs:
         start = time.perf_counter()     # fuck time.monotonic()
         message = await ctx.send('Poing...')
         end = time.perf_counter()       # fuck time.monotonic()
-        ms = (end - start) * 100
+        ms = (end - start) * 1000
         await message.edit(content=f'Poing! ({ms :.3f} ms)')
 
     @commands.command()
@@ -219,7 +236,7 @@ class OtherStuffs:
                      )
         await ctx.send(embed=slap_embed)
 
-    @commands.command(name='lastseen')
+    @commands.command(name='lastseen', enabled=False)
     async def last_seen(self, ctx, user: discord.User):
         """Shows the last words of a user"""
 
@@ -240,6 +257,35 @@ class OtherStuffs:
                     .set_footer(text='Last seen ')
                     )
         await ctx.send(embed=embed)
+
+    @commands.command(name='10s')
+    async def ten_seconds(self, ctx):
+        """Starts a 10s test. How well can you judge 10 seconds?"""
+
+        description = f'Click the {TEN_SEC_REACTION} when you think 10 second have passed'
+        embed = (discord.Embed(colour=0xFFFF00, description=description)
+                .set_author(name=f'10 Seconds Test - {ctx.author}', icon_url=emoji_url('\N{ALARM CLOCK}'))
+                )
+
+        message = await ctx.send(embed=embed)
+        await message.add_reaction(TEN_SEC_REACTION)
+
+        def check(reaction, user):
+            return (reaction.message.id == message.id 
+                    and user.id == ctx.author.id
+                    and reaction.emoji == TEN_SEC_REACTION
+                   )
+
+        reaction, user = await ctx.bot.wait_for('reaction_add', check=check)
+        now = datetime.utcnow()
+        duration = (now - message.created_at).total_seconds()
+
+        embed.colour = 0x00FF00
+        embed.description = (f'When you clicked the {TEN_SEC_REACTION} button, \n'
+                             f'**{duration: .2f} seconds** have passed.')
+        embed.set_author(name=f'Test completed', icon_url=embed.author.icon_url)
+        embed.set_thumbnail(url=ctx.author.avatar_url)
+        await message.edit(embed=embed)
 
     async def on_message(self, message):
         self.last_messages[message.author.id] = message

@@ -91,20 +91,12 @@ async def read_image_from_url(url):
         async with session.get(url) as resp:
             return await resp.read()
 
-async def chunk_image_from_url(url, chunk_size=1024):
-    while True:
-        chunk = await resp.content.read(chunk_size)
-        if not chunk:
-            break
-        yield chunk
-
 @async_cache(maxsize=16384)
 async def _dominant_color_from_url(url):
     """Returns an rgb tuple consisting the dominant color given a image url."""
     with BytesIO(await read_image_from_url(url)) as f:
         # TODO: Make my own color-grabber module. This is ugly as hell.
         loop = asyncio.get_event_loop()
-        print(loop)
         return await loop.run_in_executor(None, functools.partial(ColorThief(f).get_color, quality=1))
 
 async def url_color(url):
@@ -117,42 +109,4 @@ async def user_color(user):
         return await url_color(avatar)
     return getattr(user, 'colour', discord.Colour.default())
 user_colour = user_color
-
-# itertools related stuff
-
-try:
-    from more_itertools import always_iterable, grouper, ilen, iterate, iter_except
-except ImportError:
-    def ilen(iterable):
-        d = deque(enumerate(iterable, 1), maxlen=1)
-        return d[0][0] if d else 0
-
-    def iterate(func, start):
-        while True:
-            yield start
-            start = func(start)
-
-    def always_iterable(obj):
-        if obj is None:
-            return ()
-
-        if isinstance(obj, (str, bytes)) or not hasattr(obj, '__iter__'):
-            return obj,
-
-        return obj
-
-    def iter_except(func, *exceptions, start=None):
-        try:
-            if start is not None:
-                yield start()
-            while True:
-                yield func()
-        except exceptions:
-            pass
-
-    def grouper(iterable, n, fillvalue=None):
-        "Collect data into fixed-length chunks or blocks"
-        # grouper('ABCDEFG', 3, 'x') --> ABC DEF Gxx"
-        args = [iter(iterable)] * n
-        return zip_longest(*args, fillvalue=fillvalue)
 

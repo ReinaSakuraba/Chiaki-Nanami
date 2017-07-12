@@ -7,9 +7,9 @@ import itertools
 from collections import defaultdict, namedtuple
 from discord.ext import commands
 from operator import attrgetter, contains
+from more_itertools import always_iterable, iterate
 
 from .utils import checks, errors
-from .utils.compat import always_iterable, iterate
 from .utils.context_managers import redirect_exception
 from .utils.converter import item_converter, BotCommand, BotCogConverter
 from .utils.database import Database
@@ -44,7 +44,7 @@ _perm_set_command_help = _make_doc('a command', extra=('This will affect aliases
 class Level(enum.Enum):
     user        = (discord.Member, '({0.guild.id}, {0.author.id})'.format, False, )
     # higher roles should be prioritised
-    role        = (discord.Role, lambda ctx: reversed([role.id for role in ctx.author.roles]), False, )
+    role        = (discord.Role, lambda ctx: (role.id for role in sorted(ctx.author.roles, reverse=False)), False, )
     channel     = (discord.TextChannel, attrgetter('channel.id'), None, )
     server      = (discord.Guild, attrgetter('guild.id'), True, )
 

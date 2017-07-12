@@ -1,5 +1,6 @@
 import asyncio
 import collections
+import contextlib
 import discord
 import functools
 import inspect
@@ -8,10 +9,10 @@ import random
 
 from datetime import datetime
 from discord.ext import commands
+from more_itertools import always_iterable
 
 from .formatter import ChiakiFormatter
 
-from cogs.utils.compat import always_iterable
 from cogs.utils.database import Database
 from cogs.utils.misc import cycle_shuffle, duration_units, file_handler
 
@@ -118,6 +119,15 @@ class ChiakiBot(commands.Bot):
             raise
         else:
             log.info(f"{name} successfully unloaded")
+
+    @contextlib.contextmanager
+    def temp_listener(self, func, name=None):
+        """Context manager for temporary listeners"""
+        self.add_listener(func, name)
+        try:
+            yield
+        finally:
+            self.remove_listener(func)
 
     def add_database(self, db):
         self.databases.append(db)

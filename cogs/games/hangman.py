@@ -14,7 +14,6 @@ from discord.ext import commands
 from .manager import SessionManager
 
 from ..utils import errors
-from ..utils.compat import iter_except
 from ..utils.misc import base_filename, escape_markdown, group_strings, truncate
 from ..utils.paginator import ListPaginator
 
@@ -85,7 +84,7 @@ class HangmanSession:
         return GameResult(success=False, message=f"{guess} is not in the word :(")
 
     def _check_message(self, message):
-        if message.channel != self.ctx.channel:
+        if message.channel != self.ctx.channel or message.author.bot:
             return False
 
         content = message.content
@@ -167,7 +166,7 @@ def _load_hangman(filename):
 
 class Hangman:
     """So you don't have to hang people in real life."""
-    FILE_PATH = os.path.join('.', 'data', 'games', 'hangman')
+    FILE_PATH = os.path.join('.', 'data', 'words')
 
     def __init__(self, bot):
         self.bot = bot
