@@ -106,12 +106,15 @@ class RNG:
         #         await msg.edit(content=f"{question_fmt}\n\N{BILLIARDS}: {answer}")
 
     @commands.command(usage='Nadeko;Salt;PvPCraft;mee6;Chiaki Nanami')
-    async def choose(self, ctx, *, choices: str):
+    async def choose(self, ctx, *, choices: commands.clean_content):
         """Chooses between a list of choices separated by semicolons"""
         with ctx.channel.typing():
             msg = await ctx.send('\N{THINKING FACE}')
             await asyncio.sleep(random.uniform(0.25, 1))
-            await msg.edit(content=random.choice(choices.split(';')))
+
+            # Make user sure mentions don't work.
+            choice = random.choice(choices.split(';')).replace('@', '@\u200b')
+            await msg.edit(content=choice)
 
     @commands.group(aliases=['rand'], invoke_without_command=True)
     async def random(self, ctx, lo: number, hi: number=None, dist='range'):
