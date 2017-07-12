@@ -290,10 +290,13 @@ class MinesweeperDisplay(BaseReactionPaginator):
         ```
         <column> <row> [f|flag|u|unsure]
         ```
-        Column and row must be from **A-{ascii_lowercase[self.board.width - 1].upper()}**
+        Column must be from **A-{ascii_lowercase[self.board.width - 1].upper()}**
+        And row must be from **A-{ascii_lowercase[self.board.height - 1].upper()}**
         Typing `f` or `flag` will mark the tile with a flag.
         Typing `u` or `unsure` will mark the tile as unsure.
         Typing nothing, well you know what it will do.
+
+        You **do not** need to include the `<>` or `[]`.
 
         Note that you can only input it if you're in this actual game.
         (ie typing anything in this screen won't do anything.)
