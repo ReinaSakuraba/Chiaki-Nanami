@@ -1,6 +1,7 @@
 import contextlib
 import discord
 
+from datetime import datetime
 from discord.ext import commands
 from functools import partial
 from itertools import starmap
@@ -402,12 +403,12 @@ class Admin:
         """Sets the bot's message when a member joins this server.
 
         The following special formats can be in the message:
-        `{{user}}`     = the member that joined. If one isn't placed, it's placed at the beginning of the message.
-        `{{uid}}`      = the ID of member that joined.
-        `{{server}}`   = Optional, the name of the server.
-        `{{count}}`    = how many members are in the server now. ,
-        `{{countord}}` = like `{{count}}`, but as an ordinal.
-        `{{joinedat}}` = The date and time when the member joined
+        `{{user}}`     = The member that joined. If one isn't placed, it's placed at the beginning of the message.
+        `{{uid}}`      = The ID of member that joined.
+        `{{server}}`   = The name of the server.
+        `{{count}}`    = How many members are in the server now.
+        `{{countord}}` = Like `{{count}}`, but as an ordinal, eg instead of `5` it becomes `5th`.
+        `{{time}}`     = The date and time when the member joined.
         """
         await self._message_config(ctx, message, thing='welcome')
 
@@ -436,9 +437,13 @@ class Admin:
     async def byebye_message(self, ctx, *, message: special_message = None):
         """Sets the bot's message when a member leaves this server
 
-        Unlike `{prefix}welcome message`, the only formats you can specify are:
-        `{{user}}`     = the member that left. If one isn't placed, it's placed at the beginning of the message.
-        `{{uid}}`      = the ID of member that left.
+        The following special formats can be in the message:
+        `{{user}}`     = The member that joined. If one isn't placed, it's placed at the beginning of the message.
+        `{{uid}}`      = The ID of member that left.
+        `{{server}}`   = The name of the server.
+        `{{count}}`    = How many members are in the server now.
+        `{{countord}}` = Like `{{count}}`, but as an ordinal, eg instead of `5` it becomes `5th`.
+        `{{time}}`     = The date and time when the member left the server.
         """
 
         await self._message_config(ctx, message, thing='leave')
@@ -477,7 +482,7 @@ class Admin:
             '{count}': str(member_count),
             '{countord}': ordinal(member_count),
             # TODO: Should I use %c...?
-            '{joinedat}': nice_time(member.joined_at)
+            '{time}': nice_time(member.joined_at)
         }
 
 
@@ -503,10 +508,18 @@ class Admin:
         delete_after = config.get('delete_after')
 
 
+        member_count = len(guild.members)
+
         replacements = {
-            '{user}': str(member),
+            '{user}': member.mention,
             '{uid}': str(member.id),
+            '{server}': str(guild),
+            '{count}': str(member_count),
+            '{countord}': ordinal(member_count),
+            # TODO: Should I use %c...?
+            '{time}': nice_time(datetime.utcnow())
         }
+        
 
         message = multi_replace(message, replacements)
         await channel.send(message, delete_after=delete_after)
