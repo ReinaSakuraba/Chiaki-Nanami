@@ -28,7 +28,7 @@ class NoSelfArgument(commands.BadArgument):
 # which kills the bot
 class ArgumentParser(argparse.ArgumentParser):
     def parse_args(self, args):
-        with contextlib.suppress(SystemExit):
+        with suppress(SystemExit):
             return super().parse_args(args)
         return None
 
