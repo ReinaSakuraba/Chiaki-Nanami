@@ -178,30 +178,36 @@ class Admin:
 
     @commands.command(name='addrole', aliases=['ar'])
     @checks.admin_or_permissions(manage_roles=True)
-    async def add_role(self, ctx, user: discord.Member, *, role: LowerRole):
+    async def add_role(self, ctx, member: discord.Member, *, role: LowerRole):
         """Adds a role to a user
 
         This role must be lower than both the bot's highest role and your highest role.
         """
-        with redirect_exception((discord.Forbidden, f"I can't give {user} {role}. Either I don't have the right perms, "
+        if role in member.roles:
+            return await ctx.send(f'{member} already has **{role}**... \N{NEUTRAL FACE}')
+
+        with redirect_exception((discord.Forbidden, f"I can't give {member} {role}. Either I don't have the right perms, "
                                                      "or you're trying to add a role that's higher than mine"),
-                                (discord.HTTPException, f"Giving {role} to {user} failed. Not sure why though...")):
+                                (discord.HTTPException, f"Giving {role} to {member} failed. Not sure why though...")):
             await user.add_roles(role)
-        await ctx.send(f"Successfully gave {user} **{role}**, I think.")
+        await ctx.send(f"Successfully gave {member} **{role}**, I think.")
 
     @commands.command(name='removerole', aliases=['rr'])
     @checks.admin_or_permissions(manage_roles=True)
-    async def remove_role(self, ctx, user: discord.Member, *, role: LowerRole):
+    async def remove_role(self, ctx, member: discord.Member, *, role: LowerRole):
         """Removes a role from a user
 
         This role must be lower than both the bot's highest role and your highest role.
         Do not confuse this with `{prefix}deleterole`, which deletes a role from the server.
         """
-        with redirect_exception((discord.Forbidden, f"I can't remove **{role}** from {user}. Either I don't have the right perms, "
+        if role not in member.roles:
+            return await ctx.send(f"{member} doesn't have **{role}**... \N{NEUTRAL FACE}")
+
+        with redirect_exception((discord.Forbidden, f"I can't remove **{role}** from {member}. Either I don't have the right perms, "
                                                      "or you're trying to remove a role that's higher than mine"),
-                                (discord.HTTPException, f"Removing {role} from {user} failed. Not sure why though...")):
-            await user.remove_roles(role)
-        await ctx.send(f"Successfully removed **{role}** from {user}, I think.")
+                                (discord.HTTPException, f"Removing {role} from {member} failed. Not sure why though...")):
+            await member.remove_roles(role)
+        await ctx.send(f"Successfully removed **{role}** from {member}, I think.")
 
     @commands.command(name='createrole', aliases=['crr'])
     @checks.admin_or_permissions(manage_roles=True)
