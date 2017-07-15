@@ -17,6 +17,9 @@ from .utils.timer import Scheduler, TimerEntry
 
 MAX_REMINDERS = 10
 ALARM_CLOCK_URL = emoji_url('\N{ALARM CLOCK}')
+CLOCK_URL = emoji_url('\N{MANTELPIECE CLOCK}')
+CANCELED_URL = emoji_url('\N{BELL WITH CANCELLATION STROKE}')
+
 
 _calendar = parsedatetime.Calendar()
 def parse_time(time_string):
@@ -50,12 +53,31 @@ class Reminder:
         with contextlib.suppress(ValueError):
             self.scheduler.remove_entry(entry)
 
+    @staticmethod
+    def _create_reminder_embed(ctx, when, message):
+        # Discord attempts to be smart with breaking up long lines. If a line 
+        # is extremely long, it will attempt to insert a line break before the 
+        # next word. This is good in some uses. However, lines that are just one 
+        # really long word won't be broken up into lines. This leads to the 
+        # embed being stretched all the way to the right.
+        #
+        # To avoid giving myself too much of a headache, I've decided to not
+        # attempt to break up the lines myself.
+
+        return (discord.Embed(colour=0x00FF00, description=message, timestamp=when)
+               .set_author(name='Reminder set!', icon_url=CLOCK_URL)
+               .set_thumbnail(url=ctx.author.avatar_url)
+               .add_field(name='For', value=f'#{ctx.channel} in {ctx.guild}', inline=False)
+               .set_footer(text='Set to go off at')
+               )
+
     @commands.group(invoke_without_command=True)
     async def remind(self, ctx, duration: duration, *, message: commands.clean_content='nothing'):
         """Adds a reminder that will go off after a certain amount of time."""
+
         when = ctx.message.created_at + timedelta(seconds=duration)
         self.add_reminder(ctx.author, when.timestamp(), duration, ctx.channel.id, message)
-        await ctx.send('ok')
+        await ctx.send(embed=self._create_reminder_embed(ctx, when, message))
 
     @remind.command(name='at')
     async def remind_at(self, ctx, when: parse_time, *, message: commands.clean_content='nothing'):
@@ -70,7 +92,7 @@ class Reminder:
             return await ctx.send("I can't go back in time for you. Sorry.")
 
         self.add_reminder(ctx.author, when.timestamp(), seconds, ctx.channel.id, message)
-        await ctx.send('ok')
+        await ctx.send(embed=self._create_reminder_embed(ctx, when, message))
 
     @remind.command(name='cancel', aliases=['del'])
     async def cancel_reminder(self, ctx, index: int):
@@ -78,8 +100,21 @@ class Reminder:
         with redirect_exception((IndexError, f'{index} is either not valid, or out of range... I think.')):
             entry = self.reminder_data[ctx.author][index - (index > 0)]
 
+        actual = index if index > 0 else index + 1 if not index else index + len(self.reminder_data[ctx.author]) + 1
         self.remove_reminder(entry)
-        await ctx.send(f'#{index} canceled. Here was the original message, I think: {entry.args[-1]}.')
+
+        _, channel_id, _, message = entry.args
+        channel = self.bot.get_channel(channel_id) or 'deleted-channel'
+        # In case the channel doesn't exist anymore
+        server = getattr(channel, 'guild', None)
+
+        embed = (discord.Embed(colour=0xFF0000, description=message, timestamp=entry.dt)
+                .set_author(name=f'Reminder #{actual} cancelled!', icon_url=CANCELED_URL)
+                .add_field(name='Was for', value=f'{channel} in {server}')
+                .set_footer(text='Was set to go off at')
+                )
+
+        await ctx.send(embed=embed)
 
     @commands.command()
     async def reminders(self, ctx):
@@ -114,9 +149,12 @@ class Reminder:
                 .set_footer(text=f'From {human_delta} ago. ')
                 )
 
-        try:
-            await channel.send(f'<@{user_id}> {human_delta} ago you wanted to be reminded of {message}')
+        with contextlib.suppress(discord.HTTPException):
             await user.send(embed=embed)
+        try:
+            await channel.send(f"<@{user_id}>", embed=embed)    
+        except discord.HTTPException:
+            await channel.send(f'<@{user_id}> {human_delta} ago you wanted to be reminded of {message}')
         finally:
             self.remove_reminder(timer)
 
