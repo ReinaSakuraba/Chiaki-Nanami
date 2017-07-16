@@ -78,7 +78,7 @@ class CustomCommands:
             await ctx.send(f'{trigger_id} was never a trigger, I think.')
 
     @custom_command.command(name='delete', aliases=['del'])
-    @checks.mod_or_permissions(manage_server=True)
+    @checks.mod_or_permissions(manage_guild=True)
     @global_cc_check()
     async def delete_custom_command(self, ctx, trigger):
         """Deletes an entire trigger from the server."""

@@ -634,7 +634,7 @@ class Moderator:
         await ctx.send('\N{THUMBS UP SIGN}')
         
     @commands.command(name='setmuterole', aliases=['smur'])
-    @checks.admin_or_permissions(manage_roles=True, manage_server=True)
+    @checks.admin_or_permissions(manage_roles=True, manage_guild=True)
     async def set_muted_role(self, ctx, *, role: discord.Role):
         """Sets the muted role for the server.
         
@@ -761,7 +761,7 @@ class Moderator:
             return cases[num]
 
     @commands.group()
-    @checks.admin_or_permissions(manage_server=True)
+    @checks.admin_or_permissions(manage_guild=True)
     async def caseset(self, ctx):
         """Super-command for all mod case-related commands
 
