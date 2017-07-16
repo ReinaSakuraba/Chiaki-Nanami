@@ -7,12 +7,14 @@ from collections import namedtuple
 from contextlib import suppress
 from discord.ext import commands
 from functools import partial
-from more_itertools import ilen
+from more_itertools import grouper, ilen
 
 from .context_managers import redirect_exception
 from .errors import InvalidUserArgument
-from .misc import pairwise, parse_int
+from .misc import parse_int
 
+
+_pairwise = partial(grouper, 2)
 
 class NoBots(commands.BadArgument):
     """Exception raised in CheckedMember when the author passes a bot"""
@@ -156,7 +158,7 @@ DURATION_MULTIPLIERS = {
     's': 1,                  'sec': 1,
 }
 
-_time_pattern = ''.join(f'(?:([0-9]{{1,5}})({u1}|{u2}))?' for u1, u2 in pairwise(DURATION_MULTIPLIERS))
+_time_pattern = ''.join(f'(?:([0-9]{{1,5}})({u1}|{u2}))?' for u1, u2 in _pairwise(DURATION_MULTIPLIERS))
 _time_compiled = re.compile(f'{_time_pattern}$')
 
 def duration(string):
@@ -169,7 +171,7 @@ def duration(string):
             # rather than the actual error.
             raise InvalidUserArgument(f'{string} is not a valid time.') from e
         no_nones = filter(None, match.groups())
-        return sum(float(amount) * DURATION_MULTIPLIERS[unit] for amount, unit in pairwise(no_nones))
+        return sum(float(amount) * DURATION_MULTIPLIERS[unit] for amount, unit in _pairwise(no_nones))
 
 
 class union(commands.Converter):

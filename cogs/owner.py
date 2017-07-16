@@ -14,7 +14,6 @@ from discord.ext import commands
 from .utils.checks import OWNER_CHECK
 from .utils.converter import item_converter
 from .utils.context_managers import temp_attr
-from .utils.misc import code_msg
 
 
 class Owner:
@@ -25,16 +24,6 @@ class Owner:
         self.bot = bot
         self._last_result = None
         self.__local_check = OWNER_CHECK
-
-    async def _load(self, ctx, ext):
-        try:
-            self.bot.load_extension(ext)
-        except Exception as e:
-            print(f'Failed to load extension {ext}\n')
-            traceback.print_exc()
-            await ctx.send(code_msg(traceback.format_exc(), 'py'))
-        else:
-            await ctx.send(code_msg(f'load {ext} successful'))
 
     def _create_env(self, ctx):
         return {
@@ -59,9 +48,9 @@ class Owner:
             if inspect.isawaitable(result):
                 result = await result
         except Exception as e:
-            await ctx.send(code_msg(traceback.format_exc(), 'py'))
+            await ctx.send(f'```py\n{traceback.format_exc()}```')
         else:
-            await ctx.send(code_msg(result, 'py'))
+            await ctx.send(f'```py\n{result}```')
 
     @staticmethod
     def cleanup_code(body):

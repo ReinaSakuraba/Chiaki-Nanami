@@ -15,19 +15,6 @@ from more_itertools import grouper
 
 REGIONAL_INDICATORS = [chr(i + 0x1f1e6) for i in range(26)]
 
-def code_say(bot, msg):
-    return bot.say(code_msg(msg))
-
-def code_msg(msg, style=''):
-    return f'```{style}\n{msg}```'
-
-def cycle_shuffle(iterable):
-    saved = [elem for elem in iterable]
-    while True:
-        random.shuffle(saved)
-        for element in saved:
-              yield element
-
 def multi_replace(string, replacements):
     substrs = sorted(replacements, key=len, reverse=True)
     pattern = re.compile("|".join(map(re.escape, substrs)))
@@ -44,10 +31,6 @@ def str_join(delim, iterable):
 
 def group_strings(string, n):
     return map(''.join, grouper(n, string, ''))
-
-def pairwise(t):
-    it = iter(t)
-    return zip(it, it)
 
 def nice_time(time):
     return time.strftime("%d/%m/%Y %H:%M")
