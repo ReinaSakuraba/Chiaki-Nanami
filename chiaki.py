@@ -79,6 +79,10 @@ async def on_ready():
 
 @bot.event
 async def on_command_error(ctx, error):
+    if isinstance(error, commands.CheckFailure) and await bot.is_owner(ctx.author):
+        await ctx.reinvoke()
+        return
+
     bot.command_counter['failed'] += 1
 
     cause =  error.__cause__
