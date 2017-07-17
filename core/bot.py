@@ -14,7 +14,7 @@ from more_itertools import always_iterable
 from .formatter import ChiakiFormatter
 
 from cogs.utils.database import Database
-from cogs.utils.misc import cycle_shuffle, duration_units, file_handler
+from cogs.utils.misc import duration_units, file_handler
 
 log = logging.getLogger(__name__)
 log.addHandler(file_handler('chiakinanami'))
@@ -144,10 +144,9 @@ class ChiakiBot(commands.Bot):
 
     # Just some looping functions
     async def change_game(self):
-        game_choices = cycle_shuffle(self._config['rotating_games'])
         await self.wait_until_ready()
         while True:
-            name = next(game_choices)
+            name = random.choice(self._config['rotating_games'])
             await self.change_presence(game=discord.Game(name=name))
             await asyncio.sleep(random.uniform(0.5, 10) * 60)
 
