@@ -11,7 +11,6 @@ import traceback
 
 from discord.ext import commands
 
-from .utils.checks import OWNER_CHECK
 from .utils.converter import item_converter
 from .utils.context_managers import temp_attr
 
@@ -23,7 +22,9 @@ class Owner:
     def __init__(self, bot):
         self.bot = bot
         self._last_result = None
-        self.__local_check = OWNER_CHECK
+
+    async def __local_check(self, ctx):
+        return await ctx.bot.is_owner(ctx.author)
 
     def _create_env(self, ctx):
         return {

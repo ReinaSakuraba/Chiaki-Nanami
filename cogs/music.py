@@ -368,7 +368,7 @@ class Music:
         await self.bot.say("Resumed.")
 
     @commands.command(pass_context=True, no_pm=True)
-    @checks.is_mod()
+    
     @requires_user_in_voice_channel
     async def stop(self, ctx):
         """Stops playing audio and leaves the voice channel.
@@ -456,7 +456,7 @@ class Music:
         pass
 
     @queue.command(name="clear", pass_context=True, no_pm=True)
-    @checks.is_mod()
+    
     async def clear(self, ctx):
         """Clears the queue
 

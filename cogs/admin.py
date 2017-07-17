@@ -6,7 +6,7 @@ from discord.ext import commands
 from functools import partial
 from itertools import starmap
 
-from .utils import checks, errors
+from .utils import errors
 from .utils.converter import ArgumentParser, duration
 from .utils.context_managers import redirect_exception
 from .utils.database import Database
@@ -16,8 +16,7 @@ from .utils.misc import duration_units, multi_replace, nice_time, ordinal, str_j
 def special_message(message):
     return message if '{user}' in message else f'{{user}}{message}'
 
-def welcome_leave_message_check():
-    return checks.admin_or_permissions(manage_guild=True)
+welcome_leave_message_check = partial(commands.has_permissions, manage_guild=True)
 
 
 class LowerRole(commands.RoleConverter):
@@ -42,67 +41,12 @@ class Admin:
         self.self_roles = Database("admin/selfroles.json", default_factory=list)
         self.welcome_message_config = Database("admin/onjoin.json", default_factory=dict)
         self.leave_message_config = Database("admin/onleave.json", default_factory=dict)
-        self.bot.add_database(checks.server_roles)
 
     def __local_check(self, ctx):
         return bool(ctx.guild)
 
-    @staticmethod
-    async def _set_chiaki_role(ctx, key, role, action):
-        checks.assign_role(ctx.guild, key, role)
-        msg = (f"Made {role} an **{key} role**!" if role is not None else
-               f"Reset the **{key}** role to **{checks.DEFAULT}**")
-        await ctx.send(msg)
-
-    @staticmethod
-    async def _chiaki_roles(ctx, key):
-        server = ctx.guild
-        id = checks.get_role(server, key)
-        role = discord.utils.get(server.roles, id=id) or checks.DEFAULT
-        await ctx.send(f'**{role}** is your current \"{key}\" role.')
-
-    async def _chiaki_role_command(self, ctx, key, role):
-        if role is None:
-            await self._chiaki_roles(ctx, key)
-        else:
-            await self._set_chiaki_role(ctx, key, role, 'assign an {key} role to')
-
-    @commands.command(name='adminrole', aliases=['adr'])
-    @checks.is_admin()
-    async def admin_role(self, ctx, *, role: LowerRole=None):
-        """Sets a role for the 'Admin' role. If no role is specified, it shows what role is assigned as the Admin role.
-
-        Admins are a special type of administrator. They have access to most of the permission-related
-        or server-related commands.
-        Only one role can be assigned as Admin. Default role is a role named "Bot Admin".
-        """
-        await self._chiaki_role_command(ctx, checks.ChiakiRole.admin, role)
-
-    @commands.command(name='modrole', aliases=['mr'])
-    @checks.is_admin()
-    async def mod_role(self, ctx, *, role: LowerRole=None):
-        """Sets a role for the 'Moderator' role.
-        If no role is specified, it shows what role is assigned as the Moderator role.
-
-        Moderators mainly have access to most of the mod commands, such as mute, kick, and ban.
-        Only one role can be assigned as Moderator. Default role is a role named "Bot Admin".
-        """
-        await self._chiaki_role_command(ctx, checks.ChiakiRole.mod, role)
-
-    @commands.command(name='resetadminrole', aliases=['radr'])
-    @checks.is_admin()
-    async def reset_admin_role(self, ctx):
-        """Resets the Admin role to the default role."""
-        await self._set_chiaki_role(ctx, checks.ChiakiRole.admin, None, 'remove an Admin role from')
-
-    @commands.command(name='resetmodrole', aliases=['rmr'])
-    @checks.is_admin()
-    async def reset_mod_role(self, ctx):
-        """Resets the Admin role to the default role."""
-        await self._set_chiaki_role(ctx, checks.ChiakiRole.mod, None, 'remove the Moderator role from')
-
     @commands.command(name='addselfrole', aliases=['asar', ])
-    @checks.is_admin()
+    @commands.has_permissions(manage_roles=True, manage_guild=True)
     async def add_self_role(self, ctx, *, role: LowerRole):
         """Adds a self-assignable role to the server
 
@@ -117,7 +61,7 @@ class Admin:
         await ctx.send(f"**{role}** is now a self-assignable role!")
 
     @commands.command(name='removeselfrole', aliases=['rsar', ])
-    @checks.is_admin()
+    @commands.has_permissions(manage_roles=True, manage_guild=True)
     async def remove_self_role(self, ctx, *, role: LowerRole):
         """Removes a self-assignable role from the server
 
@@ -140,7 +84,7 @@ class Admin:
         getter = partial(discord.utils.get, ctx.guild.roles)
         self_roles = [getter(id=id) for id in self_roles_ids]
 
-        msg = (f'List of self-assignable roles: \n{str_join(", ", self_roles)}' 
+        msg = (f'List of self-assignable roles: \n{str_join(", ", self_roles)}'
                if self_roles else 'There are no self-assignable roles...')
         await ctx.send(msg)
 
@@ -177,7 +121,7 @@ class Admin:
         await ctx.send(msg)
 
     @commands.command(name='addrole', aliases=['ar'])
-    @checks.admin_or_permissions(manage_roles=True)
+    @commands.has_permissions(manage_roles=True)
     async def add_role(self, ctx, member: discord.Member, *, role: LowerRole):
         """Adds a role to a user
 
@@ -193,7 +137,7 @@ class Admin:
         await ctx.send(f"Successfully gave {member} **{role}**, I think.")
 
     @commands.command(name='removerole', aliases=['rr'])
-    @checks.admin_or_permissions(manage_roles=True)
+    @commands.has_permissions(manage_roles=True)
     async def remove_role(self, ctx, member: discord.Member, *, role: LowerRole):
         """Removes a role from a user
 
@@ -210,7 +154,7 @@ class Admin:
         await ctx.send(f"Successfully removed **{role}** from {member}, I think.")
 
     @commands.command(name='createrole', aliases=['crr'])
-    @checks.admin_or_permissions(manage_roles=True)
+    @commands.has_permissions(manage_roles=True)
     async def create_role(self, ctx, *args: str):
         """Creates a role with some custom arguments:
 
@@ -263,7 +207,7 @@ class Admin:
         await ctx.send(f"Successfully created **{args.name}**!")
 
     @commands.command(name='editrole', aliases=['er'])
-    @checks.admin_or_permissions(manage_roles=True)
+    @commands.has_permissions(manage_roles=True)
     async def edit_role(self, ctx, old_role: LowerRole, *args: str):
         """Edits a role with some custom arguments:
 
@@ -318,7 +262,7 @@ class Admin:
         await ctx.send(f"Successfully edited **{old_role}**!")
 
     @commands.command(name='deleterole', aliases=['delr'])
-    @checks.admin_or_permissions(manage_roles=True)
+    @commands.has_permissions(manage_roles=True)
     async def delete_role(self, ctx, *, role: LowerRole):
         """Deletes a role from the server
 
@@ -332,11 +276,11 @@ class Admin:
     # ---------------- WELCOME AND LEAVE MESSAGE STUFF -------------
 
     _channel_format = """
-        Sets the channel where I will {thing}. 
+        Sets the channel where I will {thing}.
         If no arguments are given, it shows the current channel.
 
-        By default it's the server's default channel. 
-        If the channel gets deleted or doesn't exist, the message will 
+        By default it's the server's default channel.
+        If the channel gets deleted or doesn't exist, the message will
         redirect to the server's default channel.
         """
 
@@ -354,7 +298,7 @@ class Admin:
 
         print(do_thing)
         db['enabled'] = do_thing
-        to_say = (f"Yay I will {text}" if do_thing else 
+        to_say = (f"Yay I will {text}" if do_thing else
                   "Oki I'll just sit in my corner then :~")
         await ctx.send(to_say)
 
@@ -382,7 +326,7 @@ class Admin:
         db = getattr(self, f'{thing}_message_config')[ctx.guild]
         if duration is None:
             duration = db.get('delete_after')
-            message = (f"I won't delete the {thing} message." if not duration else 
+            message = (f"I won't delete the {thing} message." if not duration else
                        f"I will delete the {thing} message after {duration_units(duration)}.")
             await ctx.send(message)
         else:
@@ -397,10 +341,10 @@ class Admin:
     @commands.group(aliases=['hi'], invoke_without_command=True)
     @welcome_leave_message_check()
     async def welcome(self, ctx, do_welcome: bool = None):
-        """Sets whether or not I announce when someone joins the server. 
+        """Sets whether or not I announce when someone joins the server.
         Specifying with no arguments will toggle it.
         """
-        await self._toggle_config(ctx, do_welcome, thing='welcome', 
+        await self._toggle_config(ctx, do_welcome, thing='welcome',
                                   text='welcome all new members to the server! ^o^')
 
     @welcome.command(name='message', aliases=['msg'])
@@ -432,10 +376,10 @@ class Admin:
     @commands.group(aliases=['bye'], invoke_without_command=True)
     @welcome_leave_message_check()
     async def byebye(self, ctx, do_bye: bool = None):
-        """Sets whether or not I announce when someone leaves the server. 
+        """Sets whether or not I announce when someone leaves the server.
         Specifying with no arguments will toggle it.
         """
-        await self._toggle_config(ctx, do_bye, thing='leave', 
+        await self._toggle_config(ctx, do_bye, thing='leave',
                                   text='mourn the loss of members. ;-;')
 
     @byebye.command(name='message', aliases=['msg'])
@@ -457,13 +401,13 @@ class Admin:
     @byebye.command(name='channel', aliases=['chnl'],
                     help=_channel_format.format(thing='mourn for the user'))
     @welcome_leave_message_check()
-    async def byebye_channel(self, ctx, *, channel: discord.TextChannel = None):  
+    async def byebye_channel(self, ctx, *, channel: discord.TextChannel = None):
         await self._channel_config(ctx, channel, thing='leave')
 
     @byebye.command(name='delete', aliases=['del'], help=_delete_after_format.format(thing='leave'))
     @welcome_leave_message_check()
     async def byebye_delete(self, ctx, duration: duration = None):
-        await self._delete_after_config(ctx, duration, thing='leave')    
+        await self._delete_after_config(ctx, duration, thing='leave')
 
     async def on_member_join(self, member):
         guild = member.guild
@@ -525,7 +469,7 @@ class Admin:
             # TODO: Should I use %c...?
             '{time}': nice_time(datetime.utcnow())
         }
-        
+
 
         message = multi_replace(message, replacements)
         await channel.send(message, delete_after=delete_after)
@@ -533,7 +477,7 @@ class Admin:
     # ------------------------- PREFIX RELATED STUFF -------------------
 
     @commands.group(aliases=['prefixes'])
-    @checks.is_admin()
+    @commands.has_permissions(manage_guild=True)
     async def prefix(self, ctx):
         """Shows the prefixes that you can use in this server."""
         if ctx.invoked_subcommand is not None:
@@ -541,12 +485,12 @@ class Admin:
 
         prefixes = await self.bot.get_prefix(ctx.message)
         description = '\n'.join(starmap('`{0}.` {1}'.format, enumerate(prefixes, start=1)))
-        embed = discord.Embed(title=f'Prefixes you can use in {ctx.guild}', 
+        embed = discord.Embed(title=f'Prefixes you can use in {ctx.guild}',
                               colour=self.bot.colour, description=description)
         await ctx.send(embed=embed)
 
     @prefix.command(name='add')
-    @checks.is_admin()
+    @commands.has_permissions(manage_guild=True)
     async def add_prefix(self, ctx, *, prefix):
         """Adds a custom prefix for this server"""
         prefixes = self.bot.custom_prefixes.setdefault(ctx.guild, [])
@@ -557,7 +501,7 @@ class Admin:
             await ctx.send(f"Successfully added prefix \"{prefix}\"!")
 
     @prefix.command(name='remove')
-    @checks.is_admin()
+    @commands.has_permissions(manage_guild=True)
     async def remove_prefix(self, ctx, *, prefix):
         """Removes a prefix for this server"""
         prefixes = self.bot.custom_prefixes.get(ctx.guild)
@@ -569,7 +513,7 @@ class Admin:
         await ctx.send(f"Successfully removed \"{prefix}\"!")
 
     @prefix.command(name="reset")
-    @checks.is_admin()
+    @commands.has_permissions(manage_guild=True)
     async def reset_prefix(self, ctx):
         """Resets the server's custom prefixes back to the default prefix ({prefix})"""
         with redirect_exception((KeyError, f"**{ctx.guild}** never had any custom prefixes...")):

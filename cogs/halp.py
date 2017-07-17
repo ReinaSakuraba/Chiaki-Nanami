@@ -9,7 +9,7 @@ from datetime import datetime
 from discord.ext import commands
 from functools import partial
 
-from .utils import checks, errors
+from .utils import errors
 from .utils.context_managers import temp_attr
 from .utils.converter import BotCogConverter, BotCommand
 from .utils.database import Database
@@ -149,14 +149,14 @@ class Help:
                                   embed=problem_message.embed)
 
     @commands.command()
-    @checks.is_owner()
+    @commands.is_owner()
     @errors.private_message_only()
     async def contactblock(self, ctx, *, user: discord.User):
         self.blocked.append(user.id)
         await ctx.send(f"Blocked user {user} successfully!")
 
     @commands.command(hidden=True)
-    @checks.is_owner()
+    @commands.is_owner()
     @errors.private_message_only()
     async def answer(self, ctx, id_: int, *, response: str):
         problem_message = self.problems.pop(id_, None)
@@ -175,7 +175,7 @@ class Help:
         await ctx.send(f"Successfully responded to {id_}! Response:", embed=response_embed)
 
     @commands.command(hidden=True)
-    @checks.is_owner()
+    @commands.is_owner()
     @errors.private_message_only()
     async def review(self, ctx, id_: str):
         problem_message = self.problems.get(id_)

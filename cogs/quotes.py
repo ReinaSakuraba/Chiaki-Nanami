@@ -110,7 +110,7 @@ class Quotes:
             await self.bot.say(f"Successfully removed quote #{index}")
 
     @commands.command(pass_context=True, no_pm=True, aliases=['clrq'])
-    @checks.is_admin()
+    
     async def clearquotes(self, ctx):
         """Clears all the quotes
 
@@ -120,7 +120,7 @@ class Quotes:
         await self.bot.say(f"Successfully cleared all quotes from this server.")
 
     @commands.command(hidden=True, aliases=['clrpq', 'clrdmq'])
-    @checks.is_owner()
+    @commands.is_owner()
     async def clearprivatequotes(self):
         """Clears all quotes from DMs
 

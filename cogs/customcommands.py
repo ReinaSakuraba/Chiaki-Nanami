@@ -5,10 +5,11 @@ from collections import ChainMap
 from discord.ext import commands
 from itertools import chain, starmap
 
-from .utils import checks, errors
+from .utils import errors
 from .utils.context_managers import temp_attr
 from .utils.database import Database
 from .utils.paginator import ListPaginator
+
 
 def word_count(s):
     return len(s.split()), len(s)
@@ -18,7 +19,7 @@ def global_cc_check():
     async def predicate(ctx):
         if ctx.guild:
             return True
-        return await checks.is_owner_predicate(ctx)
+        return await ctx.bot.is_owner(ctx.author)
     return commands.check(predicate)
 
 MAX_ALIAS_WORDS = 20
@@ -78,7 +79,7 @@ class CustomCommands:
             await ctx.send(f'{trigger_id} was never a trigger, I think.')
 
     @custom_command.command(name='delete', aliases=['del'])
-    @checks.mod_or_permissions(manage_guild=True)
+    @commands.has_permissions(manage_guild=True)
     @global_cc_check()
     async def delete_custom_command(self, ctx, trigger):
         """Deletes an entire trigger from the server."""

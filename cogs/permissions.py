@@ -9,7 +9,7 @@ from discord.ext import commands
 from operator import attrgetter, contains
 from more_itertools import always_iterable, iterate
 
-from .utils import checks, errors
+from .utils import errors
 from .utils.context_managers import redirect_exception
 from .utils.converter import item_converter, BotCommand, BotCogConverter
 from .utils.database import Database
@@ -207,7 +207,7 @@ class Permissions:
     # commands will inevitably clash with cogs of the same name, creating confusion.
     # This is also why the default help command only takes commands, as opposed to either a command or cog.
     @commands.command(name='permsetcommand', aliases=['psc'], help=_perm_set_command_help)
-    @checks.is_admin()
+    
     @commands.guild_only()
     async def perm_set_command(self, ctx, level: Level, mode: Action, command: BotCommand, *args):
         self._assert_is_valid_cog(command)
@@ -215,7 +215,7 @@ class Permissions:
         await self._perm_set(ctx, level, mode, command.qualified_name, *ids, thing='Command')
 
     @commands.command(name='permsetmodule', aliases=['psm'], help=_make_doc('a module'))
-    @checks.is_admin()
+    
     @commands.guild_only()
     async def perm_set_module(self, ctx, level: Level, mode: Action, module: BotCogConverter, *args):
         self._assert_is_valid_cog(module)
@@ -223,7 +223,7 @@ class Permissions:
         await self._perm_set(ctx, level, mode, type(module).__name__, *ids, thing='Module')
 
     @commands.command(name='permsetall', aliases=['psall'], help=_make_doc('all modules'))
-    @checks.is_owner()
+    @commands.is_owner()
     @commands.guild_only()
     async def perm_set_all(self, ctx, level: Level, mode: Action, *args):
         ids = await level.parse_args(ctx, *args)
@@ -240,13 +240,13 @@ class Permissions:
         await ctx.send(f"**{command}** is now {'deins'[bool_::2]}abled!")
 
     @commands.command()
-    @checks.is_owner()
+    @commands.is_owner()
     async def disable(self, ctx, *, command: BotCommand):
         """Globally disables a command."""
         await self._modify_command(ctx, command, False)
 
     @commands.command()
-    @checks.is_owner()
+    @commands.is_owner()
     async def enable(self, ctx, *, command: BotCommand):
         """Globally enables a command."""
         await self._modify_command(ctx, command, True)
@@ -265,14 +265,14 @@ class Permissions:
         await ctx.send(embed=block_type.embed(user))
 
     @commands.command(aliases=['bl'])
-    @checks.is_owner()
+    @commands.is_owner()
     async def blacklist(self, ctx, *, user: discord.User):
         """Blacklists a user. This prevents them from ever using the bot, regardless of other permissions."""
         await self._modify_blacklist(ctx, user, 'append', contains_op=contains, 
                                      block_type=BlockType.blacklist)
 
     @commands.command(aliases=['wl'])
-    @checks.is_owner()
+    @commands.is_owner()
     async def whitelist(self, ctx, *, user: discord.User):
         """Whitelists a user, removing the from the blacklist.
 

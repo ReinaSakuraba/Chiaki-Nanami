@@ -5,7 +5,7 @@ from collections import defaultdict, deque
 from datetime import datetime
 from discord.ext import commands
 
-from .utils import checks, errors
+from .utils import errors
 from .utils.compat import user_color
 from .utils.database import Database
 from .utils.misc import duration_units

@@ -41,16 +41,39 @@ class ChiakiFormatter(commands.HelpFormatter):
         # commands that don't take any arguments don't really need an example generated manually...
         return None
 
+    @property
+    def command_checks(self):
+        # TODO: Factor in the group stuff later
+        return self.command.checks
+
+    @property
     def command_requirements(self):
         command = self.command
-        chiaki_checks = [check for check in command.all_checks
-                         if getattr(check, '__chiaki_check__', False)]
+        requirements = []
+        # All commands in this cog are owner-only anyway.
+        if command.cog_name == 'Owner':
+            requirements.append('**Bot Owner only**')
 
-        # We need the unique requirements. This is in case someone accidentally
-        # decorates a subcommand with the same check as their parent.
-        # Otherwise it would duplicate.
-        return {key: ', '.join(_unique(filter(None, map(operator.attrgetter(key), chiaki_checks)))) or 'None'
-                for key in ['roles', 'perms'] }
+        def make_pretty(p):
+            return p.replace('_', ' ').title()
+
+        for check in self.command_checks:
+            name = getattr(check, '__qualname__', '')
+
+            if name.startswith('is_owner'):
+                # the bot owner line must come above every other line, for emphasis.
+                requirements.insert(0, '**Bot Owner only**')
+            elif name.startswith('has_permissions'): 
+                # Here's the biggest hack in history.
+                permissions = check.__closure__[0].cell_contents
+                pretty_perms = [make_pretty(k) if v else f'~~{make_pretty(k)}~~' 
+                                for k, v in permissions.items()]
+
+                perm_names = ', '.join(pretty_perms)
+                requirements.append(f'{perm_names} permission{"s" * (len(pretty_perms) != 1)}')
+            print(requirements)
+
+        return '\n'.join(requirements)
 
     def paginate_cog_commands(self, cog_name):
         sorted_commands = sorted(self.context.bot.get_cog_commands(cog_name), key=str)
@@ -88,7 +111,7 @@ class ChiakiFormatter(commands.HelpFormatter):
         with temp_attr(command, 'usage', None):
             signature = command.signature
 
-        requirements = self.command_requirements()
+        requirements = self.command_requirements or 'None'
         cmd_name = f"`{ctx.prefix}{command.full_parent_name} {' / '.join(command.all_names)}`"
         footer = '"{0}" is in the module *{0.cog_name}*'.format(command)
 
@@ -99,8 +122,7 @@ class ChiakiFormatter(commands.HelpFormatter):
             children = ', '.join(command_names) or "No commands... yet."
             cmd_embed.add_field(name=func("Child Commands"), value=func(children), inline=False)
 
-        cmd_embed.add_field(name=func("Required Roles"), value=func(requirements['roles']))
-        cmd_embed.add_field(name=func("Required Permissions"), value=func(requirements['perms']))
+        cmd_embed.add_field(name=func("Requirements"), value=func(requirements))
         cmd_embed.add_field(name=func("Structure"), value=f'`{func(signature)}`', inline=False)
 
         if usages is not None:
