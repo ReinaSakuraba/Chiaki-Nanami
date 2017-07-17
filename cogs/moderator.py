@@ -570,6 +570,9 @@ class Moderator:
 
     async def _do_mute(self, member, when):
         mute_role = await self._setdefault_muted_role(member.guild)
+        if mute_role in member.roles:
+            raise errors.InvalidUserArgument(f'{member.mention} is already been muted... ;-;')
+
         await member.add_roles(mute_role)
 
         entry = TimerEntry(when, (member.guild.id, member.id, mute_role.id))
