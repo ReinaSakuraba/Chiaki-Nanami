@@ -39,8 +39,8 @@ def _make_entries(scheduler, data):
 
 
 class MemberID(union):
-    def __init__(self, user_type=discord.Member):
-        super().__init__(user_type, int)
+    def __init__(self):
+        super().__init__(discord.Member, int)
 
     async def convert(self, ctx, arg):
         member = await super().convert(ctx, arg)
@@ -50,6 +50,22 @@ class MemberID(union):
             obj.guild = ctx.guild
             return obj
         return member
+
+
+class BannedMember(commands.Converter):
+    async def convert(self, ctx, arg):
+        ban_list = await ctx.guild.bans()
+        try:
+            member_id = int(arg, base=10)
+        except ValueError:
+            thing = discord.utils.find(lambda e: str(e.user) == arg, ban_list)
+        else:
+            thing = discord.utils.find(lambda e: e.user.id == member_id, ban_list)
+
+        if thing is None:
+            raise commands.BadArgument(f"{arg} wasn't previously-banned in this server...")
+        return thing
+
 
 def positive_duration(arg):
     amount = duration(arg)
@@ -708,12 +724,12 @@ class Moderator:
 
     @commands.command()
     @checks.mod_or_permissions(ban_members=True)
-    async def unban(self, ctx, user: MemberID(user_type=discord.User), *, reason: str=None):
+    async def unban(self, ctx, user: BannedMember, *, reason: str=None):
         """Unbans the user (obviously)"""
 
         # Will not remove the scheduler (this is ok)
-        await ctx.guild.unban(user)
-        await ctx.send("Done. What did they do to get banned in the first place...?")
+        await ctx.guild.unban(user.user)
+        await ctx.send(f"Done. What did {user.user} do to get banned in the first place...?")
 
     @commands.command()
     @checks.is_owner()
