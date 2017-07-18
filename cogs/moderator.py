@@ -391,7 +391,7 @@ class Moderator:
         is_plural = 's'*(deleted_count != 1)
         await ctx.send(f"Deleted {deleted_count} message{is_plural} successfully!", delete_after=1.5)
 
-    @commands.command(aliases='clean')
+    @commands.command(aliases=['clean'])
     @commands.guild_only()
     @commands.has_permissions(manage_messages=True)
     async def cleanup(self, ctx, limit=100):
