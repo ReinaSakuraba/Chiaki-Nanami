@@ -24,12 +24,12 @@ class ChiakiFormatter(commands.HelpFormatter):
     @property
     def description(self):
         description = (self.command.help if not self.is_cog() else inspect.getdoc(self.command)) or 'No description'
-        return description.format(prefix=self.context.prefix)
+        return description.format(prefix=self.clean_prefix)
 
     @property
     def command_usage(self):
         cmd = self.command
-        prefix = self.context.prefix
+        prefix = self.clean_prefix
         qualified_names = [f"{cmd.full_parent_name} {name}" for name in cmd.all_names]
         if cmd.clean_params:
             usage = cmd.usage
@@ -98,7 +98,7 @@ class ChiakiFormatter(commands.HelpFormatter):
         embed = functools.partial(discord.Embed, colour=ctx.bot.colour)
         embeds = [embed(description=page) for page in paginated_commands.pages]
 
-        embeds[0].title = f'{cog_name} ({ctx.prefix})'
+        embeds[0].title = f'{cog_name} ({self.clean_prefix})'
         embeds[-1].set_footer(text=self.get_ending_note())
         return embeds
 
@@ -112,7 +112,7 @@ class ChiakiFormatter(commands.HelpFormatter):
             signature = command.signature
 
         requirements = self.command_requirements or 'None'
-        cmd_name = f"`{ctx.prefix}{command.full_parent_name} {' / '.join(command.all_names)}`"
+        cmd_name = f"`{self.clean_prefix}{command.full_parent_name} {' / '.join(command.all_names)}`"
         footer = '"{0}" is in the module *{0.cog_name}*'.format(command)
 
         cmd_embed = discord.Embed(title=func(cmd_name), description=func(self.description), colour=bot.colour)
