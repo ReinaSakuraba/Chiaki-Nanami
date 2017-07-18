@@ -483,7 +483,10 @@ class Admin:
         if ctx.invoked_subcommand is not None:
             return
 
-        prefixes = await self.bot.get_prefix(ctx.message)
+        prefixes = list(await self.bot.get_prefix(ctx.message))
+        # remove the duplicate mention prefix, so the mentions don't show up twice
+        del prefixes[1]
+
         description = '\n'.join(starmap('`{0}.` {1}'.format, enumerate(prefixes, start=1)))
         embed = discord.Embed(title=f'Prefixes you can use in {ctx.guild}',
                               colour=self.bot.colour, description=description)
