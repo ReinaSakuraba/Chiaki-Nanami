@@ -130,7 +130,6 @@ class Moderator:
         self.guild_warn_config = Database(_mod_file('warnconfig.json'), default_factory=_default_warn_config.copy)
         self.warn_log = Database(_mod_file('warnlog.json'), default_factory=deque, encoder=WarnEncoder, object_hook=warn_hook)
         self.raids = Database(_mod_file('raids.json'))
-        self.cases = Database(_mod_file('cases.json'), default_factory=dict)
         self.mutes = Database(_mod_file('mutes.json'))
         self.tempbans = Database(_mod_file('tempbans.json'))
         self.muted_roles = Database(_mod_file('muted_roles.json'), default_factory=None)
@@ -149,50 +148,6 @@ class Moderator:
         self.slow_immune = Database(_mod_file('slow-immune-roles.json'), default_factory=list)
         self.slowmode_bucket = {}
         self.slowuser_bucket = {}
-
-    @staticmethod
-    def _case_embed(num, ctx, case, duration=None):
-        case_type, mod, user, reason = case
-        avatar_url = user.avatar_url_as(format=None)
-        bot_avatar = ctx.bot.user.avatar_url_as(format=None)
-
-        auto_punished = getattr(ctx, 'auto_punished', False)
-        if auto_punished:
-            mod = ctx.bot.user
-
-        duration_string = f' for {duration_units(duration)}' if duration is not None else ''
-        action_field = f'{"Auto-" * auto_punished}{case_type.repr.title()}{duration_string} by {mod}'
-        reason = reason or 'No reason. Please enter one.'
-
-        return (discord.Embed(color=case_type.colour, timestamp=ctx.message.created_at)
-               .set_author(name=f"Case #{num}", icon_url=emoji_url(case_type.emoji))
-               .set_thumbnail(url=avatar_url)
-               .add_field(name="User", value=str(user))
-               .add_field(name="Action", value=action_field, inline=False)
-               .add_field(name="Reason", value=reason, inline=False)
-               .set_footer(text=f'ID: {user.id}', icon_url=bot_avatar)
-               )
-
-    async def _send_case(self, ctx, case, duration=None):
-        server_cases = self.cases[ctx.guild]
-        case_channel = self.bot.get_channel(server_cases.get('case_channel'))
-        if case_channel is None:
-            return
-
-        cases = server_cases.setdefault('cases', [])
-        case_embed = self._case_embed(len(cases) + 1, ctx, case, duration)
-
-        msg = await case_channel.send(embed=case_embed)
-
-        case = {
-            'message_id': msg.id,
-            'channel_id': case_channel.id,
-            'type': case.type,
-            'mod': case.mod.id,
-            'user': case.user.id,
-            'reason': case.reason,
-        }
-        cases.append(case)
 
     # ---------------- Slowmode ------------------
 
@@ -765,84 +720,6 @@ class Moderator:
         elif isinstance(cause, discord.HTTPException):
             await ctx.send(f"Couldn't {command} the member for some reason")
 
-    # ------------- Case Related Commands ------------------
-
-    def _get_case(self, server, num=None):
-        cases = self.cases[server].setdefault('cases', [])
-        if num is None:
-            return cases
-        num -= num > 0
-        with redirect_exception((IndexError, f"Couldn't find case {num}."),
-                                cls=errors.ResultsNotFound):
-            # support negative indexing
-            return cases[num]
-
-    @commands.group()
-    @commands.has_permissions(manage_guild=True)
-    async def caseset(self, ctx):
-        """Super-command for all mod case-related commands
-
-        Only cases where the bot was used will be logged.
-        """
-        # TODO: Make like Pollr and log *everything*
-        pass
-
-    @caseset.command(name='logchannel', aliases=['channel'])
-    async def log_channel(self, ctx, channel: discord.TextChannel):
-        """Sets the channel for logging mod cases"""
-        if not channel.permissions_for(ctx.me).send_messages:
-            raise errors.InvalidUserArgument(f"I can't speak in {channel.mention}. Please give me the Send Messages perm there.\n")
-
-        self.cases[ctx.guild]['case_channel'] = channel.id
-        await ctx.send(f"Cases will now be put on {channel.mention}")
-
-    @caseset.command(name='stop')
-    async def case_stop(self, ctx):
-        """Stops logging the mod-cases."""
-        with redirect_exception((KeyError, "There was never a place to log any cases...")):
-            del self.cases[ctx.guild]['case_channel']
-        await ctx.send(f"Cases will now be put on {channel.mention}")
-
-    @caseset.command(name='reason')
-    async def case_reason(self, ctx, num: int, *, reason):
-        """Sets the reason for a given mod case"""
-        case = self._get_case(ctx.guild, num)
-        mod = case['mod']
-        if case['type'].lower() == 'warn':
-            return await ctx.send("Cannot edit a warn case (it doesn't make sense anyway...)")
-
-        if mod not in (None, ctx.author.id):    
-            return await ctx.send("That case is not yours...")
-
-        channel = self.bot.get_channel(case['channel_id'])
-        if channel is None:
-            return await ctx.send("This channel no longer exists")
-
-        message = await channel.get_message(case['message_id'])
-        assert message.author.id == self.bot.user.id
-
-        embed = message.embeds[0].set_field_at(-1, name="Reason", value=reason, inline=False)
-        if mod is None:
-            case['mod'] = ctx.author.id
-            action_field = embed.fields[1]
-            new_action = _rreplace(action_field.value, 'None', str(ctx.author), 1)
-            embed.set_field_at(1, name=action_field.name, value=new_action, inline=False)
-
-        await message.edit(embed=embed)
-        case['reason'] = reason
-        await ctx.send(f"Successfully changed case #{num}'s reason to {reason}!")
-
-    @caseset.command(name='reset', aliases=['clear'])
-    async def case_reset(self, ctx):
-        """Resets all the mod cases. However, this doesn't clear the existing case messages."""
-        cases = self._get_case(ctx.guild)
-        if not cases:
-            raise errors.ResultsNotFound("There are no cases in this server!")
-
-        cases.clear()
-        await ctx.send("Successfully cleared the cases for this server!")
-
-
     # --------- Events ---------
 
     async def on_message(self, message):
@@ -870,18 +747,6 @@ class Moderator:
 
         # mute them for an extra 60 mins
         await self._do_mute(member, entry.when + 3600)
-
-    async def on_command_completion(self, ctx):
-        # For all mod-action related commands.
-        name = ctx.command.name
-        case_type = mod_action_types.get(name)
-        if case_type is None:
-            return
-
-        _, _, user, duration = (ctx.args + [None])[:4]
-        reason = ctx.kwargs['reason']
-        case = ModCase(type=mod_action_types[name], mod=ctx.author, user=user, reason=reason)
-        await self._send_case(ctx, case, duration=duration)
 
     # -------- Custom Events (used in schedulers) -----------
 
