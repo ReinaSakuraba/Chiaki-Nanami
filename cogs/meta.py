@@ -21,16 +21,10 @@ from .utils.compat import url_color, user_color
 from .utils.context_managers import redirect_exception, temp_message
 from .utils.converter import BotCommand, union
 from .utils.errors import InvalidUserArgument, ResultsNotFound
-from .utils.misc import (
-    escape_markdown, group_strings, role_name, str_join, nice_time, ordinal, truncate
-)
+from .utils.formats import *
+from .utils.misc import group_strings, role_name, str_join, nice_time, ordinal
 from .utils.paginator import BaseReactionPaginator, ListPaginator, page
 
-
-def join_and(items, *, conjunction='and'):
-    if not items:
-        return ''
-    return f"{', '.join(items[:-1])} {conjunction} {items[-1]}" if len(items) != 1 else items[0]
 
 async def _mee6_stats(session, member):
     async with session.get(f"https://mee6.xyz/levels/{member.guild.id}?json=1&limit=-1") as r:
@@ -453,10 +447,9 @@ class Meta:
         await self._source(ctx, cmd.callback)
 
     @staticmethod
-    async def _inrole(ctx, *roles, members, conjunction='and'):
-        # because join_and takes a sequence... -_-
-        joined_roles = join_and([str(r) for r in roles], conjunction=conjunction)
-        truncated_title = truncate(f'Members in role{"s" * (len(roles) != 1)} {joined_roles}', 256, '...')
+    async def _inrole(ctx, *roles, members, final='and'):
+        joined_roles = human_join(map(str, roles), final=final)
+        truncated_title = truncate(f'Members in {pluralize(role=len(roles))} {joined_roles}', 256, '...')
 
         total_color = map(sum, zip(*(role.colour.to_rgb() for role in roles)))
         average_color = discord.Colour.from_rgb(*map(round, (c / len(roles) for c in total_color)))
@@ -481,7 +474,8 @@ class Meta:
         """Checks which members have a given role. The role is case sensitive.
 
         If you have the role, your name will be in **bold**.
-        Only one role can be specified. For multiple roles, use `{prefix}inanyrole` or `{prefix}inallrole`.
+        Only one role can be specified. For multiple roles, use `{prefix}inanyrole` 
+        or `{prefix}inallrole`.
         """
         await self._inrole(ctx, role, members=role.members)
 
@@ -495,7 +489,7 @@ class Meta:
         you must put the role in quotes
         """
         await self._inrole(ctx, *roles, members=set(chain.from_iterable(map(attrgetter('members'), roles))),
-                           conjunction='or')
+                           final='or')
 
     @commands.command()
     @commands.guild_only()
