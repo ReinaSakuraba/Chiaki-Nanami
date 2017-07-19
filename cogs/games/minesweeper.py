@@ -9,7 +9,7 @@ import time
 
 from datetime import datetime
 from discord.ext import commands
-from string import ascii_lowercase
+from string import ascii_lowercase, ascii_uppercase
 
 from .manager import SessionManager
 
@@ -25,6 +25,7 @@ class MinesweeperException(Exception):
 
 class HitMine(MinesweeperException):
     def __init__(self, x, y):
+        self.point = x, y
         super().__init__(f'hit a mine on {x + 1} {y + 1}')
 
 
@@ -474,7 +475,8 @@ class Minesweeper:
         if isinstance(cause, ValueError):
             await ctx.send(cause)
         if isinstance(cause, HitMine):
-            await ctx.send(f'You {cause}... ;-;')
+            x, y = cause.point
+            await ctx.send(f'You hit a mine on {ascii_uppercase[x]} {ascii_uppercase[y]}... ;-;')
         if isinstance(cause, asyncio.CancelledError):
             await ctx.send(f'Ok, cya later...')
 
