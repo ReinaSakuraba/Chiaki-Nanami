@@ -15,14 +15,6 @@ from more_itertools import grouper
 
 REGIONAL_INDICATORS = [chr(i + 0x1f1e6) for i in range(26)]
 
-def multi_replace(string, replacements):
-    substrs = sorted(replacements, key=len, reverse=True)
-    pattern = re.compile("|".join(map(re.escape, substrs)))
-    return pattern.sub(lambda m: replacements[m.group(0)], string)
-
-_markdown_replacements = {c: f'\\{c}' for c in ('*', '`', '_', '~', '\\')}
-escape_markdown = functools.partial(multi_replace, replacements=_markdown_replacements)
-
 def truncate(s, length, placeholder):
     return (s[:length] + placeholder) if len(s) > length + len(placeholder) else s
 

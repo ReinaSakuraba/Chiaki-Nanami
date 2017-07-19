@@ -10,7 +10,8 @@ from .utils import errors
 from .utils.converter import ArgumentParser, duration
 from .utils.context_managers import redirect_exception
 from .utils.database import Database
-from .utils.misc import duration_units, multi_replace, nice_time, ordinal, str_join
+from .utils.formats import multi_replace
+from .utils.misc import duration_units, nice_time, ordinal, str_join
 
 
 def special_message(message):

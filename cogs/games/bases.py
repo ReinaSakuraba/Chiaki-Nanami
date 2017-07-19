@@ -13,7 +13,7 @@ from .manager import SessionManager
 
 from ..utils.context_managers import temp_attr
 from ..utils.converter import CheckedMember, NoSelfArgument
-from ..utils.misc import multi_replace
+from ..utils.formats import multi_replace
 
 _clean_sig = functools.partial(multi_replace, replacements={**dict.fromkeys('<>[]', ''), '|': '/'})
 

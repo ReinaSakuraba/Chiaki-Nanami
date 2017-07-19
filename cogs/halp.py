@@ -13,7 +13,8 @@ from .utils import errors
 from .utils.context_managers import temp_attr
 from .utils.converter import BotCogConverter, BotCommand
 from .utils.database import Database
-from .utils.misc import multi_replace, nice_time, truncate
+from .utils.formats import multi_replace
+from .utils.misc import nice_time, truncate
 
 
 def default_help_command(func=lambda s: s, **kwargs):

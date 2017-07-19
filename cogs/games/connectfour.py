@@ -14,7 +14,7 @@ from .manager import SessionManager
 
 from ..utils.compat import user_colour
 from ..utils.context_managers import temp_message
-from ..utils.misc import multi_replace
+from ..utils.formats import multi_replace
 
 NUM_ROWS = 6
 NUM_COLS = 7

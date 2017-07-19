@@ -14,7 +14,8 @@ from discord.ext import commands
 from .manager import SessionManager
 
 from ..utils import errors
-from ..utils.misc import base_filename, escape_markdown, group_strings, truncate
+from ..utils.formats import escape_markdown, truncate
+from ..utils.misc import base_filename, group_strings
 from ..utils.paginator import ListPaginator
 
 
