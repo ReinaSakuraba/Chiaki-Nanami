@@ -76,19 +76,8 @@ def positive_duration(arg):
     return amount
 
 
-ModAction = namedtuple('ModAction', 'repr emoji colour')
-mod_action_types = {
-    'warn'         : ModAction('warned', '\N{WARNING SIGN}', 0xFFAA00),
-    'mute'         : ModAction('muted', '\N{ZIPPER-MOUTH FACE}', 0),
-    'kick'         : ModAction('kicked', '\N{WOMANS BOOTS}', 0xFF0000),
-    'softban'      : ModAction('soft banned', '\N{BIOHAZARD SIGN}', 0xF08000),
-    'tempban'      : ModAction('temporarily banned', '\N{ALARM CLOCK}', 0xA00000),
-    'ban'          : ModAction('banned', '\N{HAMMER}', 0x800000),
-    'unban'        : ModAction('unbanned', '\N{HAMMER}', 0x00FF00),
-}
 _restricted_warn_punishments = {'softban', 'unban', 'warn'}
 
-ModCase = namedtuple('ModCase', 'type mod user reason')
 WarnEntry = namedtuple('WarnEntry', 'time reason')
 
 SlowmodeEntry = namedtuple('SlowmodeEntry', 'duration no_immune')
