@@ -576,15 +576,28 @@ class Moderator:
     @commands.has_permissions(manage_roles=True)
     async def unmute(self, ctx, member: discord.Member, *, reason: str=None):
         """Unmutes a user (obviously)"""
-        role = self._get_muted_role(ctx.guild)
+
+        # Remove the entry so that if a user needs to be muted for longer,
+        # the other mute doesn't prematurely end the longer mute.
+        try:
+            entry = self.mutes.pop(_member_key(member))
+        except KeyError:
+            pass
+        else:
+            with contextlib.suppress(ValueError):
+                self.mute_scheduler.remove_entry(entry)
+
+        # Order is important here. If the user had the muted role removed manually,
+        # it won't notify the scheduler. This can be disatrous if the user needs 
+        # to be muted for a longer period of time after this. This is why the entry
+        # has to be removed BEFORE the actual role removal.
+        role = self._get_muted_role(member.guild)
         if role not in member.roles:
             return await ctx.send(f"{member} hasn't been muted!")
 
         await member.remove_roles(role)
         await ctx.send(f'{member.mention} can now speak again... '
                         '\N{SMILING FACE WITH OPEN MOUTH AND COLD SWEAT}')
-        # We don't need to do anything with the scheduler tbh.
-        # It's just gonna execute normally.
 
     @commands.command(name='regenmutedperms', aliases=['rmp'])
     @commands.is_owner()
