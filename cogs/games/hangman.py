@@ -100,7 +100,7 @@ class HangmanSession:
     async def _loop(self, message):
         while True:
             guess = await self.ctx.bot.wait_for('message', check=self._check_message)
-            content = guess.content
+            content = guess.content.lower()
             content = content[len(content) > 1:]
 
             ok, result = self._verify_guess(content)
@@ -111,7 +111,7 @@ class HangmanSession:
                 self._game_screen.colour = 0xFF0000
                 self.fails += ok is not None
             if ok is not None:
-                self._guesses.append(content.lower())
+                self._guesses.append(content)
 
             self.edit_screen()
             await guess.delete()
