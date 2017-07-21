@@ -239,7 +239,7 @@ class Moderator:
         else:
             key = _member_key(member)
             del self.slowusers[key]
-            self.slowuser_bucket(key, None)
+            self.slowuser_bucket.pop(key, None)
         await ctx.send(f'{member.mention} is no longer in slowmode... \N{SMILING FACE WITH OPEN MOUTH AND COLD SWEAT}')
 
     @commands.command()
