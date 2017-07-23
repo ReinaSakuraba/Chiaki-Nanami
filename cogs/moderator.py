@@ -78,7 +78,7 @@ def positive_duration(arg):
 
 _restricted_warn_punishments = {'softban', 'unban', 'warn'}
 
-WarnEntry = namedtuple('WarnEntry', 'time reason')
+WarnEntry = namedtuple('WarnEntry', 'time user reason')
 
 SlowmodeEntry = namedtuple('SlowmodeEntry', 'duration no_immune')
 SlowmodeEntry.__new__.__defaults__ = (False, )
@@ -399,12 +399,23 @@ class Moderator:
                           f"```py\n{type(cause).__name__}: {cause}```")
 
     @commands.command(usage=['@XenaWolf#8379 NSFW'])
+    @commands.has_permissions(manage_messages=True)
     async def warn(self, ctx, member: discord.Member, *, reason: str):
         """Warns a user (obviously)"""
         self._check_user(ctx, member)
         author, current_time = ctx.author, ctx.message.created_at
         warn_queue = self.warn_log[_member_key(member)]
-        warn_queue.append((current_time, author.id, reason))
+
+        try:
+            last_warn = warn_queue[-1]
+        except IndexError:
+            pass
+        else:
+            retry_after = (current_time - last_warn[0]).total_seconds()
+            if (current_time - last_warn[0]).total_seconds() <= 60:
+                return await ctx.send("This user has been warned already, try again in {retry_after: .2f} seconds...")
+
+        warn_queue.append(WarnEntry(current_time, author.id, reason))
         current_warn_num = len(warn_queue)
 
         def check_warn_num():
@@ -443,12 +454,14 @@ class Moderator:
     # XXX: Should this be a group?
 
     @commands.command(name='clearwarns', usage='MIkusaba')
+    @commands.has_permissions(manage_messages=True)
     async def clear_warns(self, ctx, member: discord.Member):
         """Clears a member's warns."""
         self.warn_log[_member_key(member)].clear()
         await ctx.send(f"{member}'s warns have been reset!")
 
     @commands.command(name='warnpunish', usage=['4 softban', '5 ban'])
+    @commands.has_permissions(manage_messages=True, manage_guild=True)
     async def warn_punish(self, ctx, num: int, punishment, duration: duration=None):
         """Sets the punishment a user receives upon exceeding a given warn limit"""
         punish_lower = punishment.lower()
@@ -475,6 +488,7 @@ class Moderator:
         await pages.interact()
 
     @commands.command(name='warntimeout', usage=['10', '15m', '1h20m10s'])
+    @commands.has_permissions(manage_messages=True, manage_guild=True)
     async def warn_timeout(self, ctx, duration: duration):
         """Sets the maximum time between the oldest warn and the most recent warn.
         If a user hits a warn limit within this timeframe, they will be punished.
@@ -542,7 +556,7 @@ class Moderator:
         await ctx.send(f"Done. {member.mention} will now be muted for {duration_units(duration)}... \N{ZIPPER-MOUTH FACE}")
 
     @commands.command(usage=['192060404501839872 stfu about your gf'])
-    @commands.has_permissions(manage_roles=True)
+    @commands.has_permissions(manage_messages=True)
     async def mute(self, ctx, member: discord.Member, duration: positive_duration, *, reason: str=None):
         """Mutes a user (obviously)"""
         self._check_user(ctx, member)
@@ -573,7 +587,7 @@ class Moderator:
                            f'They will be unmuted on {when: %c}.')
 
     @commands.command(usage=['@rjt#2336 sorry bb'])
-    @commands.has_permissions(manage_roles=True)
+    @commands.has_permissions(manage_messages=True)
     async def unmute(self, ctx, member: discord.Member, *, reason: str=None):
         """Unmutes a user (obviously)"""
 
