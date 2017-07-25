@@ -9,7 +9,7 @@ import uuid
 
 from discord.ext import commands
 
-from .utils.converter import attr_converter, number
+from .utils.converter import number
 from .utils.errors import InvalidUserArgument, private_message_only
 from .utils.misc import str_join
 
@@ -32,9 +32,56 @@ else:
         except ValueError:
             return closest_colour(requested_colour)
 
-with contextlib.suppress(FileNotFoundError):
-    with open(r'data\tanks.txt') as f:
-        _back_up_tanks = f.read().splitlines()
+
+_diepio_tanks = [
+    'Annihilator',
+    'Assassin',
+    'Auto 3',
+    'Auto 5',
+    'Auto Gunner',
+    'Auto Smasher',
+    'Auto Trapper',
+    'Basic Tank',
+    'Battleship',
+    'Booster',
+    'Destroyer',
+    'Factory',
+    'Fighter',
+    'Flank Guard',
+    'Gunner',
+    'Gunner Trapper',
+    'Hunter',
+    'Hybrid',
+    'Landmine',
+    'Machine Gun',
+    'Manager',
+    'Mega Trapper',
+    'Necromancer',
+    'Octo Tank',
+    'Overlord',
+    'Overseer',
+    'Overtrapper',
+    'Pentashot',
+    'Predator',
+    'Quad Tank',
+    'Ranger',
+    'Skimmer',
+    'Smasher',
+    'Sniper',
+    'Spike',
+    'Sprayer',
+    'Spreadshot',
+    'Stalker',
+    'Streamliner',
+    'Trapper',
+    'Tri-angle',
+    'Tri-Trapper',
+    'Triple Shot',
+    'Triple Twin',
+    'Triplet',
+    'Twin',
+    'Twin Flank',
+]
 
 SMASHERS = ("Auto Smasher", "Landmine", "Smasher", "Spike",)
 BALL_ANSWERS = (
@@ -175,7 +222,7 @@ class RNG:
         await ctx.send(self._build_str(points, smasher=True))
 
     def _class(self):
-        return random.choice(self.bot.get_cog("WRA").all_tanks() or _back_up_tanks)
+        return random.choice(_diepio_tanks)
 
     @random.command(name="class")
     async def class_(self, ctx):
