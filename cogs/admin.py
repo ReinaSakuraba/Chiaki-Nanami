@@ -134,7 +134,7 @@ class Admin:
         with redirect_exception((discord.Forbidden, f"I can't give {member} {role}. Either I don't have the right perms, "
                                                      "or you're trying to add a role that's higher than mine"),
                                 (discord.HTTPException, f"Giving {role} to {member} failed. Not sure why though...")):
-            await user.add_roles(role)
+            await member.add_roles(role)
         await ctx.send(f"Successfully gave {member} **{role}**, I think.")
 
     @commands.command(name='removerole', aliases=['rr'])
@@ -178,11 +178,11 @@ class Admin:
         """
         author, guild = ctx.author, ctx.guild
 
-        parser = ArgumentParser(description='Just a random role thing')
+        parser = ArgumentParser(add_help=False, allow_abbrev=False)
         parser.add_argument('name')
         parser.add_argument('-c', '--color', '--colour', nargs='?', default='#000000')
         parser.add_argument('--permissions', '--perms', nargs='?', type=int, default=0)
-        parser.add_argument('--hoist', action='store_true')
+        parser.add_argument('-h', '--hoist', action='store_true')
         parser.add_argument('-m', '--mentionable', action='store_true')
 
         args = parser.parse_args(args)
@@ -231,11 +231,11 @@ class Admin:
         The new position of the role. This cannot be zero.
         """
         author, server = ctx.author, ctx.guild
-        parser = ArgumentParser(description='Just a random role thing')
+        parser = ArgumentParser(add_help=False, allow_abbrev=False)
         parser.add_argument('-n', '--name', nargs='?', default=old_role.name)
         parser.add_argument('-c', '--color', '--colour', nargs='?', default=str(old_role.colour))
         parser.add_argument('--permissions', '--perms', nargs='+', type=int, default=old_role.permissions.value)
-        parser.add_argument('--hoist', nargs='?', default=old_role.hoist)
+        parser.add_argument('-h', '--hoist', nargs='?', default=old_role.hoist)
         parser.add_argument('-m', '--mentionable', nargs='?', default=old_role.mentionable)
         parser.add_argument('--pos', '--position', nargs='?', type=int, default=old_role.position)
 

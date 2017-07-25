@@ -29,11 +29,6 @@ class NoSelfArgument(commands.BadArgument):
 # Custom ArgumentParser because the one in argparse raises SystemExit upon failure, 
 # which kills the bot
 class ArgumentParser(argparse.ArgumentParser):
-    def parse_args(self, args):
-        with suppress(SystemExit):
-            return super().parse_args(args)
-        return None
-
     def error(self, message):
         raise commands.BadArgument(f'Failed to parse args.```\n{message}```')
 
