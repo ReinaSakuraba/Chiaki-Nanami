@@ -54,7 +54,7 @@ class ServerPages(BaseReactionPaginator):
             result = self._colour
         except AttributeError:
             result = 0
-            url = self.guild.icon_url_as(static_format='png')
+            url = self.guild.icon_url
             if url:
                 result = self._colour = await url_color(url)
         return result
@@ -342,7 +342,7 @@ class Meta:
                        .set_footer(text=f'ID: {server.id} | Created')
                        )
 
-        icon = server.icon_url
+        icon = server.icon_url_as(format='png')
         if icon:
             server_embed.set_thumbnail(url=icon)
             server_embed.colour = await Meta.server_colour(server)
@@ -405,7 +405,7 @@ class Meta:
         icon = (discord.Embed(title=f"{server}'s icon")
                .set_footer(text=f"ID: {server.id}"))
 
-        icon_url = server.icon_url
+        icon_url = server.icon_url_as(format='png')
         if icon_url:
             icon.set_image(url=icon_url)
             icon.colour = await url_color(icon_url)
