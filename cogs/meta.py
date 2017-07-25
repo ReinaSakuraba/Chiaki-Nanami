@@ -54,7 +54,7 @@ class ServerPages(BaseReactionPaginator):
             result = self._colour
         except AttributeError:
             result = 0
-            url = self.guild.icon_url
+            url = self.guild.icon_url_as(static_format='png')
             if url:
                 result = self._colour = await url_color(url)
         return result
@@ -123,7 +123,7 @@ class Meta:
 
     @staticmethod
     async def _user_embed(member):
-        avatar_url = member.avatar_url_as(format=None)
+        avatar_url = member.avatar_url
         playing = f"Playing **{member.game}**" if member.game else "Not playing anything..."
         roles = sorted(member.roles, reverse=True)[:-1]  # last role is @everyone
 
@@ -157,7 +157,7 @@ class Meta:
             creator = self._creator = await self.bot.get_user_info(239110748180054017)
 
         chiaki_embed = (discord.Embed(description=bot.appinfo.description, colour=self.bot.colour)
-                       .set_author(name=str(ctx.bot.user), icon_url=bot.user.avatar_url_as(format=None))
+                       .set_author(name=str(ctx.bot.user), icon_url=bot.user.avatar_url)
                        .add_field(name='Created by', value=str(creator))
                        .add_field(name='Servers', value=len(self.bot.guilds))
                        .add_field(name='Modules', value=extension_stats)
@@ -201,7 +201,7 @@ class Meta:
         """Gets mee6 info... if it exists"""
         if member is None:
             member = ctx.author
-        avatar_url = member.avatar_url_as(format=None)
+        avatar_url = member.avatar_url
 
         no_mee6_in_server = "No stats found. You don't have mee6 in this server... I think."
         with redirect_exception((json.JSONDecodeError, no_mee6_in_server)):
@@ -564,7 +564,7 @@ class Meta:
     async def avatar(self, ctx, *, user: converter.ApproximateUser=None):
         if user is None:
             user = ctx.author
-        avatar_url = user.avatar_url_as(format=None)
+        avatar_url = user.avatar_url_as(static_format='png')
         colour = await user_color(user)
         nick = getattr(user, 'nick', None)
         description = f"*(Also known as \"{nick}\")*" * bool(nick)
