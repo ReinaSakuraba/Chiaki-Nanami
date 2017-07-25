@@ -154,7 +154,10 @@ class RNG:
 
     @commands.command(usage='Nadeko Salt PvPCraft mee6 "Chiaki Nanami"')
     async def choose(self, ctx, *choices: commands.clean_content):
-        """Chooses between a list of choices separated by semicolons"""
+        """Chooses between a list of choices. 
+
+        If one of your choices requires a space, it must be wrapped in quotes.
+        """
         if len(set(choices)) < 2:
             return await ctx.send('I need more choices than that...')
 
