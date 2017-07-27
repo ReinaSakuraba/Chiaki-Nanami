@@ -521,7 +521,12 @@ class Meta:
 
     @staticmethod
     async def _display_permissions(ctx, thing, permissions, extra=''):
-        diffs = '\n'.join([f"{'-+'[value]} {attr.title().replace('_', ' ')}" for attr, value in permissions])
+        if isinstance(thing, discord.Member) and thing == ctx.guild.owner:
+            diffs = '+ All (Server Owner)'
+        elif permissions.administrator and not isinstance(thing, discord.Role):
+            diffs = '+ All (Administrator Permission)'
+        else:
+            diffs = '\n'.join([f"{'-+'[value]} {attr.title().replace('_', ' ')}" for attr, value in permissions])
         str_perms = f'```diff\n{diffs}```'
 
         value = permissions.value
@@ -549,7 +554,7 @@ class Meta:
     @commands.command(aliases=['permsin'])
     @commands.guild_only()
     async def permissionsin(self, ctx, *, member: search.MemberSearch=None):
-        """Shows either a member's Permissions *in the channel*
+        """Shows a member's Permissions *in the channel*
 
         ```diff
         + Permissions you have will be shown like this.
