@@ -5,6 +5,9 @@ from more_itertools import one
 
 def pluralize(**thing):
     name, value = one(thing.items())
+    if name.endswith('y') and name[-2] not in 'aeiou':
+        name = f'{name[:-1]}ies' if value != 1 else name
+        return f'{value} {name}'
     return f'{value} {name}{"s" * (value != 1)}'
 
 def human_join(iterable, delim=', ', *, final='and'):
