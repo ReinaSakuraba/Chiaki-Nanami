@@ -531,7 +531,7 @@ class Meta:
 
         value = permissions.value
         perm_embed = (discord.Embed(colour=thing.colour, description=str_perms)
-                     .set_author(name=f'Permissions for {thing}')
+                     .set_author(name=f'Permissions for {thing} {extra}')
                      .set_footer(text=f'Value: {value} | Binary: {bin(value)[2:]}')
                      )
         await ctx.send(embed=perm_embed)
@@ -563,7 +563,7 @@ class Meta:
         """
         if member is None:
             member = ctx.author
-        await self._display_permissions(ctx, member, ctx.channel.permissions_for(member), extra=f'in {ctx.channel.mention}')
+        await self._display_permissions(ctx, member, ctx.channel.permissions_for(member), extra=f'in #{ctx.channel}')
 
     @commands.command(aliases=['av'])
     async def avatar(self, ctx, *, user: search.MemberSearch=None):
