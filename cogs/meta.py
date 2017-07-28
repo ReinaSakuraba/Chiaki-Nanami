@@ -227,10 +227,7 @@ class Meta:
 
     @info.command(name='role')
     async def info_role(self, ctx, *, role: search.RoleSearch):
-        """Shows information about a particular role.
-
-        The role is case-insensitive.
-        """
+        """Shows information about a particular role."""
         server = ctx.guild
 
         def bool_as_answer(b):
@@ -471,9 +468,9 @@ class Meta:
     @commands.command()
     @commands.guild_only()
     async def inrole(self, ctx, *, role: search.RoleSearch):
-        """Checks which members have a given role. The role is case sensitive.
-
+        """Checks which members have a given role.
         If you have the role, your name will be in **bold**.
+
         Only one role can be specified. For multiple roles, use `{prefix}inanyrole` 
         or `{prefix}inallrole`.
         """
@@ -482,7 +479,7 @@ class Meta:
     @commands.command()
     @commands.guild_only()
     async def inanyrole(self, ctx, *roles: search.RoleSearch):
-        """Checks which members have any of the given role(s). The role(s) are case sensitive.
+        """Checks which members have any of the given role(s).
         If you have the role, your name will be in **bold**.
 
         If you don't want to mention a role and there's a space in the role name, 
@@ -494,7 +491,7 @@ class Meta:
     @commands.command()
     @commands.guild_only()
     async def inallrole(self, ctx, *roles: search.RoleSearch):
-        """Checks which members have all of the given role(s). The role(s) are case sensitive.
+        """Checks which members have all of the given role(s).
         If you have the role, your name will be in **bold**.
 
         If you don't want to mention a role and there's a space in the role name, 
@@ -539,7 +536,7 @@ class Meta:
     @commands.command(aliases=['perms'])
     @commands.guild_only()
     async def permissions(self, ctx, *, member_or_role: search.union(discord.Member, discord.Role)=None):
-        """Shows either a member's Permissions, or a role's Permissions
+        """Shows either a member's Permissions, or a role's Permissions.
 
         ```diff
         + Permissions you have will be shown like this.
@@ -554,7 +551,7 @@ class Meta:
     @commands.command(aliases=['permsin'])
     @commands.guild_only()
     async def permissionsin(self, ctx, *, member: search.MemberSearch=None):
-        """Shows a member's Permissions *in the channel*
+        """Shows a member's Permissions *in the channel*.
 
         ```diff
         + Permissions you have will be shown like this.
