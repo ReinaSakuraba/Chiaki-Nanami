@@ -93,12 +93,15 @@ class MemberSearch(commands.MemberConverter, Search):
 
         # not a mention or ID...
         if guild:
-            result = guild.get_member_named(argument)
+            # The trailing comma is because the result expects a sequence
+            # This will transform result into a tuple, which is important.
+            # Because len(discord.Member) will error.
+            result = guild.get_member_named(argument),
             # Will only be False if only the name was provided, or a user with 
             # the same nickname as another user's fullname was provided. 
             # (eg if someone nicknames themself "rjt#2336", and rjt#2336 was in 
             # the server)
-            if str(result) != argument:
+            if str(result[0]) != argument:
                 lowered = argument.lower()
                 def predicate(m):
                     # We can't just do lowered in (m.nick.lower(), m.name.lower())
@@ -110,8 +113,8 @@ class MemberSearch(commands.MemberConverter, Search):
 
         else:
             # We can't use the "fuzzy" match here, due to potential conflicts 
-            # and duplicate results
-            result = _get_from_guilds(bot, 'get_member_named', argument)
+            # and duplicate results.
+            result = _get_from_guilds(bot, 'get_member_named', argument), # See comment in "if guild:"
 
         if not result:
             raise commands.BadArgument(f'Member "{argument}" not found')
