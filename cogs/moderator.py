@@ -11,14 +11,14 @@ from datetime import datetime, timedelta
 from discord.ext import commands
 from operator import attrgetter, contains, itemgetter
 
-from .utils import errors
+from .utils import errors, formats
 from .utils.context_managers import redirect_exception  
 from .utils.converter import duration, in_, union
 from .utils.database import Database
 from .utils.json_serializers import (
     DatetimeEncoder, DequeEncoder, decode_datetime, decode_deque, union_decoder
     )
-from .utils.misc import duration_units, emoji_url, ordinal, role_name
+from .utils.misc import duration_units, emoji_url, ordinal
 from .utils.paginator import ListPaginator
 from .utils.timer import Scheduler, TimerEntry
 
@@ -269,8 +269,10 @@ class Moderator:
         immune = self.slow_immune[ctx.guild]
         getter = functools.partial(discord.utils.get, ctx.guild.roles)
         roles = (getter(id=id) for id in immune)
-        entries = (map(functools.partial(role_name, ctx.author), roles)
-                   if immune else ('There are no roles...', ))
+
+        author_roles = ctx.author.roles
+        get_name = functools.partial(formats.bold_name, predicate=lambda r: r in author_roles)
+        entries = (map(get_name, roles) if immune else ('There are no roles...', ))
 
         pages = ListPaginator(ctx, entries, title=f'List of slowmode-immune roles in {ctx.guild}',
                               colour=ctx.bot.colour)

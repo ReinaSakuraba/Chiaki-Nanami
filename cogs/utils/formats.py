@@ -33,3 +33,7 @@ del _markdown_replacements
 
 def truncate(s, length, placeholder):
     return (s[:length] + placeholder) if len(s) > length + len(placeholder) else s
+
+def bold_name(thing, predicate):
+    name = str(thing)
+    return f'**{escape_markdown(str(thing))}**' if predicate(thing) else str(thing)

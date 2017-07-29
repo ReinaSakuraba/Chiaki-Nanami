@@ -22,7 +22,7 @@ from .utils.context_managers import redirect_exception, temp_message
 from .utils.converter import BotCommand, union
 from .utils.errors import InvalidUserArgument, ResultsNotFound
 from .utils.formats import *
-from .utils.misc import group_strings, role_name, str_join, nice_time, ordinal
+from .utils.misc import group_strings, str_join, nice_time, ordinal
 from .utils.paginator import BaseReactionPaginator, ListPaginator, page
 
 
@@ -324,13 +324,13 @@ class Meta:
         statuses['Bots'] = sum(m.bot for m in server.members)
         member_stats = '\n'.join(starmap('{1} {0}'.format, statuses.items()))
 
-        explicit_filter = server.explicit_content_filter.name.title().replace('_', ' ')
+        explicit_filter = str(server.explicit_content_filter).title().replace('_', ' ')
 
         server_embed = (discord.Embed(description=description, timestamp=server.created_at)
                        .set_author(name=server.name)
                        .add_field(name="Default Channel", value=f'#{server.default_channel}')
                        .add_field(name="Highest Role", value=highest_role)
-                       .add_field(name="Region", value=server.region.value.title())
+                       .add_field(name="Region", value=str(server.region).title())
                        .add_field(name="Verification Level", value=server.verification_level.name.title())
                        .add_field(name="Explicit Content Filter", value=explicit_filter)
                        .add_field(name="Special Features", value=features)
@@ -416,10 +416,11 @@ class Meta:
         roles = ctx.guild.role_hierarchy[:-1]
         padding = int(log10(max(map(len, (role.members for role in roles))))) + 1
 
-        get_name = functools.partial(role_name, ctx.author)
+        author_roles = ctx.author.roles
+        get_name = functools.partial(bold_name, predicate=lambda r: r in author_roles)
         hierarchy = [f"`{len(role.members) :<{padding}}\u200b` {get_name(role)}" for role in roles]
         pages = ListPaginator(ctx, hierarchy, title=f'Roles in {ctx.guild} ({len(hierarchy)})',
-                           colour=self.bot.colour)
+                              colour=self.bot.colour)
         await pages.interact()
 
     @commands.command()
@@ -511,7 +512,10 @@ class Meta:
         perm_attr = perm.replace(' ', '_').lower()
         roles = filter(attrgetter(f'permissions.{perm_attr}'), ctx.guild.role_hierarchy)
         title = f"Roles in {ctx.guild} that have {perm.replace('_', ' ').title()}"
-        entries = map(functools.partial(role_name, ctx.author), roles)
+
+        author_roles = ctx.author.roles
+        get_name = functools.partial(bold_name, predicate=lambda r: r in author_roles)
+        entries = map(get_name, roles)
 
         pages = ListPaginator(ctx, entries, title=title, colour=ctx.bot.colour)
         await pages.interact()    

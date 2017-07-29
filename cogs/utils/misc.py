@@ -75,10 +75,6 @@ async def maybe_awaitable(func, *args, **kwargs):
     maybe = func(*args, **kwargs)
     return await maybe if inspect.isawaitable(maybe) else maybe
 
-def role_name(member, role):
-    name = str(role)
-    return f'**{escape_markdown(name)}**' if role in member.roles else name
-
 async def load_async(filename, loop=None):
     loop = loop or asyncio.get_event_loop()
 
