@@ -411,9 +411,13 @@ class Meta:
         return icon
 
     @commands.command()
-    async def roles(self, ctx):
-        """Shows all the roles in the server. Roles in bold are the ones you have"""
-        roles = ctx.guild.role_hierarchy[:-1]
+    async def roles(self, ctx, member: search.MemberSearch=None):
+        """Shows all the roles that a member has. Roles in bold are the ones you have.
+
+        If a member isn't provided, it defaults to all the roles in the server.
+        The number to the left of the role name is the number of members who have that role.
+        """
+        roles = ctx.guild.role_hierarchy[:-1] if member is None else sorted(member.roles, reverse=True)[:-1]
         padding = int(log10(max(map(len, (role.members for role in roles))))) + 1
 
         author_roles = ctx.author.roles
