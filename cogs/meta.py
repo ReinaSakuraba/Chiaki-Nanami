@@ -172,8 +172,13 @@ class Meta:
     async def info(self, ctx):
         """Super-command for all info-related commands"""
         if ctx.invoked_subcommand is None:
-            subcommands = '\n'.join(ctx.command.commands.keys())
-            await ctx.send(f"```\nAvailable info commands:\n{subcommands}```")
+            subcommands = '\n'.join(sorted(map(f'`{ctx.prefix}{{0}}`'.format, ctx.command.commands)))
+            description = f'Possible commands...\n\n{subcommands}'
+
+            embed = (discord.Embed(colour=0xFF0000, description=description)
+                    .set_author(name=f"{ctx.command} {ctx.subcommand_passed} isn't a command")
+                    )
+            await ctx.send(embed=embed)
 
     @info.command(name='user')
     @commands.guild_only()
