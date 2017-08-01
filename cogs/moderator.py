@@ -415,7 +415,7 @@ class Moderator:
         else:
             retry_after = (current_time - last_warn[0]).total_seconds()
             if (current_time - last_warn[0]).total_seconds() <= 60:
-                return await ctx.send("This user has been warned already, try again in {retry_after: .2f} seconds...")
+                return await ctx.send(f"This user has been warned already, try again in {retry_after: .2f} seconds...")
 
         warn_queue.append(WarnEntry(current_time, author.id, reason))
         current_warn_num = len(warn_queue)
@@ -450,7 +450,7 @@ class Moderator:
         ctx.auto_punished = True
 
         punish = punishment['punish']
-        await ctx.invoke(getattr(self, punish), *args, reason=reason + f'\n({ordinal(current_warn_num)} warning)')
+        await ctx.invoke(getattr(self, punish), *args, reason=f'{reason}\n({ordinal(current_warn_num)} warning)')
         check_warn_num()
 
     # XXX: Should this be a group?
@@ -468,10 +468,10 @@ class Moderator:
         """Sets the punishment a user receives upon exceeding a given warn limit"""
         punish_lower = punishment.lower()
         if punish_lower in _restricted_warn_punishments:
-            raise errors.InvalidUserArgument("{punish_lower} is not a valid punishment")
+            raise errors.InvalidUserArgument(f"{punish_lower} is not a valid punishment")
 
         if punish_lower in {'tempban', 'mute'} and duration is None:
-            raise errors.InvalidUserArgument(f'A duration is required for {punish_lower}')
+            raise errors.InvalidUserArgument(f'A duration is required for {punish_lower}...')
 
         payload = {
             'punish': punish_lower,
@@ -575,7 +575,7 @@ class Moderator:
         # either by ->unmute or manually removing the role
         role = self._get_muted_role(ctx.guild)
         if role not in member.roles:
-            return await ctx.send('{member} is not muted...')
+            return await ctx.send(f'{member} is not muted...')
 
         try:    
             entry = self.mutes[_member_key(member)]
@@ -676,7 +676,7 @@ class Moderator:
 
         self._check_user(ctx, member)
         await ctx.guild.ban(member, reason=reason)
-        await ctx.send(f"Done. Please don't make me do that again...")
+        await ctx.send("Done. Please don't make me do that again...")
 
         # gonna somehow refactor this out soon:tm:
         when = datetime.utcnow() + timedelta(seconds=duration)
@@ -697,7 +697,7 @@ class Moderator:
             self._check_user(ctx, member)
 
         await ctx.guild.ban(member, reason=reason)
-        await ctx.send(f"Done. Please don't make me do that again...")
+        await ctx.send("Done. Please don't make me do that again...")
 
     @commands.command(unban='@Nadeko#6685 oops')
     @commands.has_permissions(ban_members=True)
