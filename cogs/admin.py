@@ -131,10 +131,7 @@ class Admin:
         if role in member.roles:
             return await ctx.send(f'{member} already has **{role}**... \N{NEUTRAL FACE}')
 
-        with redirect_exception((discord.Forbidden, f"I can't give {member} {role}. Either I don't have the right perms, "
-                                                     "or you're trying to add a role that's higher than mine"),
-                                (discord.HTTPException, f"Giving {role} to {member} failed. Not sure why though...")):
-            await member.add_roles(role)
+        await member.add_roles(role)
         await ctx.send(f"Successfully gave {member} **{role}**, I think.")
 
     @commands.command(name='removerole', aliases=['rr'])
@@ -148,10 +145,7 @@ class Admin:
         if role not in member.roles:
             return await ctx.send(f"{member} doesn't have **{role}**... \N{NEUTRAL FACE}")
 
-        with redirect_exception((discord.Forbidden, f"I can't remove **{role}** from {member}. Either I don't have the right perms, "
-                                                     "or you're trying to remove a role that's higher than mine"),
-                                (discord.HTTPException, f"Removing {role} from {member} failed. Not sure why though...")):
-            await member.remove_roles(role)
+        await member.remove_roles(role)
         await ctx.send(f"Successfully removed **{role}** from {member}, I think.")
 
     @commands.command(name='createrole', aliases=['crr'])
@@ -202,9 +196,7 @@ class Admin:
             'mentionable': args.mentionable,
         }
 
-        with redirect_exception((discord.Forbidden, "I think I need the **Manage Roles** perm to create roles."),
-                                (discord.HTTPException, f"Creating role **{args.name}** failed, for some reason.")):
-            await guild.create_role(**fields)
+        await guild.create_role(**fields)
         await ctx.send(f"Successfully created **{args.name}**!")
 
     @commands.command(name='editrole', aliases=['er'])
@@ -257,9 +249,7 @@ class Admin:
             'position': args.pos,
         }
 
-        with redirect_exception((discord.Forbidden, "I need the **Manage Roles** perm to edit roles, I think."),
-                                (discord.HTTPException, f"Editing role **{old_role.name}** failed, for some reason.")):
-            await old_role.edit(**fields)
+        await old_role.edit(**fields)
         await ctx.send(f"Successfully edited **{old_role}**!")
 
     @commands.command(name='deleterole', aliases=['delr'])
@@ -269,10 +259,47 @@ class Admin:
 
         Do not confuse this with `{prefix}removerole`, which removes a role from a member.
         """
-        with redirect_exception((discord.Forbidden, "I need the **Manage Roles** perm to delete roles, I think."),
-                                (discord.HTTPException, f"Deleting role **{role.name}** failed, for some reason.")):
-            await role.delete()
+        await role.delete()
         await ctx.send(f"Successfully deleted **{role.name}**!")
+
+    @add_role.error
+    @remove_role.error
+    @create_role.error
+    @edit_role.error
+    @delete_role.error
+    async def role_error(self, ctx, error):
+        if not isinstance(error, commands.CommandInvokeError):
+            return
+
+        verb = ctx.command.callback.__name__.partition('_')[0]
+        role = ctx.args[2] if verb in ['create', 'edit'] else ctx.kwargs['role']
+
+        print(type(error.original))
+        if isinstance(error.original, discord.Forbidden):
+            if not ctx.guild.me.permissions_in(ctx.channel).manage_roles:
+                await ctx.send('{ctx.author.mention}, I need the Manage roles permission pls...')
+
+            # We can't modify an add, remove, or delete an integration role, obviously.
+            elif getattr(role, 'managed', False):       # ->createrole uses a string for the role.
+                await ctx.send(f"{role} is an intergration role, I can't do anything with that!")
+
+            # Assume the role was too high otherwise.
+            else:
+                await ctx.send('The role was higher than my highest role. '
+                               'Check the hierachy please! \U0001f605')
+
+        elif isinstance(error.original, discord.HTTPException):      # Something strange happened.
+            # will probably refactor this out into another function later.
+            if verb.endswith('e'):
+                verb = verb[:-1]
+
+            message = (f'{verb.title()}ing {role} failed for some reason... '
+                        'Send this error to the dev if you can:\n'
+                       f'{type(error).__name__}: {error}')
+
+            await ctx.send(message)
+
+
 
     # ---------------- WELCOME AND LEAVE MESSAGE STUFF -------------
 
