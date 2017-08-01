@@ -76,7 +76,7 @@ def positive_duration(arg):
     return amount
 
 
-_restricted_warn_punishments = {'softban', 'unban', 'warn'}
+_restricted_warn_punishments = {'unban', 'warn'}
 
 WarnEntry = namedtuple('WarnEntry', 'time user reason')
 
