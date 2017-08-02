@@ -151,13 +151,6 @@ class Owner:
         # make sure commands for other bots (or even from itself) can't be executed
         await ctx.send(f"\u200b{msg}")
 
-    @commands.command(hidden=True)
-    async def announce(self, ctx, *, msg):
-        """Makes an announcement to all the servers that the bot is in"""
-        owner = (await self.bot.application_info()).owner
-        for guild in bot.guilds:
-            await guild.default_channel.send(server, f"@everyone **Announcement from {owner}\n\"{msg}\"")
-
     @commands.command(name="sendmessage", hidden=True)
     async def send_message(self, ctx, channel: discord.TextChannel, *, msg):
         """Sends a message to a particular channel"""

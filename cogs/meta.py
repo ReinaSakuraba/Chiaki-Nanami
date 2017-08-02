@@ -333,7 +333,6 @@ class Meta:
 
         server_embed = (discord.Embed(description=description, timestamp=server.created_at)
                        .set_author(name=server.name)
-                       .add_field(name="Default Channel", value=f'#{server.default_channel}')
                        .add_field(name="Highest Role", value=highest_role)
                        .add_field(name="Region", value=str(server.region).title())
                        .add_field(name="Verification Level", value=server.verification_level.name.title())

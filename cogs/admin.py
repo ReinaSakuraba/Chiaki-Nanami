@@ -1,4 +1,5 @@
 import contextlib
+import copy
 import discord
 
 from datetime import datetime
@@ -91,7 +92,7 @@ class Admin:
 
     async def _self_role(self, role_action, role):
         self_roles = self.self_roles[role.guild]
-        if role.id not in self_roles:
+        if role.id not in self_roles:   
             raise errors.InvalidUserArgument("That role is not self-assignable... :neutral_face:")
         await role_action(role)
 
@@ -299,8 +300,6 @@ class Admin:
 
             await ctx.send(message)
 
-
-
     # ---------------- WELCOME AND LEAVE MESSAGE STUFF -------------
 
     _channel_format = """
@@ -347,8 +346,13 @@ class Admin:
             await ctx.send(f'Ok, {channel.mention} it is then!')
         else:
             channel_id = db.get('channel')
-            channel = self.bot.get_channel(channel_id) or ctx.guild.default_channel
-            await ctx.send(f"I'm gonna say the {thing} message in {channel.mention}")
+            channel = self.bot.get_channel(channel_id)
+            if not channel:
+                message = ("I don't have a channel at the moment, "
+                           f"set one with `{ctx.prefix}{ctx.command} my_channel`")
+            else:
+                message = f"I'm gonna say the {thing} message in {channel.mention}"
+            await ctx.send(message)
 
     async def _delete_after_config(self, ctx, duration, *, thing):
         db = getattr(self, f'{thing}_message_config')[ctx.guild]
@@ -448,7 +452,10 @@ class Admin:
             return
 
         channel_id = config.get('channel')
-        channel = self.bot.get_channel(channel_id) or guild.default_channel
+        channel = self.bot.get_channel(channel_id)
+        if channel is None:
+            return
+
         delete_after = config.get('delete_after')
 
         member_count = len(guild.members)
@@ -482,7 +489,10 @@ class Admin:
 
 
         channel_id = config.get('channel')
-        channel = self.bot.get_channel(channel_id) or guild.default_channel
+        channel = self.bot.get_channel(channel_id)
+        if channel is None:
+            return
+
         delete_after = config.get('delete_after')
 
 
