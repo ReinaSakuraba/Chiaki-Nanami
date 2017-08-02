@@ -12,7 +12,7 @@ from discord.ext import commands
 from operator import attrgetter, contains, itemgetter
 
 from .utils import errors, formats
-from .utils.context_managers import redirect_exception  
+from .utils.context_managers import redirect_exception, temp_attr
 from .utils.converter import duration, in_, union
 from .utils.database import Database
 from .utils.json_serializers import (
@@ -414,8 +414,11 @@ class Moderator:
             pass
         else:
             retry_after = (current_time - last_warn[0]).total_seconds()
-            if (current_time - last_warn[0]).total_seconds() <= 60:
-                return await ctx.send(f"This user has been warned already, try again in {retry_after: .2f} seconds...")
+            if retry_after <= 60:
+                # Must throw an error because return await triggers on_command_completion
+                # Which would end up logging a case even though it doesn't work.
+                raise RuntimeError(f"{member} has been warned already, try again in "
+                                   f"{60 - retry_after :.2f} seconds...")
 
         warn_queue.append(WarnEntry(current_time, author.id, reason))
         current_warn_num = len(warn_queue)
@@ -445,13 +448,39 @@ class Moderator:
 
         # Auto-punish the user
         args = member,
-        if punishment['duration'] is not None:
-            args += punishment['duration'],
-        ctx.auto_punished = True
+        duration = punishment['duration']
+        if duration is not None:
+            args += duration,
+            punished_for = f' for {duration_units(duration)}'
+        else:
+            punished_for = f''
 
         punish = punishment['punish']
-        await ctx.invoke(getattr(self, punish), *args, reason=f'{reason}\n({ordinal(current_warn_num)} warning)')
+        punishment_command = getattr(self, punish)
+        punishment_reason = f'{reason}\n({ordinal(current_warn_num)} warning)'
+        # Patch out the context's send method because we don't want it to be
+        # sending the command's message.
+        with temp_attr(ctx, 'send', lambda *a, **kw: asyncio.sleep(0)):
+            await ctx.invoke(punishment_command, *args, reason=punishment_reason)
+
+        message = (f"{member.mention} has {current_warn_num} warnings! "
+                   f"**It's punishment time!** Today I'll {punish} you{punished_for}! "
+                    "\N{SMILING FACE WITH HORNS}")
+        await ctx.send(message)
+
+        # Dynamically patch the attributes because case logging requires them.
+        # If they weren't patched in, it would treat is as if it was a warn action.
+        ctx.auto_punished = True
+        ctx.command = punishment_command
+        ctx.args[2:] = args
+        ctx.kwargs['reason'] = punishment_reason
         check_warn_num()
+
+    @warn.error
+    async def warn_error(self, ctx, error):
+        original = getattr(error, 'original', None)
+        if isinstance(original, RuntimeError):
+            await ctx.send(original)
 
     # XXX: Should this be a group?
 
