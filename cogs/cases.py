@@ -1,4 +1,7 @@
+import contextlib
 import discord
+import functools
+import itertools
 
 from collections import namedtuple
 from datetime import datetime
@@ -7,7 +10,7 @@ from discord.ext import commands
 from .utils.compat import async_cache
 from .utils.database import Database
 from .utils.formats import pluralize
-from .utils.misc import duration_units, emoji_url
+from .utils.misc import duration_units, emoji_url, ordinal
 from .utils.timer import Scheduler, TimerEntry
 
 
@@ -115,6 +118,40 @@ class Cases:
             embed.set_thumbnail(url=avatar_url)
         return embed
 
+    def get_warn_number(self, member):
+        mod = self.bot.get_cog('Moderator')
+        assert mod is not None, "Mod Cog not loaded but a warn case was logged."
+
+        log = mod.warn_log['s{0.guild.id};m{0.id}'.format(member)]
+        return len(log)
+
+    async def notify_user(self, action, server, user, *targets, reason, duration=None, auto=False):
+        if action == 'massban':
+            return
+
+        mod_action = _mod_actions[action]
+
+        action_applied = f'You were {mod_action.repr}'
+        # Will probably refactor this later.
+        embed = (discord.Embed(colour=mod_action.colour, timestamp=datetime.utcnow())
+                .add_field(name='In', value=str(server), inline=False)
+                .add_field(name='By', value=str(user), inline=False)
+                .add_field(name='Reason', value=reason, inline=False)
+                )
+        set_author = functools.partial(embed.set_author, icon_url=emoji_url(mod_action.emoji))
+
+        for target in targets:
+            if duration:
+                applied = f'{action_applied} for {duration_units(duration)}'
+            elif action == 'warn':
+                applied = f'{action_applied} for the {ordinal(self.get_warn_number(target))} time'
+
+            set_author(name=f'{applied}!')
+            with contextlib.suppress(discord.HTTPException):
+                await target.send(embed=embed)
+                print('ok', target)
+        print('success!')
+
     async def embed_from_index(self, server, idx):
         entry = self.cases[server][idx]
         user = self.bot.get_user(entry['user'])
@@ -160,7 +197,6 @@ class Cases:
                    )[do_cases]
 
         await ctx.send(message)
-
 
     @case.command(name='channel')
     @commands.has_permissions(manage_guild=True)
@@ -250,7 +286,7 @@ class Cases:
             return
         action = ctx.command.qualified_name
 
-        targets = (m for m in ctx.args if isinstance(m, discord.Member))
+        targets = [m for m in ctx.args if isinstance(m, discord.Member)]
         
         duration = ctx.args[3] if action in PUNISHMENTS_WITH_DURATION else None
         reason = ctx.kwargs['reason'] if action != 'massban' else ctx.args[2]
@@ -258,6 +294,9 @@ class Cases:
 
         await self.send_case(action, ctx.guild, ctx.author, *targets, 
                              reason=reason, duration=duration, auto=auto_punished)
+        await self.notify_user(action, ctx.guild, ctx.author, *targets,
+                               reason=reason, duration=duration, auto=auto_punished)
+
 
     async def _poll_audit_log(self, guild, user, *, action):
         if (action, guild.id, user.id) in self._cache:

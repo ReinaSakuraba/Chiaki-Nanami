@@ -404,7 +404,7 @@ class Moderator:
     @commands.has_permissions(manage_messages=True)
     async def warn(self, ctx, member: discord.Member, *, reason: str):
         """Warns a user (obviously)"""
-        self._check_user(ctx, member)
+        # self._check_user(ctx, member)
         author, current_time = ctx.author, ctx.message.created_at
         warn_queue = self.warn_log[_member_key(member)]
 
@@ -428,11 +428,6 @@ class Moderator:
                 warn_queue.popleft()
 
         async def default_warn():
-            warn_embed = (discord.Embed(colour=0xffaa00, description=reason, timestamp=current_time)
-                         .set_author(name=str(author), icon_url=author.avatar_url)
-                         )
-            await member.send(f"You have been warned by {author} for the followng reason:", embed=warn_embed)
-            await member.send(f"This is your {ordinal(current_warn_num)} warning.")
             await ctx.send(f"\N{WARNING SIGN} Warned {member.mention} successfully!")
             check_warn_num()
 
