@@ -459,9 +459,9 @@ class Admin:
     async def byebye_delete(self, ctx, duration: duration = None):
         await self._delete_after_config(ctx, duration, thing='leave')
 
-    async def on_member_join(self, member):
+    async def _maybe_do_message(self, member, config, time):
         guild = member.guild
-        config = self.welcome_message_config[member.guild]
+        config = config[member.guild]
         if not config.get('enabled', False):
             return
 
@@ -485,7 +485,7 @@ class Admin:
             '{count}': str(member_count),
             '{countord}': ordinal(member_count),
             # TODO: Should I use %c...?
-            '{time}': nice_time(member.joined_at)
+            '{time}': nice_time(time)
         }
 
 
@@ -493,42 +493,13 @@ class Admin:
         message = multi_replace(message, replacements)
         await channel.send(message, delete_after=delete_after)
 
+    async def on_member_join(self, member):
+        await self._maybe_do_message(member, self.welcome_message_config, member.joined_at)
+
     # Hm, this needs less repetition
     # XXX: Lower the repetition
     async def on_member_remove(self, member):
-        guild = member.guild
-        config = self.leave_message_config[guild]
-        if not config.get('enabled', False):
-            return
-
-        message = config.get('message')
-        if not message:
-            return
-
-
-        channel_id = config.get('channel')
-        channel = self.bot.get_channel(channel_id)
-        if channel is None:
-            return
-
-        delete_after = config.get('delete_after')
-
-
-        member_count = len(guild.members)
-
-        replacements = {
-            '{user}': member.mention,
-            '{uid}': str(member.id),
-            '{server}': str(guild),
-            '{count}': str(member_count),
-            '{countord}': ordinal(member_count),
-            # TODO: Should I use %c...?
-            '{time}': nice_time(datetime.utcnow())
-        }
-
-
-        message = multi_replace(message, replacements)
-        await channel.send(message, delete_after=delete_after)
+        await self._maybe_do_message(member, self.leave_message_config, datetime.utcnow())
 
     # ------------------------- PREFIX RELATED STUFF -------------------
 
