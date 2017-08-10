@@ -120,7 +120,7 @@ class Admin:
     @commands.command()
     async def iamnot(self, ctx, *, role: SelfRole):
         """Removes a self-assignable role (and only a self-assignable role) from yourself."""
-        if role in ctx.author.roles:
+        if role not in ctx.author.roles:
             return await ctx.send(f"You aren't {role} already...")
 
         await ctx.author.remove_roles(role)
