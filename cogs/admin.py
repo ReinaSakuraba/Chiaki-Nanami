@@ -354,7 +354,7 @@ class Admin:
             await ctx.send(f"{thing.title()} message has been set to *{message}*")
         else:
             message = db.get('message')
-            to_say = f"I will say {message} to a the user." if message else "I won't say anything..."
+            to_say = f"I will say {message} to the user." if message else "I won't say anything..."
             await ctx.send(to_say)
 
     async def _channel_config(self, ctx, channel, *, thing):
