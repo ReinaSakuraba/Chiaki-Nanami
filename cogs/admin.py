@@ -7,9 +7,9 @@ from discord.ext import commands
 from functools import partial
 from itertools import starmap
 
-from .utils import errors
+from .utils import errors, search
 from .utils.converter import ArgumentParser, duration
-from .utils.context_managers import redirect_exception
+from .utils.context_managers import redirect_exception, temp_attr
 from .utils.database import Database
 from .utils.formats import multi_replace
 from .utils.misc import duration_units, nice_time, ordinal, str_join
@@ -34,6 +34,22 @@ class LowerRole(commands.RoleConverter):
         return role
 
 
+class SelfRole(search.RoleSearch):
+    async def convert(self, ctx, arg):
+        # Assume this is invoked from the Admin cog, as we don't use self-roles
+        # anywhere else.
+        if not ctx.guild:
+            raise commands.NoPrivateMessage
+
+        self_roles = ctx.cog.get_self_roles(ctx.guild)
+
+        with temp_attr(ctx.guild, 'roles', self_roles):
+            try:
+                return await super().convert(ctx, arg)
+            except commands.BadArgument:
+                raise commands.BadArgument(f'{arg} is not a self-assignable role...')
+
+
 class Admin:
     """Admin-only commands"""
     __aliases__ = "Administrator", "Administration"
@@ -46,6 +62,13 @@ class Admin:
 
     def __local_check(self, ctx):
         return bool(ctx.guild)
+
+    def get_self_roles(self, server):
+        ids = self.self_roles[server]
+        getter = partial(discord.utils.get, server.roles)
+        roles = (getter(id=id) for id in ids)
+        # in case there are any non-existent roles
+        return list(filter(None, roles))
 
     @commands.command(name='addselfrole', aliases=['asar', ])
     @commands.has_permissions(manage_roles=True, manage_guild=True)
@@ -64,15 +87,13 @@ class Admin:
 
     @commands.command(name='removeselfrole', aliases=['rsar', ])
     @commands.has_permissions(manage_roles=True, manage_guild=True)
-    async def remove_self_role(self, ctx, *, role: LowerRole):
+    async def remove_self_role(self, ctx, *, role: SelfRole):
         """Removes a self-assignable role from the server
 
         A self-assignable role is one that you can assign to yourself
         using `{prefix}iam` or `{prefix}selfrole`
         """
-
-        with redirect_exception((ValueError, "That role was never self-assignable... I think.")):
-            self.self_roles[ctx.guild].remove(role.id)
+        self.self_roles[ctx.guild].remove(role.id)
         await ctx.send(f"**{role}** is no longer a self-assignable role!")
 
     @commands.command(name='listselfrole', aliases=['lsar'])
@@ -82,34 +103,31 @@ class Admin:
         A self-assignable role is one that you can assign to yourself
         using `{prefix}iam` or `{prefix}selfrole`
         """
-        self_roles_ids = self.self_roles[ctx.guild]
-        getter = partial(discord.utils.get, ctx.guild.roles)
-        self_roles = [getter(id=id) for id in self_roles_ids]
-
+        self_roles = self.get_self_roles(ctx.guild)
         msg = (f'List of self-assignable roles: \n{str_join(", ", self_roles)}'
                if self_roles else 'There are no self-assignable roles...')
         await ctx.send(msg)
 
-    async def _self_role(self, role_action, role):
-        self_roles = self.self_roles[role.guild]
-        if role.id not in self_roles:   
-            raise errors.InvalidUserArgument("That role is not self-assignable... :neutral_face:")
-        await role_action(role)
-
     @commands.command()
-    async def iam(self, ctx, *, role: discord.Role):
+    async def iam(self, ctx, *, role: SelfRole):
         """Gives a self-assignable role (and only a self-assignable role) to yourself."""
-        await self._self_role(ctx.author.add_roles, role)
+        if role in ctx.author.roles:
+            return await ctx.send(f"You are {role} already...")
+
+        await ctx.author.add_roles(role)
         await ctx.send(f"You are now **{role}**... I think.")
 
     @commands.command()
-    async def iamnot(self, ctx, *, role: discord.Role):
+    async def iamnot(self, ctx, *, role: SelfRole):
         """Removes a self-assignable role (and only a self-assignable role) from yourself."""
-        await self._self_role(ctx.author.remove_roles, role)
+        if role in ctx.author.roles:
+            return await ctx.send(f"You aren't {role} already...")
+
+        await ctx.author.remove_roles(role)
         await ctx.send(f"You are no longer **{role}**... probably.")
 
     @commands.command()
-    async def selfrole(self, ctx, *, role: discord.Role):
+    async def selfrole(self, ctx, *, role: SelfRole):
         """Gives or removes a self-assignable role (and only a self-assignable role)
 
         This depends on whether or not you have the role already.
@@ -119,7 +137,7 @@ class Admin:
         msg, role_action = ((f"You are no longer **{role}**... probably.", author.remove_roles)
                             if role in author.roles else
                             (f"You are now **{role}**... I think.", author.add_roles))
-        await self._self_role(role_action, role)
+        await role_action(role)
         await ctx.send(msg)
 
     @commands.command(name='addrole', aliases=['ar'])
