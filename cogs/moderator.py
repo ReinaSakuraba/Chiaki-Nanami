@@ -76,7 +76,8 @@ def positive_duration(arg):
     return amount
 
 
-_restricted_warn_punishments = {'unban', 'warn'}
+_warn_punishments = {'mute', 'kick', 'softban', 'tempban', 'ban',}
+
 
 WarnEntry = namedtuple('WarnEntry', 'time user reason')
 
@@ -491,8 +492,10 @@ class Moderator:
     async def warn_punish(self, ctx, num: int, punishment, duration: duration=None):
         """Sets the punishment a user receives upon exceeding a given warn limit"""
         punish_lower = punishment.lower()
-        if punish_lower in _restricted_warn_punishments:
-            raise errors.InvalidUserArgument(f"{punish_lower} is not a valid punishment")
+        if punish_lower not in _warn_punishments:
+            message = (f'{punish_lower} is not a valid punishment.\n'
+                       f'Valid punishments: {", ".join(_warn_punishments)}')
+            raise errors.InvalidUserArgument(message)
 
         if punish_lower in {'tempban', 'mute'} and duration is None:
             raise errors.InvalidUserArgument(f'A duration is required for {punish_lower}...')
