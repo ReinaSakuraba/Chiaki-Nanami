@@ -536,7 +536,7 @@ class Moderator:
 
         self.muted_roles[str(server.id)] = role.id
         # Explicit dump to make sure the roles get updated
-        await self.mutes.dump()
+        await self.muted_roles.dump()
         return role
 
     def _get_muted_role(self, server):
