@@ -96,10 +96,6 @@ class CustomCommands:
                               colour=self.bot.colour)
         await pages.interact()
 
-    def get_prefix(self, message):
-        prefix = self.bot.prefix_function(message)
-        return discord.utils.find(message.content.startswith, prefix)
-
     @staticmethod
     def is_part_of_existing_command(ctx, arg):
         return ctx.bot.get_command(arg) is not None
@@ -145,7 +141,8 @@ class CustomCommands:
             return
 
         content = message.content
-        prefix = self.get_prefix(message)
+        prefixes = await self.bot.get_prefix(message)
+        prefix = discord.utils.find(content.startswith, prefixes)
         if prefix is None:
             return
 

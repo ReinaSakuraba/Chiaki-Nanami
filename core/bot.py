@@ -191,10 +191,6 @@ class ChiakiBot(commands.Bot):
 
     # ------ misc. properties ------
 
-    @discord.utils.cached_property
-    def prefix_function(self):
-        return functools.partial(self.command_prefix, self)
-
     @property
     def uptime(self):
         return datetime.utcnow() - self.start_time
