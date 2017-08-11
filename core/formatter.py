@@ -30,7 +30,12 @@ class ChiakiFormatter(commands.HelpFormatter):
     def command_usage(self):
         cmd = self.command
         prefix = self.clean_prefix
-        qualified_names = [f"{cmd.full_parent_name} {name}" for name in cmd.all_names]
+        parent_name = cmd.full_parent_name
+        # We want to append with a space if AND ONLY IF there is a parent.
+        # Otherwise there will be a space between the prefix and the command name
+        parent_name = f'{parent_name} ' * bool(parent_name)
+
+        qualified_names = [f"{parent_name}{name}" for name in cmd.all_names]
         if cmd.clean_params:
             usage = cmd.usage
             if isinstance(usage, Sequence):
