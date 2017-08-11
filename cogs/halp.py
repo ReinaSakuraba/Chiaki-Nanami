@@ -97,7 +97,8 @@ _bracket_repls = {
 class Help:
     def __init__(self, bot):
         self.bot = bot
-        #self.bot.command(name='help', , aliases='h')(_default_help_command)
+        self.bot.remove_command('help')
+        self.bot.remove_command('h')
         self.bot.loop.create_task(self.load_problems())
 
     async def load_problems(self):
