@@ -17,6 +17,23 @@ from cogs.utils.paginator import DelimPaginator
 def _unique(iterable):
     return list(OrderedDict.fromkeys(iterable))
 
+
+# placeholder for later
+_default_help = """
+*{0.description}*
+
+To invite me to your server, use `->invite`, or just use this link:
+<{0.invite_url}>
+
+If you need help with something, or there's some weird issue with me, which will usually happen
+(since the owners don't tend to test me a lot), use this link to join the **Official** Chiaki Nanami Server:
+https://{0.support_invite}
+
+*Use `->modules` for all the modules with commands.
+Or `->commands "module"` for a list of commands for a particular module.*
+"""
+
+
 class ChiakiFormatter(commands.HelpFormatter):
     def get_ending_note(self):
         return f"Type {self.clean_prefix}help command for more info on a command."
@@ -86,8 +103,7 @@ class ChiakiFormatter(commands.HelpFormatter):
 
     async def bot_help(self):
         bot, func = self.context.bot, self.apply_function
-        default_help = bot.default_help
-        result = default_help.format(bot, bot=bot) 
+        result = _default_help.format(bot, bot=bot)
         return func(result)
 
     async def cog_embed(self):

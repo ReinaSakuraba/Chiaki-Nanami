@@ -74,6 +74,7 @@ class Chiaki(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix=_callable_prefix, 
                          formatter=_chiaki_formatter,
+                         description=config.description,
                          pm_help=None)
 
         self.message_counter = 0
@@ -171,10 +172,6 @@ class Chiaki(commands.Bot):
     @property
     def default_prefix(self):
         return always_iterable(config.command_prefix)
-
-    @property
-    def default_help(self):
-        return self._config['default_help']
 
     @property
     def colour(self):
