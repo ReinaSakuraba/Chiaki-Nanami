@@ -124,7 +124,7 @@ class Help:
                  .add_field(name="Want me in your server?",
                             value=f'[Invite me here!]({self.bot.invite_url})', inline=False)
                  .add_field(name="Need help with using me?",
-                            value=f"[Here's the official server!]({self.bot.official_server_invite})", inline=False)
+                            value=f"[Here's the official server!]({self.bot.support_invite})", inline=False)
                  .add_field(name="If you're curious about how I work...",
                             value="[Check out the source code!](https://github.com/Ikusaba-san/Chiaki-Nanami/tree/rewrite)", inline=False)
                  )

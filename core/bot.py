@@ -201,6 +201,14 @@ class Chiaki(commands.Bot):
     # ------ misc. properties ------
 
     @property
+    def support_invite(self):
+        # The following is the link to the bot's support server.
+        # You are allowed to change this to be another server of your choice. 
+        # However, doing so will instantly void your warranty.
+        # Change this at your own peril.
+        return 'https://discord.gg/WtkPTmE'
+
+    @property
     def uptime(self):
         return datetime.utcnow() - self.start_time
 

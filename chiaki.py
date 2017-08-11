@@ -42,11 +42,6 @@ async def on_ready():
     print(bot.user.id)
     print('------')
 
-    if bot.official_guild is None:
-        warnings.warn("Your bot is not in the server you've set for 'official_guild' in config.json. "
-                      "Either your ID is isn't an integer, or you haven't invited your bot to that server. "
-                     f"Use this link to invite it: {bot.oauth_url}")
-
     if not hasattr(bot, 'appinfo'):
         bot.appinfo = (await bot.application_info())
 
@@ -60,8 +55,6 @@ async def on_ready():
         bot.start_time = datetime.utcnow()
 
     bot.loop.create_task(bot.change_game())
-    if not config.get('official_server_invite'):
-        bot.loop.create_task(bot.update_official_invite())
 
     if not hasattr(bot, 'command_counter'):
         bot.command_counter = collections.Counter()
