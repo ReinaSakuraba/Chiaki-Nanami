@@ -60,7 +60,7 @@ class ChiakiFormatter(commands.HelpFormatter):
             requirements.append('**Bot Owner only**')
 
         def make_pretty(p):
-            return p.replace('_', ' ').title()
+            return p.replace('_', ' ').title().replace('Guild', 'Server')
 
         for check in self.command_checks:
             name = getattr(check, '__qualname__', '')
