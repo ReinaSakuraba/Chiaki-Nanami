@@ -123,6 +123,8 @@ class Help:
                  .set_thumbnail(url=self.bot.user.avatar_url_as(format=None))
                  .add_field(name="Want me in your server?",
                             value=f'[Invite me here!]({self.bot.invite_url})', inline=False)
+                 .add_field(name="If you just to be simple...",
+                            value=f'[Invite me with minimal permissions!]({self.bot.minimal_invite_url})', inline=False)
                  .add_field(name="Need help with using me?",
                             value=f"[Here's the official server!]({self.bot.support_invite})", inline=False)
                  .add_field(name="If you're curious about how I work...",
