@@ -126,24 +126,6 @@ class Chiaki(commands.Bot):
         # remove cog aliases
         self.cog_aliases = {alias: real for alias, real in self.cog_aliases.items() if real is not cog}
 
-    def load_extension(self, name):
-        try:
-            super().load_extension(name)
-        except Exception as e:
-            log.error(f"{type(e).__name__}: {e}")
-            raise
-        else:
-            log.info(f"{name} successfully loaded")
-
-    def unload_extension(self, name):
-        try:
-            super().unload_extension(name)
-        except Exception as e:
-            log.error(f"{type(e).__name__}: {e}")
-            raise
-        else:
-            log.info(f"{name} successfully unloaded")
-
     @contextlib.contextmanager
     def temp_listener(self, func, name=None):
         """Context manager for temporary listeners"""
