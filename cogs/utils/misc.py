@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from discord.ext import commands
 from more_itertools import grouper
 
+from .formats import pluralize
+
 
 REGIONAL_INDICATORS = [chr(i + 0x1f1e6) for i in range(26)]
 
@@ -33,6 +35,8 @@ def parse_int(maybe_int, base=10):
     except ValueError:
         return None
 
+TIME_UNITS = ('week', 'day', 'hour', 'minute')
+
 def duration_units(secs):
     m, s = divmod(secs, 60)
     h, m = divmod(m, 60)
@@ -42,13 +46,9 @@ def duration_units(secs):
     # the quotient rather than the remainder, so these can be safely made to ints.
     # The reason for the int cast is because if the seconds is a float,
     # the other units will be floats too.
-    unit_list = [(int(w), 'weeks'), (int(d), 'days'), (int(h), 'hours'), (int(m), 'mins')]
-    joined = ', '.join([f"{n} {u}" for n, u in unit_list if n])
-    if s:
-        if joined:
-            joined += ', '
-        s = round(s, 2) if s % 1 else int(s)
-        joined += f'{s} seconds'
+    unit_list = [*zip(TIME_UNITS, map(int, (w, d, h, m))),
+                 ('second', round(s, 2) if s % 1 else int(s))]
+    joined = ', '.join(pluralize(**{u: n}) for u, n in unit_list if n)
     return joined
 
 def ordinal(num):
