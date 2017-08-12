@@ -15,10 +15,15 @@ class AFKConfig(enum.IntEnum):
     MAX_MESSAGES = 5
     MAX_INTERVAL = 10 * 60
 
+_default_afk_config = {
+    'send_afk_message': True,
+}
+
 class AFK:
     def __init__(self, bot):
         self.bot = bot
         self.afks = Database("afk.json")
+        self.afk_configs = Database('afk-config.json', default_factory=_default_afk_config.copy)
         self.user_message_queue = defaultdict(deque)
 
     async def _get_afk_embed(self, member):
@@ -50,6 +55,9 @@ class AFK:
         self.user_message_queue[author.id].clear()
         return old_message is not None
 
+    def _afk_messages_enabled(self, server):
+        return self.afk_configs[server]['send_afk_message']
+
     @commands.command()
     async def afk(self, ctx, *, message: str=None):
         """Sets your AFK message"""
@@ -60,6 +68,17 @@ class AFK:
         else:
             self.afks[member] = message
             await ctx.send("You are AFK")
+
+    @commands.command(name='afksay')
+    @commands.has_permissions(manage_guild=True)
+    async def afk_say(self, ctx, send_afk_message: bool):
+        """Sets whether or not I should say the user's AFK message when mentioned.
+
+        This is useful in places where the AFK message might be extremely spammy.
+        This is server-wide at the moment
+        """
+        self.afk_configs[ctx.guild]['send_afk_message'] = send_afk_message
+        await ctx.send('\N{THUMBS UP SIGN}')
 
     async def check_user_message(self, message):
         author, server = message.author, message.guild
@@ -77,6 +96,9 @@ class AFK:
                                        f"{duration_units(AFKConfig.MAX_INTERVAL)}.")
 
     async def check_user_mention(self, message):
+        if not self._afk_messages_enabled(message.guild):
+            return
+
         if message.author.id == self.bot.user.id:
             return
 
