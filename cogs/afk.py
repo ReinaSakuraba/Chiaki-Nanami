@@ -1,3 +1,4 @@
+import contextlib
 import discord
 import enum
 
@@ -31,16 +32,19 @@ class AFK:
         if message is None:
             return None
 
-        # Guaranteed to work because if user isn't in the database this won't run
-        last_seen = self.user_message_queue[member.id][-1]
         avatar = member.avatar_url_as(format=None)
         colour = await user_color(member)
         title = f"{member.display_name} is AFK"
 
-        return (discord.Embed(description=message, colour=colour, timestamp=last_seen)
-               .set_author(name=title, icon_url=avatar)
-               .set_footer(text=f"ID: {member.id}")
-               )
+        embed = (discord.Embed(description=message, colour=colour)
+                .set_author(name=title, icon_url=avatar)
+                .set_footer(text=f"ID: {member.id}")
+                )
+
+        with contextlib.suppress(IndexError):
+            embed.timestamp = self.user_message_queue[member.id][-1]
+        return embed
+
 
     def _has_messaged_too_much(self, author):
         message_queue = self.user_message_queue[author.id]
