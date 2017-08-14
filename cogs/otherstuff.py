@@ -276,9 +276,10 @@ class OtherStuffs:
                     and reaction.emoji == TEN_SEC_REACTION
                    )
 
+        start = time.perf_counter()
         reaction, user = await ctx.bot.wait_for('reaction_add', check=check)
-        now = datetime.utcnow()
-        duration = (now - message.created_at).total_seconds()
+        now = time.perf_counter()
+        duration = now - start
 
         embed.colour = 0x00FF00
         embed.description = (f'When you clicked the {TEN_SEC_REACTION} button, \n'
