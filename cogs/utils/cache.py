@@ -5,6 +5,11 @@ import inspect
 
 from lru import LRU
 
+# Key-making functions
+def unordered(args, kwargs):
+    if kwargs:
+        args += (object(), *kwargs.items())
+    return frozenset(args)
 
 default_key = functools.partial(functools._make_key, typed=False)
 typed_key = functools.partial(functools._make_key, typed=True)
