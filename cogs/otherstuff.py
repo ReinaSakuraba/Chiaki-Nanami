@@ -14,7 +14,7 @@ from datetime import datetime
 from discord.ext import commands
 from more_itertools import always_iterable
 
-from .utils import errors
+from .utils import cache, errors
 from .utils.compat import user_colour
 from .utils.misc import emoji_url, load_async
 
@@ -26,13 +26,6 @@ def _lerp_color(c1, c2, interp):
 
 _lerp_red = functools.partial(_lerp_color, (0, 0, 0), (255, 0, 0))
 
-class UserInfo(namedtuple('UserInfo', 'name id avatar')):
-    __slots__ = ()
-
-    @classmethod
-    def from_user(cls, user):
-        avatar = user.avatar or user.default_avatar.value
-        return cls(str(user), user.id, avatar)
 
 _default_rating_comments = (
     'There is no chance for this to happen.',
@@ -61,8 +54,8 @@ class ShipRating(namedtuple('ShipRating', 'value comment')):
             comment = _default_rating_comments[index]
         return super().__new__(cls, value, comment) 
 
-_special_pairs = {
-}
+_special_pairs = {}
+
 
 def _get_special_pairing(user1, user2):
     keys = f'{user1.id}/{user2.id}', f'{user2.id}/{user1.id}'
@@ -82,17 +75,12 @@ def _get_special_pairing(user1, user2):
     return ShipRating(value=value, comment=comment)
 
 
-@functools.lru_cache(maxsize=2 ** 20)
-def _calculate_compatibilty(pair):
-    # This has to be stored as a frozenset pair to make sure that
-    # switching the two users doesn't affect the result
-    if len(pair) == 1:
-        info1, = pair
-        return ShipRating(0, f"RIP {info1.name}. They're forever alone.")
+@cache.cache(maxsize=None, make_key=cache.unordered)
+def _calculate_compatibilty(user1, user2):
+    if user1 == user2:
+        return ShipRating(0, f"RIP {user1}. They're forever alone.")
 
-    info1, info2 = pair
-
-    special = _get_special_pairing(info1, info2)
+    special = _get_special_pairing(user1, user2)
     return special or ShipRating(random.randrange(101))
 
 #--------------- End ship stuffs ---------------------
@@ -163,14 +151,7 @@ class OtherStuffs:
         if user2 is None:
             user1, user2 = ctx.author, user1
 
-        # In order to keep the modification that comes with changing avatar / name
-        # we have to use a tuple of these stats.
-        # Using the actual User object won't work if we're gonna take advantage of functools.lru_cache
-        # Because a change in avatar or username won't create a new result
-        #
-        # Also make sure ->ship user1 user2 and ->ship user2 user1 return the same result
-        pair = frozenset(map(UserInfo.from_user, (user1, user2)))
-        rating = _calculate_compatibilty(pair)
+        rating = _calculate_compatibilty(user1, user2)
 
         # TODO: Use pillow to make an image out of the two users' thumbnails.
         field_name = 'I give it a...'       # In case I decide to have it choose between mulitiple field_names 
