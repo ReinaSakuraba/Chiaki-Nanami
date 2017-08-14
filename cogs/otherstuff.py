@@ -154,7 +154,7 @@ class OtherStuffs:
             await ctx.send(f"Category \"{self.copypastas[ctx.args[2]]['category']}\" "
                            f"doesn't have pasta called \"{ctx.kwargs['name']}\"")
 
-    @commands.command(usage=['rjt#2336 Nelyn#7808', 'Danny#0007 Jake#0001'])
+    @commands.command(usage=['@rjt#2336 XenaWolf'])
     async def ship(self, ctx, user1: discord.Member, user2: discord.Member=None):
         """Determines if two users are compatible with one another.
 
