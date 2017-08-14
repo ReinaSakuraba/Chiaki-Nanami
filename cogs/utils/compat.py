@@ -1,97 +1,25 @@
-"""Compatibility incase some libraries weren't imported"""
 import aiohttp
 import asyncio
 import discord
 import functools
 
-from collections import deque, namedtuple, OrderedDict
-from discord.ext import commands
 from io import BytesIO
-from itertools import zip_longest
 
-# decided to remove the aiocache one and work with this one for now
-_AsyncCacheInfo = namedtuple("CacheInfo", ['hits', 'misses', 'future_hits', 'maxsize', 'currsize'])
+from . import cache
 
-# http://stackoverflow.com/a/37627076
-def async_cache(maxsize=128):
-    # support use as decorator without calling, for this case maxsize will
-    # not be an int
-    if maxsize is None:
-        real_max_size = maxsize
-    elif callable(maxsize):
-        real_max_size = 128
-    else:
-        try:
-            real_max_size = int(maxsize)
-        except (ValueError, TypeError):
-            raise TypeError(f"expected an int, callable, or None, received {type(maxsize).__name__}")
-
-    boundless = real_max_size is None
-    cache = OrderedDict()
-    cache_len = cache.__len__
-    hits = misses = future_hits = 0
-
-    async def run_and_cache(func, args, kwargs):
-        """Await the coroutine with the specified arguments
-        and store the result in cache."""
-        result = await func(*args, **kwargs)
-        key = functools._make_key(args, kwargs, False)
-        cache[key] = result
-        if not boundless and cache_len() > real_max_size:
-            cache.popitem(last=False)
-        cache.move_to_end(key)
-        return result
-
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            nonlocal hits, misses, future_hits
-            key = functools._make_key(args, kwargs, False)
-            if key in cache:
-                # Some protection against duplicating calls already in
-                # progress: when starting the call cache the future, and if
-                # the same thing is requested again return that future.
-                if isinstance(cache[key], asyncio.Future):
-                    future_hits += 1
-                    return cache[key]
-                else:
-                    f = asyncio.Future()
-                    f.set_result(cache[key])
-                    hits += 1
-                    return f
-            else:
-                cache[key] = task = asyncio.ensure_future(run_and_cache(func, args, kwargs))
-                misses += 1
-                return task
-
-        def cache_info():
-            """Report cache statistics"""
-            return _AsyncCacheInfo(hits, misses, future_hits, maxsize, cache_len())
-
-        def cache_clear():
-            """Clear the cache and cache statistics"""
-            nonlocal hits, misses, future_hits
-            cache.clear()
-            hits = misses = future_hits = 0
-
-        wrapper.cache_info = cache_info
-        wrapper.cache_clear = cache_clear
-        return wrapper
-
-    return decorator(maxsize) if callable(maxsize) else decorator
 
 try:
     from colorthief import ColorThief
 except ImportError:
     ColorThief = None
 
-@async_cache(maxsize=16384)
+@cache.cache(maxsize=16384)
 async def read_image_from_url(url):
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as resp:
             return await resp.read()
 
-@async_cache(maxsize=16384)
+@cache.cache(maxsize=16384)
 async def _dominant_color_from_url(url):
     """Returns an rgb tuple consisting the dominant color given a image url."""
     with BytesIO(await read_image_from_url(url)) as f:
