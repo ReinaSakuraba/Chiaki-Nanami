@@ -8,18 +8,12 @@ from collections import namedtuple
 from discord.ext import commands
 from more_itertools import first_true
 
+from . import errors
 from .bases import two_player_plugin
 from .manager import SessionManager
 
 from ..utils.context_managers import temp_message
 from ..utils.converter import CheckedMember
-
-
-class RageQuit(Exception):
-    pass
-
-class DrawRequested(Exception):
-    pass
 
 
 class Tile(enum.Enum):
@@ -180,11 +174,11 @@ class TicTacToeSession:
     def get_coords(self,string):
         lowered = string.lower()
         if lowered in {'quit', 'stop'}:
-            raise RageQuit
+            raise errors.RageQuit
 
         if lowered == 'draw':
             if self.board.will_tie():
-                raise DrawRequested
+                raise errors.DrawRequested
             raise ValueError("Game is not drawn yet.")
 
         x, y, = string.split()
@@ -249,9 +243,9 @@ class TicTacToeSession:
                 while True:
                     try:
                         x, y = await self.get_input()
-                    except (asyncio.TimeoutError, RageQuit):
+                    except (asyncio.TimeoutError, errors.RageQuit):
                         return Stats(next(cycle), turn)
-                    except DrawRequested:
+                    except errors.DrawRequested:
                         if await self._process_draw(next(cycle).user):
                             return Stats(None, turn)
                         break
@@ -307,7 +301,7 @@ class TicTacToe(two_player_plugin('TicTacToe', cls=TicTacToeSession, aliases=['t
 
             react, user = await ctx.bot.wait_for('reaction_add', check=check)
             if react.emoji == '\N{BLACK SQUARE FOR STOP}':
-                raise RageQuit(f'{ctx.author} cancelled selecting the board size')
+                raise errors.RageQuit(f'{ctx.author} cancelled selecting the board size')
             return int(react.emoji[0])
 
     @staticmethod
