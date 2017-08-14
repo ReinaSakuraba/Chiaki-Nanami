@@ -95,10 +95,8 @@ class OtherStuffs:
         self.default_time = datetime.utcnow()
         self.bot.loop.create_task(self._load())
 
-    def __unload(self):
-        # unload the cache if necessary...
-        _calculate_compatibilty.cache_clear()
-        pass
+        # bookkeeping for optimization since on_member_update can be called multiple times.
+        self._shipped = set()
 
     async def _load(self):
         global _special_pairs
@@ -152,6 +150,7 @@ class OtherStuffs:
             user1, user2 = ctx.author, user1
 
         rating = _calculate_compatibilty(user1, user2)
+        self._shipped.update((user1.id, user2.id))
 
         # TODO: Use pillow to make an image out of the two users' thumbnails.
         field_name = 'I give it a...'       # In case I decide to have it choose between mulitiple field_names 
@@ -269,8 +268,27 @@ class OtherStuffs:
         embed.set_thumbnail(url=ctx.author.avatar_url)
         await message.edit(embed=embed)
 
+    async def on_member_update(self, before, after):
+        if before.id not in self._shipped:
+            return
+
+        if (before.avatar, before.name) == (after.avatar, after.name):
+            return
+
+        cache = _calculate_compatibilty.cache
+        for key in list(cache):
+            # Cannot use cache.invalidate because we're using the actual key 
+            # in the cache. It would always raise KeyError since we're bsaically
+            # doing a frozenset of a frozenset.
+            if before in key:
+                del cache[key]
+
+        self._shipped.discard(before.id)
+
+
     async def on_message(self, message):
         self.last_messages[message.author.id] = message
+
 
 
 def setup(bot):
