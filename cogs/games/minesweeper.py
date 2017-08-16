@@ -15,7 +15,7 @@ from .manager import SessionManager
 
 from ..utils.converter import in_, ranged
 from ..utils.database import Database
-from ..utils.misc import REGIONAL_INDICATORS
+from ..utils.misc import REGIONAL_INDICATORS, duration_units
 from ..utils.paginator import BaseReactionPaginator, page
 
 
@@ -275,7 +275,7 @@ class MinesweeperDisplay(BaseReactionPaginator):
         return (discord.Embed(colour=self.context.bot.colour, description=self._board_repr())
                .set_author(name=f'Minesweeper - {board.width} x {board.height}')
                .add_field(name='Player', value=self.context.author)
-               .add_field(name='Mines Found', value=f'{board.mines_marked} / {board.mine_count}')
+               .add_field(name='Mines Marked', value=f'{board.mines_marked} / {board.mine_count}')
                .add_field(name='Flags Remaining', value=board.remaining_flags)
                .add_field(name='\u200b', value='Stuck? Click the \N{INFORMATION SOURCE} reaction for some help.')
                )
@@ -446,7 +446,8 @@ class Minesweeper:
             if time is None:
                 return
 
-            text = f'You beat game in {time :.2f} seconds.'
+            rounded = round(time, 2)
+            text = f'You beat game in {duration_units(rounded)}.'
             win_embed = (discord.Embed(title='A winner is you!', colour=0x00FF00, timestamp=datetime.utcnow(), description=text)
                         .set_thumbnail(url=ctx.author.avatar_url)
                         )
