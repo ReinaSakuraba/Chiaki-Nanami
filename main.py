@@ -5,13 +5,7 @@ import sys
 from functools import partial
 from itertools import takewhile
 
-def _load_config():
-    with open('config.json') as f:
-        return json.load(f)
-
-# Hope I can find a way to not repeat myself here
-_config = _load_config()
-RESTART_CODE = _config.get('restart_code', 69)
+RESTART_CODE = 69
 
 def _runner():
     python = sys.executable
