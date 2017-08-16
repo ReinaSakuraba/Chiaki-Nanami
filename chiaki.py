@@ -65,9 +65,11 @@ async def on_command_error(ctx, error):
         await ctx.reinvoke()
         return
 
-    bot.command_counter['failed'] += 1
+    # command_counter['failed'] += 0 sets the 'failed' key. We don't want that.
+    if not isinstance(error, commands.CommandNotFound):
+        bot.command_counter['failed'] += 1
 
-    cause =  error.__cause__
+    cause = error.__cause__
     if isinstance(error, errors.ChiakiException):
         await ctx.send(str(error))
     elif type(error) is commands.BadArgument:
