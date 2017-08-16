@@ -204,8 +204,8 @@ class ChiakiBot(commands.Bot):
         return collections.ChainMap(self.cogs, self.cog_aliases)
 
 def _command_prefix(bot, message):
-    return (*commands.when_mentioned(bot, message),
-            *bot.custom_prefixes.get(message.guild, bot.default_prefix))
+    prefixes = bot.custom_prefixes.get(message.guild, bot.default_prefix)
+    return commands.when_mentioned_or(*prefixes)(bot, message)
 
 # main bot
 def chiaki_bot(config):
