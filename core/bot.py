@@ -198,4 +198,3 @@ class Chiaki(commands.Bot):
     @property
     def all_cogs(self):
         return collections.ChainMap(self.cogs, self.cog_aliases)
->>>>>>> config-rework
