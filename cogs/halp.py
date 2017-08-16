@@ -97,7 +97,8 @@ _bracket_repls = {
 class Help:
     def __init__(self, bot):
         self.bot = bot
-        #self.bot.command(name='help', , aliases='h')(_default_help_command)
+        self.bot.remove_command('help')
+        self.bot.remove_command('h')
         self.bot.loop.create_task(self.load_problems())
 
     async def load_problems(self):
@@ -122,8 +123,10 @@ class Help:
                  .set_thumbnail(url=self.bot.user.avatar_url_as(format=None))
                  .add_field(name="Want me in your server?",
                             value=f'[Invite me here!]({self.bot.invite_url})', inline=False)
+                 .add_field(name="If you just to be simple...",
+                            value=f'[Invite me with minimal permissions!]({self.bot.minimal_invite_url})', inline=False)
                  .add_field(name="Need help with using me?",
-                            value=f"[Here's the official server!]({self.bot.official_server_invite})", inline=False)
+                            value=f"[Here's the official server!]({self.bot.support_invite})", inline=False)
                  .add_field(name="If you're curious about how I work...",
                             value="[Check out the source code!](https://github.com/Ikusaba-san/Chiaki-Nanami/tree/rewrite)", inline=False)
                  )

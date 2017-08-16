@@ -16,55 +16,80 @@ from .formatter import ChiakiFormatter
 from cogs.utils.database import Database
 from cogs.utils.misc import duration_units, file_handler
 
+# The bot's config file
+import config
+
 log = logging.getLogger(__name__)
 log.addHandler(file_handler('chiakinanami'))
 
-_default_bot_help = """\
-*{0.description}*
 
-To invite me to your server, use `->invite`, or just use this link:
-<{0.invite_url}>
+_MINIMAL_PERMISSIONS = [
+    'send_messages',
+    'embed_links',
+    'add_reactions',
+    'attach_files'
+    "use_external_emojis",
+]
 
-*Use `->modules` for all the modules with commands.
-Or `->commands "module"` for a list of commands for a particular module.*
-"""
+_FULL_PERMISSIONS = [
+    *_MINIMAL_PERMISSIONS,
+    "administrator",
+    "manage_guild",
+    "manage_roles",
+    "manage_channels",
+    "kick_members",
+    "ban_members",
+    "create_instant_invite",
+    
+    "manage_messages",
+    "read_message_history",
+    
+    "connect",
+    "speak",
+    "mute_members",
+    "deafen_members",
+    "move_members"
+]
 
-_default_config = {
-    'colour': "0xFFDDDD",
+def _make_permissions(*permissions):
+    perms = discord.Permissions.none()
+    perms.update(**dict.fromkeys(permissions, True))
+    return perms
 
-    'default_command_prefix': '->',
-    'default_help': _default_bot_help,
+_MINIMAL_PERMISSIONS = _make_permissions(*_MINIMAL_PERMISSIONS)
+_FULL_PERMISSIONS = _make_permissions(*_FULL_PERMISSIONS)
+del _make_permissions
 
-    'restart_code': 69,
-    'log': False,
-}
-del _default_bot_help
 
 MAX_FORMATTER_WIDTH = 90
-# small hacks to make command display all their possible names
-commands.Command.all_names = property(lambda self: [self.name, *self.aliases])
 
-class ChiakiBot(commands.Bot):
-    def __init__(self, command_prefix, formatter=None, description=None, pm_help=False, **options):
-        super().__init__(command_prefix, formatter, description, pm_help, **options)
-        self.remove_command('help')
+def _callable_prefix(bot, message):
+    return (*commands.when_mentioned(bot, message),
+            *bot.custom_prefixes.get(message.guild, bot.default_prefix))
 
-        self._config = collections.ChainMap(options.get('config', {}), _default_config)
+_chiaki_formatter = ChiakiFormatter(width=MAX_FORMATTER_WIDTH, show_check_failure=True)
+
+
+class Chiaki(commands.Bot):
+    def __init__(self):
+        super().__init__(command_prefix=_callable_prefix, 
+                         formatter=_chiaki_formatter,
+                         description=config.description,
+                         pm_help=None)
+
         self.message_counter = 0
         self.custom_prefixes = Database('customprefixes.json')
         self.databases = [self.custom_prefixes, ]
         self.cog_aliases = {}
 
         self.reset_requested = False
-        if self._config['restart_code'] == 0:
-            raise RuntimeError("restart_code cannot be zero")
 
-        self.loop.create_task(self._set_colour())
-
-    # commands.ColourConverter.convert() is now a coro, 
-    # so we have to set the colour this way
-    async def _set_colour(self):
-        self.colour = await commands.ColourConverter().convert(None, self._config['colour'])
+        for ext in config.extensions:
+            # Errors should never pass silently, if there's a bug in an extension,
+            # better to know now before the bot logs in, because a restart
+            # can become extremely expensive later on, especially with the 
+            # 1000 IDENTIFYs a day limit.
+            self.load_extension(ext)
 
     async def close(self):
         await self.dump_databases()
@@ -102,24 +127,6 @@ class ChiakiBot(commands.Bot):
         # remove cog aliases
         self.cog_aliases = {alias: real for alias, real in self.cog_aliases.items() if real is not cog}
 
-    def load_extension(self, name):
-        try:
-            super().load_extension(name)
-        except Exception as e:
-            log.error(f"{type(e).__name__}: {e}")
-            raise
-        else:
-            log.info(f"{name} successfully loaded")
-
-    def unload_extension(self, name):
-        try:
-            super().unload_extension(name)
-        except Exception as e:
-            log.error(f"{type(e).__name__}: {e}")
-            raise
-        else:
-            log.info(f"{name} successfully unloaded")
-
     @contextlib.contextmanager
     def temp_listener(self, func, name=None):
         """Context manager for temporary listeners"""
@@ -142,54 +149,43 @@ class ChiakiBot(commands.Bot):
     async def dump_databases(self):
         await asyncio.gather(*(db.dump() for db in self.databases))
 
-    # Just some looping functions
     async def change_game(self):
         await self.wait_until_ready()
         while True:
-            name = random.choice(self._config['rotating_games'])
+            name = random.choice(config.games)
             await self.change_presence(game=discord.Game(name=name))
             await asyncio.sleep(random.uniform(0.5, 10) * 60)
 
-    async def update_official_invite(self):
-        await self.wait_until_ready()
-        self.invites_by_bot = [inv for inv in await self.official_guild.invites() if inv.inviter.id == self.user.id]
-        if not self.invites_by_bot:
-            self.invites_by_bot.append(await official_guild.create_invite())
+    def run(self):
+        super().run(config.token, reconnect=True)
 
     # ------ Config-related properties ------
 
     @discord.utils.cached_property
-    def permissions(self):
-        permissions_dict = dict.fromkeys(self._config['permissions'], True)
-        chiaki_permissions = discord.Permissions.none()
-        chiaki_permissions.update(**permissions_dict)
-        return chiaki_permissions
+    def minimal_invite_url(self):
+        return discord.utils.oauth_url(self.user.id, _MINIMAL_PERMISSIONS)
 
     @discord.utils.cached_property
-    def oauth_url(self):
-        return discord.utils.oauth_url(self.user.id, self.permissions)
-    invite_url = oauth_url
+    def invite_url(self):
+        return discord.utils.oauth_url(self.user.id, _FULL_PERMISSIONS)
 
     @property
     def default_prefix(self):
-        return always_iterable(self._config['default_command_prefix'])
+        return always_iterable(config.command_prefix)
 
     @property
-    def default_help(self):
-        return self._config['default_help']
-
-    @property
-    def official_guild(self):
-        id = self._config.get('official_guild') or self._config['official_server']
-        return self.get_guild(id)
-    official_server = official_guild
-
-    @property
-    def official_guild_invite(self):
-        return self._config.get('official_server_invite') or random.choice(self.invites_by_bot)
-    official_server_invite = official_guild_invite
+    def colour(self):
+        return config.colour
 
     # ------ misc. properties ------
+
+    @property
+    def support_invite(self):
+        # The following is the link to the bot's support server.
+        # You are allowed to change this to be another server of your choice. 
+        # However, doing so will instantly void your warranty.
+        # Change this at your own peril.
+        return 'https://discord.gg/WtkPTmE'
 
     @property
     def uptime(self):
@@ -202,17 +198,4 @@ class ChiakiBot(commands.Bot):
     @property
     def all_cogs(self):
         return collections.ChainMap(self.cogs, self.cog_aliases)
-
-def _command_prefix(bot, message):
-    prefixes = bot.custom_prefixes.get(message.guild, bot.default_prefix)
-    return commands.when_mentioned_or(*prefixes)(bot, message)
-
-# main bot
-def chiaki_bot(config):
-    """Factory function to create the bot"""
-    return ChiakiBot(command_prefix=_command_prefix,
-                     formatter=ChiakiFormatter(width=MAX_FORMATTER_WIDTH, show_check_failure=True),
-                     description=config.pop('description'), pm_help=None,
-                     command_not_found="I don't have a command called {}, I think.",
-                     config=config
-                    )
+>>>>>>> config-rework
