@@ -64,8 +64,8 @@ del _make_permissions
 MAX_FORMATTER_WIDTH = 90
 
 def _callable_prefix(bot, message):
-    return (*commands.when_mentioned(bot, message),
-            *bot.custom_prefixes.get(message.guild, bot.default_prefix))
+    prefixes = bot.custom_prefixes.get(message.guild, bot.default_prefix)
+    return commands.when_mentioned_or(*prefixes)(bot, message)
 
 _chiaki_formatter = ChiakiFormatter(width=MAX_FORMATTER_WIDTH, show_check_failure=True)
 
