@@ -153,7 +153,7 @@ class Chiaki(commands.Bot):
         await self.wait_until_ready()
         while True:
             name = random.choice(config.games)
-            await self.change_presence(game=discord.Game(name=name))
+            await self.change_presence(game=discord.Game(name=name, type=0))
             await asyncio.sleep(random.uniform(0.5, 10) * 60)
 
     def run(self):
