@@ -7,7 +7,7 @@ from collections import namedtuple
 from datetime import datetime
 from discord.ext import commands
 
-from .utils.compat import async_cache
+from .utils import cache
 from .utils.database import Database
 from .utils.formats import pluralize
 from .utils.misc import duration_units, emoji_url, ordinal
@@ -32,7 +32,7 @@ PUNISHMENTS_WITH_DURATION = ['tempban', 'mute']
 def _is_mod_action(ctx):
     return ctx.command.qualified_name in _mod_actions
 
-@async_cache(maxsize=512)
+@cache.cache(maxsize=512)
 async def _get_message(channel, message_id):
     o = discord.Object(id=message_id + 1)
     # don't wanna use get_message due to poor rate limit (1/1s) vs (50/1s)
