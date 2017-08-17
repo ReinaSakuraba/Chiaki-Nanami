@@ -353,7 +353,7 @@ class Moderator:
         You can also use this if `{prefix}clear` fails.
         """
 
-        prefixes = await ctx.bot.get_prefix(ctx.message)
+        prefixes = tuple(ctx.bot.get_guild_prefixes(ctx.guild))
         bot_id = ctx.bot.user.id
 
         bot_perms = ctx.channel.permissions_for(ctx.me)

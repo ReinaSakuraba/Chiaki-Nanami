@@ -141,7 +141,7 @@ class CustomCommands:
             return
 
         content = message.content
-        prefixes = await self.bot.get_prefix(message)
+        prefixes = self.bot.get_guild_prefixes(message.guild)
         prefix = discord.utils.find(content.startswith, prefixes)
         if prefix is None:
             return

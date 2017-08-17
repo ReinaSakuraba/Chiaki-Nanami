@@ -159,6 +159,11 @@ class Chiaki(commands.Bot):
     def run(self):
         super().run(config.token, reconnect=True)
 
+    def get_guild_prefixes(self, guild):
+        proxy_msg = discord.Object(id=None)
+        proxy_msg.guild = guild
+        return _callable_prefix(self, proxy_msg)
+
     # ------ Config-related properties ------
 
     @discord.utils.cached_property

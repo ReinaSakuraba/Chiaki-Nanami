@@ -510,7 +510,7 @@ class Admin:
         if ctx.invoked_subcommand is not None:
             return
 
-        prefixes = await self.bot.get_prefix(ctx.message)
+        prefixes = self.bot.get_guild_prefixes(ctx.guild)
         # remove the duplicate mention prefix, so the mentions don't show up twice
         del prefixes[-1]
 
