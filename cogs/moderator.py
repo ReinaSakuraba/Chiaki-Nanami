@@ -167,7 +167,7 @@ class Moderator:
         await self._delete_if_rate_limited(bucket, author, config.duration, message)
 
     async def check_slowuser(self, message):
-        key = _member_key(message.author)
+        key = f's{message.guild.id};m{message.author.id}'
         duration = self.slowusers.get(key)
         if duration is None:
             return
