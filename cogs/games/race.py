@@ -46,7 +46,7 @@ class Racer:
 
 
 class RacingSession:
-    MINIMUM_REQUIRED_MEMBERS = 1
+    MINIMUM_REQUIRED_MEMBERS = 2
     # fields can only go up to 25
     MAXIMUM_REQUIRED_MEMBERS = 25
 
