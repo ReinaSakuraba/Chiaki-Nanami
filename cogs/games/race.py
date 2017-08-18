@@ -7,6 +7,7 @@ import time
 
 from collections import OrderedDict
 from discord.ext import commands
+from operator import attrgetter
 
 from .manager import SessionManager
 from ..utils.misc import str_join
@@ -24,7 +25,8 @@ ANIMALS = [
 
 
 class Racer:
-    def __init__(self):
+    def __init__(self, user):
+        self.user = user
         self.animal = random.choice(ANIMALS)
         self.distance = 0
 
@@ -52,7 +54,7 @@ class RacingSession:
 
     def __init__(self, ctx):
         self.ctx = ctx
-        self.players = OrderedDict()
+        self.players = []
         self.running = False
         self._start = None
         self._track = (discord.Embed(colour=self.ctx.bot.colour)
@@ -62,9 +64,7 @@ class RacingSession:
         self._is_full = asyncio.Event()
 
     def add_member(self, m):
-        self.players[m] = Racer()
-        if len(self.players) >= self.MAXIMUM_REQUIRED_MEMBERS:
-            self._is_full.set()
+        self.players.append(Racer(m))
 
     async def add_member_checked(self, member):
         if self.running:
@@ -73,10 +73,14 @@ class RacingSession:
             return await self.ctx.send("You're already in the race!")
 
         self.add_member(member)
+
+        if len(self.players) >= self.MAXIMUM_REQUIRED_MEMBERS:
+            self._is_full.set()
+
         return await self.ctx.send(f"Okay, {member.mention}. Good luck!")
 
-    def already_joined(self, m):
-        return m in self.players
+    def already_joined(self, user):
+        return any(r.user == user for r in self.players)
 
     def has_enough_members(self):
         return len(self.players) >= self.MINIMUM_REQUIRED_MEMBERS
@@ -85,22 +89,19 @@ class RacingSession:
         self._is_full.set()
 
     def update_game(self):
-        for player in self.players.values():
+        for player in self.players:
             player.update()
 
     def _member_fields(self):
-        return ((str(member), racer.progress) for member, racer in self.players.items())
+        return map(attrgetter('user', 'progress'), self.players)
 
     def update_current_embed(self):
         for i, (name, value) in enumerate(self._member_fields()):
             self._track.set_field_at(i, name=name, value=value, inline=False)
 
         leader = self.leader
-        position = min(self.players[leader].position, 100)
-        self._track.set_footer(text=f'Current Leader: {leader} ({position: .2f}m)')
-
-    def winners(self):
-        return [m for m, r in self.players.items() if r.is_finished()]
+        position = min(leader.position, 100)
+        self._track.set_footer(text=f'Current Leader: {leader.user} ({position :.2f}m)')
 
     async def wait_until_full(self):
         await self._is_full.wait()
@@ -108,6 +109,7 @@ class RacingSession:
     async def _loop(self):
         for name, value in self._member_fields():
             self._track.add_field(name=name, value=value, inline=False)
+
         message = await self.ctx.send(embed=self._track)
         self.running = True
 
@@ -131,10 +133,10 @@ class RacingSession:
 
         # Cannot use '\N' because the medal characters don't have a name
         # I can only refer to them by their code points.
-        for title, (char, (member, racer)) in zip(names, enumerate(self.top_racers(), start=0x1f947)):
+        for title, (char, racer) in zip(names, enumerate(self.top_racers(), start=0x1f947)):
             use_flag = "\N{CHEQUERED FLAG}" * racer.is_finished()
             name = f'{title} {use_flag}'
-            value = f'{chr(char)} {racer.animal} {member}'
+            value = f'{chr(char)} {racer.animal} {racer.user}'
             embed.add_field(name=name, value=value, inline=False)
 
         await self.ctx.send(embed=embed)
@@ -145,14 +147,14 @@ class RacingSession:
         await self._display_winners()
 
     def top_racers(self, n=3):
-        return heapq.nlargest(n, self.players.items(), key=lambda i: i[1].distance)
+        return heapq.nlargest(n, self.players, key=attrgetter('distance'))
 
     def is_completed(self):
-        return any(r.is_finished() for r in self.players.values())
+        return any(r.is_finished() for r in self.players)
 
     @property
     def leader(self):
-        return max(self.players, key=lambda m: self.players[m].distance)
+        return self.top_racers(1)[0]
 
 
 class Racing:
