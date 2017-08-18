@@ -55,7 +55,6 @@ class RacingSession:
     def __init__(self, ctx):
         self.ctx = ctx
         self.players = []
-        self.running = False
         self._start = None
         self._track = (discord.Embed(colour=self.ctx.bot.colour)
                       .set_author(name='Race has started!')
@@ -67,7 +66,7 @@ class RacingSession:
         self.players.append(Racer(m))
 
     async def add_member_checked(self, member):
-        if self.running:
+        if self._is_full.is_set():
             return await self.ctx.send('You were a little late to the party!')
         if self.already_joined(member):
             return await self.ctx.send("You're already in the race!")
@@ -111,7 +110,6 @@ class RacingSession:
             self._track.add_field(name=name, value=value, inline=False)
 
         message = await self.ctx.send(embed=self._track)
-        self.running = True
 
         while not self.is_completed():
             await asyncio.sleep(random.uniform(1, 3))
