@@ -46,7 +46,7 @@ class Racer:
 
 
 class RacingSession:
-    MINIMUM_REQUIRED_MEMBERS = 2
+    MINIMUM_REQUIRED_MEMBERS = 1
     # fields can only go up to 25
     MAXIMUM_REQUIRED_MEMBERS = 25
 
@@ -111,13 +111,15 @@ class RacingSession:
         message = await self.ctx.send(embed=self._track)
         self.running = True
 
-        while True:
+        while not self.is_completed():
             await asyncio.sleep(random.uniform(1, 3))
             self.update_game()
             self.update_current_embed()
-            await message.edit(embed=self._track)
-            if self.is_completed():
-                break
+
+            try:
+                await message.edit(embed=self._track)
+            except discord.NotFound:
+                message = await self.ctx.send(embed=self._track)
 
     async def _display_winners(self):
         names = ['Winner', 'Runner Up', 'Third Runner Up']
