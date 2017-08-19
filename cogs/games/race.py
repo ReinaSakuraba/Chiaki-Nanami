@@ -52,7 +52,7 @@ class Racer:
 
     @property
     def position(self):
-        return self.distance / TRACK_LENGTH * 100
+        return min(self.distance / TRACK_LENGTH * 100, 100)
 
     @property
     def time_taken(self):
@@ -165,8 +165,10 @@ class RacingSession:
 
     @property
     def leader(self):
-        return self.top_racers(1)[0]
-
+        finished = [p for p in self.players if p.is_finished()]
+        if not finished:
+            return max(self.players, key=attrgetter('position'))
+        return min(finished, key=attrgetter('time_taken'))
 
 class Racing:
     """Be the animal you wish to beat. Wait."""
@@ -204,7 +206,7 @@ class Racing:
         session = self.manager.get_session(ctx.channel)
         if session is None:
             return await ctx.send('There is no session to close, silly...')
-        elif session.running:
+        elif session._is_full.is_set():
             return await ctx.send("Um, I don't think you can close a race that's "
                                   "running right now...")
         session.close_early()
