@@ -21,10 +21,13 @@ from .utils.misc import emoji_url, load_async
 
 # ---------------- Ship-related utilities -------------------
 
-def _lerp_color(c1, c2, interp):
-    return tuple(round((v2 - v1) * interp + v1) for v1, v2 in zip(c1, c2))
+def _lerp_color(c1, c2, interp, clamp=False):
+    colors = (round((v2 - v1) * interp + v1) for v1, v2 in zip(c1, c2))
+    if clamp:
+        colors = (min(max(c, 0), 255) for c in colors)
+    return tuple(colors)
 
-_lerp_red = functools.partial(_lerp_color, (0, 0, 0), (255, 0, 0))
+_lerp_red = functools.partial(_lerp_color, (0, 0, 0), (255, 0, 0), clamp=True)
 
 
 _default_rating_comments = (
