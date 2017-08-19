@@ -72,14 +72,14 @@ class RacingSession:
                       .set_author(name='Race has started!')
                       .set_footer(text='Current Leader: None')
                       )
-        self._is_full = asyncio.Event()
+        self._closed = asyncio.Event()
 
     def add_member(self, m):
         horse = self.ctx.horses.get(m.id)
         self.players.append(Racer(m, horse))
 
     async def add_member_checked(self, member):
-        if self._is_full.is_set():
+        if self.is_closed():
             return await self.ctx.send('You were a little late to the party!')
         if self.already_joined(member):
             return await self.ctx.send("You're already in the race!")
@@ -87,7 +87,7 @@ class RacingSession:
         self.add_member(member)
 
         if len(self.players) >= self.MAXIMUM_REQUIRED_MEMBERS:
-            self._is_full.set()
+            self._closed.set()
 
         return await self.ctx.send(f"Okay, {member.mention}. Good luck!")
 
@@ -97,8 +97,11 @@ class RacingSession:
     def has_enough_members(self):
         return len(self.players) >= self.MINIMUM_REQUIRED_MEMBERS
 
+    def is_closed(self):
+        return self._closed.is_set()
+
     def close_early(self):
-        self._is_full.set()
+        self._closed.set()
 
     def update_game(self):
         for player in self.players:
@@ -116,7 +119,7 @@ class RacingSession:
         self._track.set_footer(text=f'Current Leader: {leader.user} ({position :.2f}m)')
 
     async def wait_until_full(self):
-        await self._is_full.wait()
+        await self._closed.wait()
 
     async def _loop(self):
         for name, value in self._member_fields():
@@ -206,7 +209,7 @@ class Racing:
         session = self.manager.get_session(ctx.channel)
         if session is None:
             return await ctx.send('There is no session to close, silly...')
-        elif session._is_full.is_set():
+        elif session.is_closed():
             return await ctx.send("Um, I don't think you can close a race that's "
                                   "running right now...")
         session.close_early()
