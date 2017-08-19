@@ -6,6 +6,8 @@ import functools
 import inspect
 import logging
 import random
+import sys
+import traceback
 
 from datetime import datetime
 from discord.ext import commands
@@ -13,6 +15,7 @@ from more_itertools import always_iterable
 
 from .formatter import ChiakiFormatter
 
+from cogs.utils import errors
 from cogs.utils.database import Database
 from cogs.utils.misc import duration_units, file_handler
 
@@ -21,6 +24,9 @@ import config
 
 log = logging.getLogger(__name__)
 log.addHandler(file_handler('chiakinanami'))
+
+command_log = logging.getLogger('commands')
+command_log.addHandler(file_handler('commands'))
 
 
 _MINIMAL_PERMISSIONS = [
@@ -78,6 +84,7 @@ class Chiaki(commands.Bot):
                          pm_help=None)
 
         self.message_counter = 0
+        self.command_counter = collections.Counter()
         self.custom_prefixes = Database('customprefixes.json')
         self.databases = [self.custom_prefixes, ]
         self.cog_aliases = {}
@@ -163,6 +170,68 @@ class Chiaki(commands.Bot):
         proxy_msg = discord.Object(id=None)
         proxy_msg.guild = guild
         return _callable_prefix(self, proxy_msg)
+
+    # --------- Events ----------
+
+    async def on_ready(self):
+        print('Logged in as')
+        print(self.user.name)
+        print(self.user.id)
+        print('------')
+
+        if not hasattr(self, 'appinfo'):
+            self.appinfo = (await self.application_info())
+
+        if self.owner_id is None:
+            self.owner = self.appinfo.owner
+            self.owner_id = self.owner.id
+        else:
+            self.owner = self.get_user(self.owner_id)
+
+        if not hasattr(self, 'start_time'):
+            self.start_time = datetime.utcnow()
+
+        self.loop.create_task(self.change_game())
+
+    async def on_command_error(self, ctx, error):
+        if isinstance(error, commands.CheckFailure) and await self.is_owner(ctx.author):
+            await ctx.reinvoke()
+            return
+
+        # command_counter['failed'] += 0 sets the 'failed' key. We don't want that.
+        if not isinstance(error, commands.CommandNotFound):
+            self.command_counter['failed'] += 1
+
+        cause = error.__cause__
+        if isinstance(error, errors.ChiakiException):
+            await ctx.send(str(error))
+        elif type(error) is commands.BadArgument:
+            await ctx.send(str(cause or error))
+        elif isinstance(error, commands.NoPrivateMessage):
+            await ctx.send('This command cannot be used in private messages.')
+        elif isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send(f'This command ({ctx.command}) needs another parameter ({error.param})')
+        elif isinstance(error, commands.CommandInvokeError):
+            print(f'In {ctx.command.qualified_name}:', file=sys.stderr)
+            traceback.print_tb(error.original.__traceback__)
+            print(f'{error.__class__.__name__}: {error}'.format(error), file=sys.stderr)
+
+    async def on_message(self, message):
+        self.message_counter += 1
+
+        # prevent other selfs from triggering commands
+        if not message.author.bot:
+            await self.process_commands(message)
+
+    async def on_command(self, ctx):
+        self.command_counter['commands'] += 1
+        self.command_counter['executed in DMs'] += isinstance(ctx.channel, discord.abc.PrivateChannel)
+        fmt = ('Command executed in {0.channel} ({0.channel.id}) from {0.guild} ({0.guild.id}) '
+               'by {0.author} ({0.author.id}) Message: "{0.message.content}"')
+        command_log.info(fmt.format(ctx))
+
+    async def on_command_completion(self, ctx):
+        self.command_counter['succeeded'] += 1
 
     # ------ Config-related properties ------
 
