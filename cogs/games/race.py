@@ -37,7 +37,7 @@ class Racer:
         if self.is_finished():
             return
         self.distance += random.triangular(0, 10, 3)
-        if self.is_finished():
+        if self.is_finished() and self._end == self._start:
             self._end = time.perf_counter()
 
     def is_finished(self):
