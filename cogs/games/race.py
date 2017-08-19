@@ -10,6 +10,8 @@ from discord.ext import commands
 from operator import attrgetter
 
 from .manager import SessionManager
+
+from ..utils import converter, database
 from ..utils.misc import str_join
 
 
@@ -25,9 +27,9 @@ ANIMALS = [
 
 
 class Racer:
-    def __init__(self, user):
+    def __init__(self, user, animal=None):
+        self.animal = animal or random.choice(ANIMALS)
         self.user = user
-        self.animal = random.choice(ANIMALS)
         self.distance = 0
 
     def update(self):
@@ -40,7 +42,7 @@ class Racer:
     def progress(self):
         buffer = DEFAULT_TRACK
         position = round(self.distance)
-        return buffer[:position] + self.animal + buffer[position:]
+        return f'{buffer[:position]}{self.animal}{buffer[position:]}'
 
     @property
     def position(self):
@@ -48,7 +50,7 @@ class Racer:
 
 
 class RacingSession:
-    MINIMUM_REQUIRED_MEMBERS = 2
+    MINIMUM_REQUIRED_MEMBERS = 1
     # fields can only go up to 25
     MAXIMUM_REQUIRED_MEMBERS = 25
 
@@ -63,7 +65,8 @@ class RacingSession:
         self._is_full = asyncio.Event()
 
     def add_member(self, m):
-        self.players.append(Racer(m))
+        horse = self.ctx.horses.get(m.id)
+        self.players.append(Racer(m, horse))
 
     async def add_member_checked(self, member):
         if self._is_full.is_set():
@@ -160,6 +163,7 @@ class Racing:
     def __init__(self, bot):
         self.bot = bot
         self.manager = SessionManager()
+        self.horses = database.Database('gameconfigs/race-horses.json')        
 
     @commands.group(invoke_without_command=True)
     async def race(self, ctx):
@@ -171,6 +175,7 @@ class Racing:
         if session is not None:
             return await session.add_member_checked(ctx.author)
 
+        ctx.horses = self.horses
         with self.manager.temp_session(ctx.channel, RacingSession(ctx)) as inst:
             inst.add_member(ctx.author)
             await ctx.send(f'Race has started! Type {ctx.prefix}{ctx.invoked_with} to join!')
@@ -194,6 +199,35 @@ class Racing:
                                   "running right now...")
         session.close_early()
         await ctx.send("Ok onii-chan... I've closed it now. I'll get on to starting the race...")
+
+    @race.command(name='horse')
+    async def race_horse(self, ctx, horse: converter.union(discord.Emoji, str)=None):
+        """Sets your horse for the race.
+
+        Custom emojis are allowed. But they have to be in a server that I'm in.
+        """
+        if horse is None:
+            print(self, ctx, horse)
+            horse = self.horses.get(ctx.author.id, None)
+            message = (f'{horse} will be racing on your behalf, I think.'
+                       if horse else 
+                       "You don't have a horse. I'll give you one when you race though!")
+            return await ctx.send(message)
+        if isinstance(horse, str) and len(horse) != 1:
+            return await ctx.send(f"{horse} isn't a valid emoji to use, sorry... ;-;")
+
+        self.horses[ctx.author.id] = str(horse)
+        await ctx.send(f'Ok, you can now use {horse}')
+
+    @race.command(name='nohorse')
+    async def race_nohorse(self, ctx):
+        """Removes your custom race."""
+        try:
+            del self.horses[ctx.author.id]
+        except KeyError:
+            await ctx.send('You never had a horse...')
+        else:
+            await ctx.send("Okai, I'll give you a horse when I can.")
 
 
 def setup(bot):
