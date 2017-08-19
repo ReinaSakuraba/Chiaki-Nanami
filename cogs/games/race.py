@@ -146,7 +146,7 @@ class RacingSession:
 
         duration = time.perf_counter() - self._start
         embed = (discord.Embed(title='Results', colour=0x00FF00)
-                .set_footer(text='Race took {duration :.2f} seconds to finish.')
+                .set_footer(text=f'Race took {duration :.2f} seconds to finish.')
                 )
 
         # Cannot use '\N' because the medal characters don't have a name
