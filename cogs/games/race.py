@@ -16,7 +16,7 @@ from ..utils.misc import str_join
 
 
 TRACK_LENGTH = 40
-DEFAULT_TRACK = '|' + '-' * TRACK_LENGTH + '|'
+DEFAULT_TRACK = '-' * TRACK_LENGTH
 ANIMALS = [
     '\N{TURTLE}',
     '\N{SNAIL}',
@@ -47,8 +47,12 @@ class Racer:
     def progress(self):
         buffer = DEFAULT_TRACK
         position = round(self.distance)
-        finish_flag = '\N{CHEQUERED FLAG}' * self.is_finished()
-        return f'{buffer[:position]}{self.animal}{buffer[position:]} {finish_flag}'
+
+        finished = self.is_finished()
+        end_line = "|" * (not finished)
+        finish_flag = '\N{CHEQUERED FLAG}' * finished
+
+        return f'|{buffer[:position]}{self.animal}{buffer[position:]}{end_line} {finish_flag}'
 
     @property
     def position(self):
