@@ -31,9 +31,14 @@ class Racer:
         self.animal = animal or random.choice(ANIMALS)
         self.user = user
         self.distance = 0
+        self._start = self._end = time.perf_counter()
 
     def update(self):
+        if self.is_finished():
+            return
         self.distance += random.triangular(0, 10, 3)
+        if self.is_finished():
+            self._end = time.perf_counter()
 
     def is_finished(self):
         return self.distance >= TRACK_LENGTH + 1
@@ -42,15 +47,20 @@ class Racer:
     def progress(self):
         buffer = DEFAULT_TRACK
         position = round(self.distance)
-        return f'{buffer[:position]}{self.animal}{buffer[position:]}'
+        finish_flag = '\N{CHEQUERED FLAG}' * self.is_finished()
+        return f'{buffer[:position]}{self.animal}{buffer[position:]} {finish_flag}'
 
     @property
     def position(self):
         return self.distance / TRACK_LENGTH * 100
 
+    @property
+    def time_taken(self):
+        return self._end - self._start
+
 
 class RacingSession:
-    MINIMUM_REQUIRED_MEMBERS = 1
+    MINIMUM_REQUIRED_MEMBERS = 2
     # fields can only go up to 25
     MAXIMUM_REQUIRED_MEMBERS = 25
 
@@ -137,7 +147,7 @@ class RacingSession:
         for title, (char, racer) in zip(names, enumerate(self.top_racers(), start=0x1f947)):
             use_flag = "\N{CHEQUERED FLAG}" * racer.is_finished()
             name = f'{title} {use_flag}'
-            value = f'{chr(char)} {racer.animal} {racer.user}'
+            value = f'{chr(char)} {racer.animal} {racer.user}\n({racer.time_taken :.2f}s)'
             embed.add_field(name=name, value=value, inline=False)
 
         await self.ctx.send(embed=embed)
@@ -148,10 +158,10 @@ class RacingSession:
         await self._display_winners()
 
     def top_racers(self, n=3):
-        return heapq.nlargest(n, self.players, key=attrgetter('distance'))
+        return heapq.nsmallest(n, self.players, key=attrgetter('time_taken'))
 
     def is_completed(self):
-        return any(r.is_finished() for r in self.players)
+        return all(r.is_finished() for r in self.players)
 
     @property
     def leader(self):
