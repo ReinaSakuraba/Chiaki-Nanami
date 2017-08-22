@@ -39,7 +39,6 @@ _MINIMAL_PERMISSIONS = [
 
 _FULL_PERMISSIONS = [
     *_MINIMAL_PERMISSIONS,
-    "administrator",
     "manage_guild",
     "manage_roles",
     "manage_channels",
@@ -49,12 +48,9 @@ _FULL_PERMISSIONS = [
     
     "manage_messages",
     "read_message_history",
-    
-    "connect",
-    "speak",
+
     "mute_members",
     "deafen_members",
-    "move_members"
 ]
 
 def _make_permissions(*permissions):
