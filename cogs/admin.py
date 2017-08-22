@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import copy
 import discord
@@ -9,7 +10,7 @@ from itertools import starmap
 
 from .utils import errors, search
 from .utils.converter import ArgumentParser, duration
-from .utils.context_managers import redirect_exception, temp_attr
+from .utils.context_managers import redirect_exception, temp_attr, temp_message
 from .utils.database import Database
 from .utils.formats import multi_replace
 from .utils.misc import duration_units, nice_time, ordinal, str_join
@@ -50,6 +51,49 @@ class SelfRole(search.RoleSearch):
                 raise commands.BadArgument(f'{arg} is not a self-assignable role...')
 
 
+class AutoRole(search.RoleSearch):
+    async def _warn(self, warning, ctx):
+        prompt = warning + "\nType `yes` or `no`"
+        def check(m):
+            return (m.channel == ctx.channel
+                    and m.author.id == ctx.author.id
+                    and m.content.lower() in {'yes', 'no', 'y', 'n'})
+
+        async with temp_message(ctx, warning) as m:
+            try:
+                answer = await ctx.bot.wait_for('message', timeout=30, check=check)
+            except asyncio.TimeoutError:
+                raise commands.BadArgument("You took too long. Aborting.")
+            else:
+                lowered = answer.lower()
+                if lowered not in {'yes', 'y'}:
+                    raise commands.BadArgument("Aborted.")
+
+    async def convert(self, ctx, arg):
+        if not ctx.guild:
+            raise commands.NoPrivateMessage
+
+        role = await super().convert(ctx, arg)
+        if role.managed:
+            raise commands.BadArgument("This is an integration role, I can't assign this to anyone!")
+
+        # Assigning people with the @everyone role is not possible
+        if role.is_default():
+            # Most likely the person mentioned everyone.
+            can_mention_everyone = ctx.author.permissions_in(ctx.channel).mention_everyone
+            message = ("Wow, good job. I'm just gonna grab some popcorn now..."
+                        if can_mention_everyone else
+                       "You're lucky that didn't do anything...")
+            raise commands.BadArgument(message)
+
+        if role.permissions.administrator:
+            await self._warn("This role has the Administrator permission. "
+                             "It's very dangerous and can lead to terrible things. "
+                             "Are you sure you wanna make this your auto-assign role?",
+                             ctx)
+
+        return role
+
 class Admin:
     """Admin-only commands"""
     __aliases__ = "Administrator", "Administration"
@@ -57,6 +101,7 @@ class Admin:
     def __init__(self, bot):
         self.bot = bot
         self.self_roles = Database("admin/selfroles.json", default_factory=list)
+        self.auto_assign_roles = Database("admin/autoroles.json")
         self.welcome_message_config = Database("admin/onjoin.json", default_factory=dict)
         self.leave_message_config = Database("admin/onleave.json", default_factory=dict)
 
@@ -139,6 +184,37 @@ class Admin:
                             (f"You are now **{role}**... I think.", author.add_roles))
         await role_action(role)
         await ctx.send(msg)
+
+    # ----------- Auto-Assign Role commands -----------------
+    @commands.command(name='autorole', aliases=['aar'])
+    @commands.has_permissions(manage_roles=True, manage_guild=True)
+    async def auto_assign_role(self, ctx, role: AutoRole):
+        """Sets a role that new members will get when they join the server.
+
+        This can be removed with `{prefix}delautorole` or `{prefix}daar`
+        """
+        self.auto_assign_roles[ctx.guild.id] = role.id
+        await ctx.send(f"I'll now give new members {role}. Hope that's ok with you (and them :p)")
+
+    @commands.command(name='delautorole', aliases=['daar'])
+    @commands.has_permissions(manage_roles=True, manage_guild=True)
+    async def del_auto_assign_role(self, ctx):
+        try:
+            del self.auto_assign_roles[ctx.guild.id]
+        except KeyError:
+            await ctx.send("There's no auto-assign role here...")
+        else:
+            await ctx.send("Ok, no more auto-assign roles :(")
+
+    async def _add_auto_role(self, member):
+        server = member.guild
+        role = self.auto_assign_roles.get(server)
+        if role is None:
+            return
+
+        # TODO: respect the high verification level
+        await member.add_roles(discord.Object(id=role))
+
 
     @commands.command(name='addrole', aliases=['ar'])
     @commands.has_permissions(manage_roles=True)
@@ -495,6 +571,7 @@ class Admin:
 
     async def on_member_join(self, member):
         await self._maybe_do_message(member, self.welcome_message_config, member.joined_at)
+        await self._add_auto_role(member)
 
     # Hm, this needs less repetition
     # XXX: Lower the repetition
