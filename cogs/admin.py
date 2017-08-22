@@ -245,107 +245,11 @@ class Admin:
 
     @commands.command(name='createrole', aliases=['crr'])
     @commands.has_permissions(manage_roles=True)
-    async def create_role(self, ctx, *args: str):
-        """Creates a role with some custom arguments:
-
-        `name`
-        The name of the new role. This is the only required role.
-
-        `-c / --color / --colour`
-        Colour of the new role. Default is grey/black.
-
-        `--perms / --permissions`
-        Permissions of the new role. Default is no permissions (0).
-
-        `-h / --hoist`
-        Whether or not the role can be displayed separately. This is a flag. If it's not specified, it's False.
-
-        `-m / --mentionable`
-        Whether or not the role can be mentioned. This is a flag. If it's not specified , it's False.
-
-
-        """
-        author, guild = ctx.author, ctx.guild
-
-        parser = ArgumentParser(add_help=False, allow_abbrev=False)
-        parser.add_argument('name')
-        parser.add_argument('-c', '--color', '--colour', nargs='?', default='#000000')
-        parser.add_argument('--permissions', '--perms', nargs='?', type=int, default=0)
-        parser.add_argument('-h', '--hoist', action='store_true')
-        parser.add_argument('-m', '--mentionable', action='store_true')
-
-        args = parser.parse_args(args)
-
-        colour = await ctx.command.do_conversion(ctx, discord.Colour, args.color)
-
-        permissions = discord.Permissions(args.permissions)
-        if permissions.administrator and not (author.permissions.administrator or author.id == guild.owner.id):
-            raise errors.InvalidUserArgument("You are trying to add a role with administrator permissions "
-                                             "as a non-administrator. Please don't do that.")
-
-        fields = {
-            'name': args.name,
-            'colour': colour,
-            'permissions': permissions,
-            'hoist': args.hoist,
-            'mentionable': args.mentionable,
-        }
-
-        await guild.create_role(**fields)
-        await ctx.send(f"Successfully created **{args.name}**!")
-
-    @commands.command(name='editrole', aliases=['er'])
-    @commands.has_permissions(manage_roles=True)
-    async def edit_role(self, ctx, old_role: LowerRole, *args: str):
-        """Edits a role with some custom arguments:
-
-        `name`
-        New name of the role. Default is the old role's name.
-
-        `-c / --color / --colour`
-        New colour of the role. Default is the old role's colour.
-
-        `--perms / --permissions`
-        New permissions of the role. Default is the old role's permissions.
-
-        `-h / --hoist`
-        Whether or not the role can be displayed separately. Default is false.
-
-        `-m / --mentionable`
-        Whether or not the role can be mentioned. This is a flag. If it's not added, it's False.
-
-        `--pos, --position`
-        The new position of the role. This cannot be zero.
-        """
-        author, server = ctx.author, ctx.guild
-        parser = ArgumentParser(add_help=False, allow_abbrev=False)
-        parser.add_argument('-n', '--name', nargs='?', default=old_role.name)
-        parser.add_argument('-c', '--color', '--colour', nargs='?', default=str(old_role.colour))
-        parser.add_argument('--permissions', '--perms', nargs='+', type=int, default=old_role.permissions.value)
-        parser.add_argument('-h', '--hoist', nargs='?', default=old_role.hoist)
-        parser.add_argument('-m', '--mentionable', nargs='?', default=old_role.mentionable)
-        parser.add_argument('--pos', '--position', nargs='?', type=int, default=old_role.position)
-
-        args = parser.parse_args(args)
-
-        permissions = discord.Permissions(args.permissions)
-        if permissions.administrator and not (author.permissions.administrator or author.id == server.owner.id):
-            raise errors.InvalidUserArgument("You are trying to edit a role to have administrator permissions "
-                                             "as a non-administrator. Please don't do that.")
-
-        colour = await ctx.command.do_conversion(ctx, discord.Colour, args.color)
-
-        fields = {
-            'name': args.name,
-            'colour': colour,
-            'permissions': permissions,
-            'hoist': args.hoist,
-            'mentionable': args.mentionable,
-            'position': args.pos,
-        }
-
-        await old_role.edit(**fields)
-        await ctx.send(f"Successfully edited **{old_role}**!")
+    async def create_role(self, ctx, *, name: str):
+        """Creates a role with a given name."""
+        reason = f'Created through command from {ctx.author} ({ctx.author.id})'
+        await ctx.guild.create_role(reason=reason, name=name)
+        await ctx.send(f"Successfully created **{name}**!")
 
     @commands.command(name='deleterole', aliases=['delr'])
     @commands.has_permissions(manage_roles=True)
@@ -360,14 +264,13 @@ class Admin:
     @add_role.error
     @remove_role.error
     @create_role.error
-    @edit_role.error
     @delete_role.error
     async def role_error(self, ctx, error):
         if not isinstance(error, commands.CommandInvokeError):
             return
 
         verb = ctx.command.callback.__name__.partition('_')[0]
-        role = ctx.args[2] if verb in ['create', 'edit'] else ctx.kwargs['role']
+        role = ctx.kwargs['name'] if verb == 'create' else ctx.kwargs['role'] 
 
         print(type(error.original))
         if isinstance(error.original, discord.Forbidden):
