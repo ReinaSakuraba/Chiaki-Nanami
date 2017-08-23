@@ -332,7 +332,7 @@ class Moderator:
         elif isinstance(num_or_user, discord.Member):
             deleted = await ctx.channel.purge(check=lambda m: m.author.id == num_or_user.id)
         else:
-            deleted = await ctx.channel.purge(check=lambda m: m.author.id == bot.user.id)
+            deleted = await ctx.channel.purge(check=lambda m: m.author.id == ctx.bot.user.id)
 
         deleted_count = len(deleted) - 1
         is_plural = 's'*(deleted_count != 1)
