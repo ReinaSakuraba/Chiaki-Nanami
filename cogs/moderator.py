@@ -405,7 +405,7 @@ class Moderator:
     @commands.has_permissions(manage_messages=True)
     async def warn(self, ctx, member: discord.Member, *, reason: str):
         """Warns a user (obviously)"""
-        # self._check_user(ctx, member)
+        self._check_user(ctx, member)
         author, current_time = ctx.author, ctx.message.created_at
         warn_queue = self.warn_log[_member_key(member)]
 
