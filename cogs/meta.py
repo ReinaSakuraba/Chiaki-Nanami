@@ -1,6 +1,7 @@
 import aiohttp
 import collections
 import contextlib
+import datetime
 import discord
 import functools
 import inspect
@@ -16,7 +17,7 @@ from itertools import chain, filterfalse, islice, starmap, tee
 from math import log10
 from operator import attrgetter, itemgetter
 
-from .utils import converter, search
+from .utils import cache, converter, search
 from .utils.compat import url_color, user_color
 from .utils.context_managers import redirect_exception, temp_message
 from .utils.converter import BotCommand, union
@@ -34,6 +35,32 @@ async def _mee6_stats(session, member):
             user_stats["rank"] = idx
             return user_stats
     raise ResultsNotFound(f"{member} does not have a mee6 level. :frowning:")
+
+
+@cache.cache(maxsize=None)
+async def _role_creator(role):
+    """Returns the user who created the role. 
+
+    This is accomplished by polling the audit log, which means this can return 
+    None if role was created a long time ago.
+    """
+    # I could use a DB for this but it would be hard.
+    delta = datetime.datetime.utcnow() - role.created_at
+    # Audit log entries are deleted after 90 days, so we can guarantee that 
+    # there is no user to be found here.
+    if delta.days >= 90:
+        return None
+
+    # Integration roles don't have an audit-log entry when they're created.
+    if role.managed:
+        assert len(role.members) == 1, f"{role} is an integration role but somehow isn't a bot role"
+        return role.members[0]
+
+    entry = await role.guild.audit_logs(action=discord.AuditLogAction.role_create).get(target=role)
+    # Just in case.
+    if entry is None:
+        return entry
+    return entry.user
 
 
 _status_colors = {
@@ -248,17 +275,17 @@ class Meta:
 
         hex_role_color = str(role.colour).upper()
         permissions = role.permissions.value
-        permission_binary = "{0:32b}".format(permissions)
         str_position = ordinal(role.position + 1)
         nice_created_at = nice_time(role.created_at)
         description = f"Just chilling as {server}'s {str_position} role"
         footer = f"Created at: {nice_created_at} | ID: {role.id}"
+        creator = await _role_creator(role) or "None -- role is too old."
 
         # I think there's a way to make a solid color thumbnail, idk though
         role_embed = (discord.Embed(title=role.name, colour=role.colour, description=description)
+                     .add_field(name='Created by', value=creator)
                      .add_field(name="Colour", value=hex_role_color)
                      .add_field(name="Permissions", value=permissions)
-                     .add_field(name="Permissions (as binary)", value=permission_binary)
                      .add_field(name="Mentionable?", value=bool_as_answer(role.mentionable))
                      .add_field(name="Displayed separately?", value=bool_as_answer(role.hoist))
                      .add_field(name="Integration role?", value=bool_as_answer(role.managed))
