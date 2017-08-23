@@ -807,11 +807,19 @@ class Moderator:
         await self.bot.wait_until_ready()
         server_id, member_id, mute_role_id = timer.args
         server = self.bot.get_guild(server_id)
+        if server is None:
+            # rip
+            return
 
-        # from here we'll just assume things go normally
-        # it doesn't really matter if an exception is thrown at this point
         member = server.get_member(member_id)
+        if member is None:
+            # rip pt. 2
+            return
+
         role = discord.utils.get(server.roles, id=mute_role_id)
+        if role is None:
+            # not really rip
+            return
 
         await member.remove_roles(role)
         del self.mutes[_member_key(member)]
@@ -821,6 +829,9 @@ class Moderator:
         server_id, user_id = timer.args
         obj = discord.Object(id=user_id)
         server = obj.guild = self.bot.get_guild(server_id)
+        if server is None:
+            # rip
+            return
 
         await server.unban(obj, reason='unban from tempban')
         del self.tempbans[_member_key(obj)]
