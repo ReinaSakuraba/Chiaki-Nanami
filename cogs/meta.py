@@ -387,16 +387,11 @@ class Meta:
             server_embed.colour = await Meta.server_colour(server)
         return server_embed
 
-    @info.group(name='server', aliases=['guild'])
+    @info.command(name='server', aliases=['guild'])
     @commands.guild_only()
     async def info_server(self, ctx):
         """Shows info about a server"""
-        if ctx.subcommand_passed in ['server', 'guild']:
-            server_pages = ServerPages(ctx)
-            await server_pages.interact()
-        elif ctx.invoked_subcommand is None:
-            subcommands = '\n'.join(ctx.command.all_commands)
-            await ctx.send(f"```\nAvailable server commands:\n{subcommands}```")
+        await ServerPages(ctx).interact()
 
     @commands.command(aliases=['chnls'])
     async def channels(self, ctx):
