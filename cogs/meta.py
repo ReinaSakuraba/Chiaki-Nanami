@@ -45,16 +45,23 @@ async def _role_creator(role):
     None if role was created a long time ago.
     """
     # I could use a DB for this but it would be hard.
-    delta = datetime.datetime.utcnow() - role.created_at
-    # Audit log entries are deleted after 90 days, so we can guarantee that 
-    # there is no user to be found here.
-    if delta.days >= 90:
-        return None
 
     # Integration roles don't have an audit-log entry when they're created.
     if role.managed:
         assert len(role.members) == 1, f"{role} is an integration role but somehow isn't a bot role"
         return role.members[0]
+
+    # @everyone role, created when the server was created.
+    # This doesn't account for transferring ownership but for all intents and
+    # purposes this should be good enough.
+    if role.is_default():
+        return role.guild.owner
+
+    delta = datetime.datetime.utcnow() - role.created_at
+    # Audit log entries are deleted after 90 days, so we can guarantee that 
+    # there is no user to be found here.
+    if delta.days >= 90:
+        return None
 
     entry = await role.guild.audit_logs(action=discord.AuditLogAction.role_create).get(target=role)
     # Just in case.
@@ -266,7 +273,11 @@ class Meta:
             return "YNeos"[not b::2]
 
         member_amount = len(role.members)
-        if member_amount > 20:
+        if role.is_default():
+            members_name = "Members"
+            members_value = (f"Everyone. Use `{ctx.prefix}members` to see all the members.\n"
+                              "And congrats on the ping. I don't have any popcorn sadly.")
+        elif member_amount > 20:
             members_name = "Members"
             members_value = f"{member_amount} (use {ctx.prefix}inrole '{role}' to figure out who's in that role)"
         else:
