@@ -1,17 +1,12 @@
 import argparse
 import discord
-import inspect
 import re
 
-from collections import namedtuple
-from contextlib import suppress
 from discord.ext import commands
 from functools import partial
 from more_itertools import grouper, ilen
 
-from .context_managers import redirect_exception
 from .errors import InvalidUserArgument
-from .misc import parse_int
 
 
 _pairwise = partial(grouper, 2)
@@ -31,42 +26,6 @@ class NoSelfArgument(commands.BadArgument):
 class ArgumentParser(argparse.ArgumentParser):
     def error(self, message):
         raise commands.BadArgument(f'Failed to parse args.```\n{message}```')
-
-
-class ApproximateUser(commands.MemberConverter):
-    async def convert(self, ctx, arg):
-        channel, guild = ctx.channel, ctx.guild
-        arg_lower = arg.lower()
-
-        if guild:
-            def pred(elem):
-                return (elem.nick and arg_lower in elem.nick.lower()) or arg_lower in elem.name.lower()
-
-            filtered = filter(pred, guild.members)
-            next_member = next(filtered, None)
-            if next_member is not None:
-                if next(filtered, None):
-                    await channel.send(f"(I found {ilen(filtered) + 2} occurences of '{arg}'. "
-                                        "I'll take the first result, probably.)")
-                return next_member
-        return await super().convert(ctx, arg)
-
-
-# Is there any way to make this such that there's no repetition?
-class ApproximateRole(commands.RoleConverter):
-    async def convert(self, ctx, arg):
-        channel, guild = ctx.channel, ctx.guild
-        arg_lowered = arg.lower()
-
-        if guild:
-            role_filter = (role for role in guild.roles if arg_lowered in role.name.lower())
-            next_role = next(role_filter, None)
-            if next_role is not None:
-                if next(role_filter, None):
-                    await channel.send(f"(I found {ilen(role_filter) + 2} occurences of '{arg}'. "
-                                        "I'll take the first result, probably.)")
-                return next_role
-        return await super().convert(ctx, arg)
 
 
 class CheckedMember(commands.MemberConverter):
@@ -108,26 +67,6 @@ class BotCommand(commands.Converter):
         return cmd
 
 
-def non_negative(num):
-    num = parse_int(num)
-    if num is None:
-        raise commands.BadArgument(f'"{num}" is not a number.')
-    if num >= 0:
-        return num
-    raise commands.BadArgument(f'Number cannot be negatives')
-
-
-def attr_converter(obj, msg="Cannot find attribute {attr}."):
-    def attrgetter(attr):
-        if attr.startswith('_'):
-            raise commands.BadArgument("That is not a valid attribute... ")
-        try:
-            return getattr(obj, attr)
-        except AttributeError:
-            raise commands.BadArgument(msg.format(attr=attr))
-    return attrgetter
-
-
 def number(s):
     for typ in (int, float):
         try:
@@ -135,13 +74,6 @@ def number(s):
         except ValueError:
             continue
     raise commands.BadArgument(f"{s} is not a number.")
-
-
-def item_converter(d, *, key=lambda k: k, error_msg="Couldn't find key \"{arg}\""):
-    def itemgetter(arg):
-        with redirect_exception((Exception, error_msg.format(arg=arg)), cls=commands.BadArgument):
-            return d[key(arg)]
-    return itemgetter
 
 
 DURATION_MULTIPLIERS = {

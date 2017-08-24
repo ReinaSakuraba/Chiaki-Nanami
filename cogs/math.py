@@ -12,7 +12,7 @@ from collections.abc import Sequence
 from discord.ext import commands
 from random import randrange
 
-from .utils.converter import item_converter, union
+from .utils.converter import union
 from .utils.database import Database
 from .utils.errors import InvalidUserArgument
 from .utils.paginator import BaseReactionPaginator, page

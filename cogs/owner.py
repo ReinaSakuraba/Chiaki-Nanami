@@ -11,7 +11,6 @@ import traceback
 
 from discord.ext import commands
 
-from .utils.converter import item_converter
 from .utils.context_managers import temp_attr
 
 

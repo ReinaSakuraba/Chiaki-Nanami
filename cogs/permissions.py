@@ -11,7 +11,7 @@ from more_itertools import always_iterable, iterate
 
 from .utils import errors
 from .utils.context_managers import redirect_exception
-from .utils.converter import item_converter, BotCommand, BotCogConverter
+from .utils.converter import BotCommand, BotCogConverter
 from .utils.database import Database
 from .utils.misc import emoji_url, str_join, unique
 from .utils.paginator import ListPaginator, TitleBasedPages
