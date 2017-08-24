@@ -34,7 +34,7 @@ class Owner:
             **globals()
         }
 
-    @commands.command(hidden=True)
+    @commands.command()
     async def debug(self, ctx, *, code: str):
         """Evaluates code."""
         code = code.strip('` ')
@@ -64,7 +64,7 @@ class Owner:
             return '```py\n{0.__class__.__name__}: {0}\n```'.format(e)
         return '```py\n{0.text}{1:>{0.offset}}\n{2}: {0}```'.format(e, '^', type(e).__name__)
 
-    @commands.command(hidden=True, name='eval', aliases=['exec'])
+    @commands.command(name='eval', aliases=['exec'])
     async def _eval(self, ctx, *, body: str):
         """Evaluates more code"""
         env = {**self._create_env(ctx), '_': self._last_result}
@@ -96,25 +96,25 @@ class Owner:
                     self._last_result = ret
                     await ctx.send(f'```py\n{value}{ret}\n```')
 
-    @commands.command(hidden=True)
+    @commands.command()
     async def botav(self, ctx, *, avatar):
         with open(avatar, 'rb') as f:
             await self.bot.user.edit(avatar=f.read())
         await ctx.send('\N{OK HAND SIGN}')
 
-    @commands.command(hidden=True)
+    @commands.command()
     async def load(self, ctx, cog: str):
         """Loads a bot-extension (one with a setup method)"""
         ctx.bot.load_extension(cog)
         await ctx.send('Ok onii-chan~')
 
-    @commands.command(hidden=True)
+    @commands.command()
     async def unload(self, ctx, cog: str):
         """Unloads a bot-extension (one with a setup method)"""
         ctx.bot.unload_extension(cog)
         await ctx.send('Ok onii-chan~')
 
-    @commands.command(hidden=True)
+    @commands.command()
     async def reload(self, ctx, cog: str):
         """Reloads a bot-extension (one with a setup method)"""
         ctx.bot.unload_extension(cog)
@@ -128,40 +128,40 @@ class Owner:
         traceback.print_exc()
         await ctx.send("Baka! You didn't code me properly  >///<")
 
-    @commands.command(hidden=True, aliases=['kys'])
+    @commands.command(aliases=['kys'])
     async def die(self, ctx):
         """Shuts the bot down"""
         await ctx.send("Bye... Please don't forget about me.")
         await ctx.bot.logout()
 
-    @commands.command(hidden=True, aliases=['restart'])
+    @commands.command(aliases=['restart'])
     async def reset(self, ctx):
         """Restarts the bot"""
         ctx.bot.reset_requested = True
         await ctx.send("Sleepy... zZzzzzZ...")
         await ctx.bot.logout()
 
-    @commands.command(hidden=True)
+    @commands.command()
     async def say(self, ctx, *, msg):
         await ctx.message.delete()
         # make sure commands for other bots (or even from itself) can't be executed
         await ctx.send(f"\u200b{msg}")
 
-    @commands.command(name="sendmessage", hidden=True)
+    @commands.command(name="sendmessage")
     async def send_message(self, ctx, channel: discord.TextChannel, *, msg):
         """Sends a message to a particular channel"""
         owner = (await self.bot.application_info()).owner
         await channel.send(f"Message from {owner}:\n{msg}")
         await ctx.send(f"Successfully sent message in {channel}: {msg}")
 
-    @commands.command(hidden=True)
+    @commands.command()
     async def do(self, ctx, num: int, *, command):
         """Repeats a command a given amount of times"""
         with temp_attr(ctx.message, 'content', command):
             for i in range(num):
                 await self.bot.process_commands(ctx.message)
 
-    @commands.command(hidden=True, aliases=['chaincmd'])
+    @commands.command(aliases=['chaincmd'])
     async def chaincommand(self, ctx, *commands):
         for cmd in commands:
             with temp_attr(ctx.message, 'content', cmd):
