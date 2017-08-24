@@ -34,9 +34,10 @@ def positive_index(s):
 
 
 def default_help_command(func=lambda s: s, **kwargs):
+    @commands.command(help=func("Shows this message and stuff"), **kwargs)
     async def help_command(self, ctx, *, command: BotCommand=None):
         await default_help(ctx, command, func=func)
-    return commands.command(help=func("Shows this message and stuff"), **kwargs)(help_command)
+    return help_command
 
 
 async def default_help(ctx, command=None, func=lambda s: s):
@@ -67,10 +68,11 @@ class Help:
             self.tips_list = json.load(f)
 
     help = default_help_command(name='help', aliases=['h'])
-    halp = default_help_command(str.upper, name='halp', aliases=['HALP'])
-    pleh = default_help_command((lambda s: multi_replace(s[::-1], _bracket_repls)), name='pleh')
-    pleh = default_help_command((lambda s: multi_replace(s[::-1].upper(), _bracket_repls)), name='plah', aliases=['PLAH'])
-    Halp = default_help_command(str.title, name='Halp')
+    halp = default_help_command(str.upper, name='halp', aliases=['HALP'], hidden=True)
+    pleh = default_help_command((lambda s: multi_replace(s[::-1], _bracket_repls)), name='pleh', hidden=True)
+    pleh = default_help_command((lambda s: multi_replace(s[::-1].upper(), _bracket_repls)), 
+                                name='plah', aliases=['PLAH'], hidden=True)
+    Halp = default_help_command(str.title, name='Halp', hidden=True)
 
     @commands.command()
     async def invite(self, ctx):
