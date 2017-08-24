@@ -1,10 +1,36 @@
 import discord
+import json
+import random
 
 from discord.ext import commands
+from datetime import datetime
 
 from .utils.converter import BotCogConverter, BotCommand
 from .utils.formats import multi_replace
-from .utils.misc import truncate
+from .utils.misc import emoji_url, truncate
+
+ 
+CHIAKI_TIP_EPOCH = datetime(2017, 8, 24)
+TIP_EMOJI = emoji_url('\N{ELECTRIC LIGHT BULB}')
+DEFAULT_TIP = {
+    'title': 'You have reached the end of the tips!',
+    'description': 'Wait until the next update for more tips!'
+}
+TOO_FAR_TIP = {
+    'title': "You're going a bit too far here!",
+    'description': 'Wait until tomorrow or something!'
+}
+
+
+def _get_tip_index():
+    return (datetime.utcnow() - CHIAKI_TIP_EPOCH).days
+
+
+def positive_index(s):
+    num = int(s)
+    if num <= 0:
+        raise commands.BadArgument('Value must be positive.')
+    return num
 
 
 def default_help_command(func=lambda s: s, **kwargs):
@@ -37,6 +63,8 @@ class Help:
         self.bot = bot
         self.bot.remove_command('help')
         self.bot.remove_command('h')
+        with open('data/tips.json') as f:
+            self.tips_list = json.load(f)
 
     help = default_help_command(name='help', aliases=['h'])
     halp = default_help_command(str.upper, name='halp', aliases=['HALP'])
@@ -80,6 +108,43 @@ class Help:
         commands_embeds = await self.bot.formatter.format_help_for(ctx, cog)
         for embed in commands_embeds:
             await ctx.send(embed=embed)
+
+    async def _show_tip(self, ctx, number):
+        if number > _get_tip_index() + 1:
+            tip, success = TOO_FAR_TIP, False
+        else:
+            try:
+                tip, success = self.tips_list[number - 1], True
+            except IndexError:
+                tip, success = DEFAULT_TIP, False
+
+        tip_embed = discord.Embed.from_data(tip)
+        tip_embed.colour = ctx.bot.colour
+        if success:
+            tip_embed.set_author(name=f'Tip of the Day #{number}', icon_url=TIP_EMOJI)
+
+        await ctx.send(embed=tip_embed)
+
+    @commands.command()
+    async def tip(self, ctx, number: positive_index = None):
+        """Shows a Chiaki Tip via number.
+
+        If no number is specified, it shows the daily tip.
+        """
+        if number is None:
+            number = _get_tip_index() + 1
+
+
+        await self._show_tip(ctx, number)
+
+    @commands.command()
+    async def randomtip(self, ctx):
+        """Shows a random tip.
+
+        The tip range is from the first one to today's one.
+        """
+        number = _get_tip_index() + 1
+        await self._show_tip(ctx, random.randint(1, number))
 
 
 def setup(bot):
