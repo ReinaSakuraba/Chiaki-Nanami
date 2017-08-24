@@ -4,6 +4,7 @@ from .errors import ChiakiException
 
 _sentinel = object()
 
+
 @contextlib.contextmanager
 def temp_attr(obj, attr, value):
     """Temporarily sets an object's attribute to a value"""
@@ -17,6 +18,7 @@ def temp_attr(obj, attr, value):
         else:
             setattr(obj, attr, old_value)
 
+
 @contextlib.contextmanager
 def redirect_exception(*exceptions, cls=ChiakiException):
     """Context manager to re-raise exceptions with a proxy exception class.
@@ -29,6 +31,7 @@ def redirect_exception(*exceptions, cls=ChiakiException):
         yield
     except tuple(exceptions) as e:
         raise cls(exceptions[type(e)] or str(e)) from e
+
 
 # asynccontextmanager when
 class temp_message:
@@ -45,17 +48,3 @@ class temp_message:
 
     async def __aexit__(self, exc_type, exc, tb):
         await self.message.delete()
-
-class temp_edit:
-    """Temporarily edits anything that's editable (with a .edit() coroutine method)"""
-    def __init__(self, editable, **fields):
-        self.editable = editable
-        self._old_fields = {k: getattr(editable, k) for k in fields}
-        self._new_fields = fields
-
-    async def __aenter__(self):
-        await self.editable.edit(**self._new_fields)
-        return self.editable
-
-    async def __aexit__(self, exc_type, exc, tb):
-        await self.editable.edit(**self._old_fields)
