@@ -80,10 +80,8 @@ class AutoRole(search.RoleSearch):
 
         # Assigning people with the @everyone role is not possible
         if role.is_default():
-            # Most likely the person mentioned everyone.
-            can_mention_everyone = ctx.author.permissions_in(ctx.channel).mention_everyone
             message = ("Wow, good job. I'm just gonna grab some popcorn now..."
-                        if can_mention_everyone else
+                        if ctx.message.mention_everyone else
                        "You're lucky that didn't do anything...")
             raise commands.BadArgument(message)
 

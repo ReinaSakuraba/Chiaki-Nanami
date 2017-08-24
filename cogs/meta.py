@@ -272,9 +272,10 @@ class Meta:
 
         member_amount = len(role.members)
         if role.is_default():
+            ping_notice = "And congrats on the ping. I don't have any popcorn sadly."
             members_name = "Members"
             members_value = (f"Everyone. Use `{ctx.prefix}members` to see all the members.\n"
-                              "And congrats on the ping. I don't have any popcorn sadly.")
+                             f"{ping_notice * ctx.message.mention_everyone}")
         elif member_amount > 20:
             members_name = "Members"
             members_value = f"{member_amount} (use {ctx.prefix}inrole '{role}' to figure out who's in that role)"
