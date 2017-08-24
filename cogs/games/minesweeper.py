@@ -13,8 +13,7 @@ from string import ascii_lowercase, ascii_uppercase
 
 from .manager import SessionManager
 
-from ..utils.converter import in_, ranged
-from ..utils.database import Database
+from ..utils.converter import ranged
 from ..utils.misc import REGIONAL_INDICATORS, duration_units
 from ..utils.paginator import BaseReactionPaginator, page
 

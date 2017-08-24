@@ -1,7 +1,6 @@
 import contextlib
 import discord
 import functools
-import itertools
 
 from collections import namedtuple
 from datetime import datetime
@@ -9,7 +8,6 @@ from discord.ext import commands
 
 from .utils import cache
 from .utils.database import Database
-from .utils.formats import pluralize
 from .utils.misc import duration_units, emoji_url, ordinal
 from .utils.timer import Scheduler, TimerEntry
 
@@ -31,6 +29,7 @@ PUNISHMENTS_WITH_DURATION = ['tempban', 'mute']
 
 def _is_mod_action(ctx):
     return ctx.command.qualified_name in _mod_actions
+
 
 @cache.cache(maxsize=512)
 async def _get_message(channel, message_id):

@@ -3,7 +3,7 @@ import random
 
 from collections import ChainMap
 from discord.ext import commands
-from itertools import chain, starmap
+from itertools import starmap
 
 from .utils import errors
 from .utils.context_managers import temp_attr

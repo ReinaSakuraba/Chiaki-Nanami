@@ -1,4 +1,3 @@
-import contextlib
 import discord
 import enum
 import functools
@@ -7,22 +6,24 @@ import itertools
 from collections import defaultdict, namedtuple
 from discord.ext import commands
 from operator import attrgetter, contains
-from more_itertools import always_iterable, iterate
+from more_itertools import always_iterable
 
 from .utils import errors
 from .utils.context_managers import redirect_exception
 from .utils.converter import BotCommand, BotCogConverter
 from .utils.database import Database
-from .utils.misc import emoji_url, str_join, unique
+from .utils.misc import emoji_url, unique
 from .utils.paginator import ListPaginator, TitleBasedPages
 
 
 def first_non_none(iterable, default=None):
     return next(filter(lambda x: x is not None, iterable), default)
 
+
 class Idable(namedtuple('Idable', 'original id')):
     def __new__(cls, original):
         return super().__new__(cls, original, original.id)
+
 
 _permissions_help = """
     Sets the permissions for {thing}.
@@ -35,6 +36,7 @@ _permissions_help = """
 
     {extra}
 """
+
 
 def _make_doc(thing, extra=''):
     return _permissions_help.format(thing=thing, thing_cap=thing.capitalize(), extra=extra)

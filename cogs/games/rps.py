@@ -1,6 +1,5 @@
 import discord
 import random
-import textwrap
 
 from collections import namedtuple
 from discord.ext import commands
@@ -22,7 +21,7 @@ RPSLS_COUNTERS = {
 
 
 Winner = namedtuple('Winner', 'name image')
-    
+
 class RockPaperScissors:
     @staticmethod
     def pick(elem, counters):

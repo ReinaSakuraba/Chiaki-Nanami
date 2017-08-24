@@ -13,7 +13,7 @@ from .manager import SessionManager
 
 from ..utils.paginator import BaseReactionPaginator, page
 
-    
+
 # Sudoku board generator by Gareth Rees
 # This works best when m = 3.
 # For some reason it goes significantly slower when m >= 4

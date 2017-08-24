@@ -13,7 +13,7 @@ def default_help_command(func=lambda s: s, **kwargs):
     return commands.command(help=func("Shows this message and stuff"), **kwargs)(help_command)
 
 
-async def default_help(ctx, command=None, func=lambda s:s):
+async def default_help(ctx, command=None, func=lambda s: s):
     command = ctx.bot if command is None else command
     destination = ctx.channel
 

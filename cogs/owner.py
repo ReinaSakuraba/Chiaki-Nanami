@@ -1,11 +1,8 @@
-import argparse
 import asyncio
 import contextlib
 import discord
 import inspect
 import io
-import importlib
-import sys
 import textwrap
 import traceback
 

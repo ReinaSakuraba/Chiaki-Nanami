@@ -7,17 +7,16 @@ import functools
 import inspect
 import json
 import psutil
-import random
 import sys
 
 from contextlib import redirect_stdout
 from discord.ext import commands
 from io import StringIO
-from itertools import chain, filterfalse, islice, starmap, tee
+from itertools import chain, islice, starmap
 from math import log10
-from operator import attrgetter, itemgetter
+from operator import attrgetter
 
-from .utils import cache, converter, search
+from .utils import cache, search
 from .utils.compat import url_color, user_color
 from .utils.context_managers import redirect_exception, temp_message
 from .utils.converter import BotCommand, union
@@ -39,9 +38,9 @@ async def _mee6_stats(session, member):
 
 @cache.cache(maxsize=None)
 async def _role_creator(role):
-    """Returns the user who created the role. 
+    """Returns the user who created the role.
 
-    This is accomplished by polling the audit log, which means this can return 
+    This is accomplished by polling the audit log, which means this can return
     None if role was created a long time ago.
     """
     # I could use a DB for this but it would be hard.
@@ -58,7 +57,7 @@ async def _role_creator(role):
         return role.guild.owner
 
     delta = datetime.datetime.utcnow() - role.created_at
-    # Audit log entries are deleted after 90 days, so we can guarantee that 
+    # Audit log entries are deleted after 90 days, so we can guarantee that
     # there is no user to be found here.
     if delta.days >= 90:
         return None
@@ -96,7 +95,6 @@ class ServerPages(BaseReactionPaginator):
     @property
     def guild(self):
         return self.context.guild
-
 
     @page('\N{INFORMATION SOURCE}')
     def default(self):

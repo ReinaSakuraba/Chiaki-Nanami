@@ -1,11 +1,8 @@
 import discord
-import json
-import operator
 import functools
 import itertools
 import os
 import random
-import sys
 import time
 
 from collections import namedtuple
@@ -14,7 +11,7 @@ from datetime import datetime
 from discord.ext import commands
 from more_itertools import always_iterable
 
-from .utils import cache, errors
+from .utils import cache
 from .utils.compat import user_colour
 from .utils.misc import emoji_url, load_async
 
@@ -26,6 +23,7 @@ def _lerp_color(c1, c2, interp, clamp=False):
     if clamp:
         colors = (min(max(c, 0), 255) for c in colors)
     return tuple(colors)
+
 
 _lerp_red = functools.partial(_lerp_color, (0, 0, 0), (255, 0, 0), clamp=True)
 
@@ -106,7 +104,7 @@ class OtherStuffs:
         self.copypastas = await load_async(os.path.join('data', 'copypastas.json'))
 
         with suppress(FileNotFoundError):
-            _special_pairs  = await load_async(os.path.join('data', 'pairings.json'))
+            _special_pairs = await load_async(os.path.join('data', 'pairings.json'))
 
     @commands.group(invoke_without_command=True, aliases=['c+v'])
     async def copypasta(self, ctx, index: int, *, name=None):
@@ -120,7 +118,6 @@ class OtherStuffs:
 
     @copypasta.command(name="groups")
     async def copypasta_groups(self, ctx):
-        padding = len(self.copypastas) // 10
         pastas = itertools.starmap('`{0}.` {1}'.format, enumerate(c['category'] for c in self.copypastas))
         embed = discord.Embed(title="All the categories (and their indices)", description='\n'.join(pastas))
         await ctx.send(embed=embed)
@@ -157,7 +154,7 @@ class OtherStuffs:
 
         # TODO: Use pillow to make an image out of the two users' thumbnails.
         field_name = 'I give it a...'       # In case I decide to have it choose between mulitiple field_names 
-        description =  f'{user1.mention} x {user2.mention}?'
+        description = f'{user1.mention} x {user2.mention}?'
         colour = discord.Colour.from_rgb(*_lerp_red(rating.value / 100))
         ship_embed = (discord.Embed(description=description, colour=colour)
                      .set_author(name='Ship')
@@ -199,7 +196,7 @@ class OtherStuffs:
                      "https://media.giphy.com/media/iUgoB9zOO0QkU/giphy.gif",
                      "https://media.giphy.com/media/Kp4c6lf3oR7lm/giphy.gif",
                      ]
-            msg2 =  "(Please don't do that.)"
+            msg2 = "(Please don't do that.)"
         else:
             slaps = ["https://media.giphy.com/media/jLeyZWgtwgr2U/giphy.gif",
                      "https://media.giphy.com/media/RXGNsyRb1hDJm/giphy.gif",
@@ -280,14 +277,13 @@ class OtherStuffs:
 
         cache = _calculate_compatibilty.cache
         for key in list(cache):
-            # Cannot use cache.invalidate because we're using the actual key 
+            # Cannot use cache.invalidate because we're using the actual key
             # in the cache. It would always raise KeyError since we're bsaically
             # doing a frozenset of a frozenset.
             if before in key:
                 del cache[key]
 
         self._shipped.discard(before.id)
-
 
     async def on_message(self, message):
         self.last_messages[message.author.id] = message

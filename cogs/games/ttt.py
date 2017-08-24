@@ -5,15 +5,12 @@ import itertools
 import random
 
 from collections import namedtuple
-from discord.ext import commands
 from more_itertools import first_true
 
 from . import errors
 from .bases import two_player_plugin
-from .manager import SessionManager
 
 from ..utils.context_managers import temp_message
-from ..utils.converter import CheckedMember
 
 
 class Tile(enum.Enum):

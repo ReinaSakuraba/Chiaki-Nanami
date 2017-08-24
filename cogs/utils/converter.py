@@ -4,25 +4,28 @@ import re
 
 from discord.ext import commands
 from functools import partial
-from more_itertools import grouper, ilen
+from more_itertools import grouper
 
 from .errors import InvalidUserArgument
 
 
 _pairwise = partial(grouper, 2)
 
+
 class NoBots(commands.BadArgument):
     """Exception raised in CheckedMember when the author passes a bot"""
 
+
 class NoOfflineMembers(commands.BadArgument):
     """Exception raised in CheckedMember when the author passes a user who is offline"""
+
 
 class NoSelfArgument(commands.BadArgument):
     """Exception raised in CheckedMember when the author passes themself as an argument"""
 
 
-# Custom ArgumentParser because the one in argparse raises SystemExit upon failure, 
-# which kills the bot
+# Custom ArgumentParser because the one in argparse raises SystemExit upon
+# failure, which kills the bot
 class ArgumentParser(argparse.ArgumentParser):
     def error(self, message):
         raise commands.BadArgument(f'Failed to parse args.```\n{message}```')
@@ -85,8 +88,10 @@ DURATION_MULTIPLIERS = {
     's': 1,                  'sec': 1,
 }
 
-_time_pattern = ''.join(f'(?:([0-9]{{1,5}})({u1}|{u2}))?' for u1, u2 in _pairwise(DURATION_MULTIPLIERS))
+_time_pattern = ''.join(f'(?:([0-9]{{1,5}})({u1}|{u2}))?'
+                        for u1, u2 in _pairwise(DURATION_MULTIPLIERS))
 _time_compiled = re.compile(f'{_time_pattern}$')
+
 
 def duration(string):
     try:
@@ -94,11 +99,12 @@ def duration(string):
     except ValueError as e:
         match = _time_compiled.match(string)
         if match is None:
-            # cannot use commands.BadArgument because on_command_error will say the command's __cause__
-            # rather than the actual error.
+            # cannot use commands.BadArgument because on_command_error will
+            # say the command's __cause__ rather than the actual error.
             raise InvalidUserArgument(f'{string} is not a valid time.') from e
         no_nones = filter(None, match.groups())
-        return sum(float(amount) * DURATION_MULTIPLIERS[unit] for amount, unit in _pairwise(no_nones))
+        return sum(float(amount) * DURATION_MULTIPLIERS[unit]
+                   for amount, unit in _pairwise(no_nones))
 
 
 class union(commands.Converter):
@@ -113,8 +119,9 @@ class union(commands.Converter):
                 return await ctx.command.do_conversion(ctx, type_, arg)
             except Exception as e:
                 continue
+        type_names = ', '.join([t.__name__ for t in self.types])
         raise commands.BadArgument(f"I couldn't parse {arg} successfully, "
-                                   f"given these types: {', '.join([t.__name__ for t in self.types])}")
+                                   f"given these types: {type_names}")
 
 
 def in_(*choices):

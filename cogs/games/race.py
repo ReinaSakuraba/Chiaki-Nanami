@@ -5,14 +5,12 @@ import heapq
 import random
 import time
 
-from collections import OrderedDict
 from discord.ext import commands
 from operator import attrgetter
 
 from .manager import SessionManager
 
 from ..utils import converter, database
-from ..utils.misc import str_join
 
 
 TRACK_LENGTH = 40

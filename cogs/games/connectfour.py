@@ -3,19 +3,14 @@ import discord
 import enum
 import itertools
 import random
-import textwrap
 
-from collections import deque, namedtuple
-from discord.ext import commands
+from collections import namedtuple
 from more_itertools import first_true, one, windowed
 
 from . import errors
 from .bases import two_player_plugin
-from .manager import SessionManager
 
-from ..utils.compat import user_colour
 from ..utils.context_managers import temp_message
-from ..utils.formats import multi_replace
 
 NUM_ROWS = 6
 NUM_COLS = 7

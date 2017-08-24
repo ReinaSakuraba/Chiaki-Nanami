@@ -1,11 +1,8 @@
-import asyncio
 import contextlib
 import discord
 import itertools
 import parsedatetime
 
-from collections import defaultdict
-from datetime import datetime, timedelta, timezone
 from discord.ext import commands
 
 from .utils.context_managers import redirect_exception

@@ -6,7 +6,6 @@ from collections import defaultdict, deque
 from datetime import datetime
 from discord.ext import commands
 
-from .utils import errors
 from .utils.compat import user_color
 from .utils.database import Database
 from .utils.misc import duration_units
@@ -16,9 +15,11 @@ class AFKConfig(enum.IntEnum):
     MAX_MESSAGES = 5
     MAX_INTERVAL = 10 * 60
 
+
 _default_afk_config = {
     'send_afk_message': True,
 }
+
 
 class AFK:
     def __init__(self, bot):
@@ -44,7 +45,6 @@ class AFK:
         with contextlib.suppress(IndexError):
             embed.timestamp = self.user_message_queue[member.id][-1]
         return embed
-
 
     def _has_messaged_too_much(self, author):
         message_queue = self.user_message_queue[author.id]

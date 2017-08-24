@@ -2,10 +2,8 @@ import asyncio
 import collections
 import contextlib
 import discord
-import functools
 import glob
 import itertools
-import json
 import os
 import random
 

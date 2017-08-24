@@ -1,6 +1,5 @@
 import asyncio
 import contextlib
-import copy
 import discord
 
 from datetime import datetime
@@ -9,7 +8,7 @@ from functools import partial
 from itertools import starmap
 
 from .utils import errors, search
-from .utils.converter import ArgumentParser, duration
+from .utils.converter import duration
 from .utils.context_managers import redirect_exception, temp_attr, temp_message
 from .utils.database import Database
 from .utils.formats import multi_replace
@@ -18,6 +17,7 @@ from .utils.misc import duration_units, nice_time, ordinal, str_join
 
 def special_message(message):
     return message if '{user}' in message else f'{{user}}{message}'
+
 
 welcome_leave_message_check = partial(commands.has_permissions, manage_guild=True)
 
@@ -53,7 +53,7 @@ class SelfRole(search.RoleSearch):
 
 class AutoRole(search.RoleSearch):
     async def _warn(self, warning, ctx):
-        prompt = warning + "\nType `yes` or `no`"
+        prompt = warning + "\n\n(Type `yes` or `no`)"
 
         def check(m):
             return (m.channel == ctx.channel

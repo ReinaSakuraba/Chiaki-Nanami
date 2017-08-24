@@ -1,15 +1,11 @@
 import asyncio
-import functools
 import inspect
 import json
 import logging
 import os
-import random
-import re
 
-from collections import namedtuple, OrderedDict
-from datetime import datetime, timezone
-from discord.ext import commands
+from collections import OrderedDict
+from datetime import datetime
 from more_itertools import grouper
 
 from .formats import pluralize
@@ -34,6 +30,7 @@ def parse_int(maybe_int, base=10):
         return int(maybe_int, base)
     except ValueError:
         return None
+
 
 TIME_UNITS = ('week', 'day', 'hour', 'minute')
 
