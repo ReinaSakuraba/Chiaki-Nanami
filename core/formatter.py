@@ -98,7 +98,9 @@ class ChiakiFormatter(commands.HelpFormatter):
         return '\n'.join(requirements)
 
     def paginate_cog_commands(self, cog_name):
-        sorted_commands = sorted(self.context.bot.get_cog_commands(cog_name), key=str)
+        visible = (c for c in self.context.bot.get_cog_commands(cog_name)
+                   if not (c.hidden or self.show_hidden))
+        sorted_commands = sorted(visible, key=str)
         formatted_names =  (map('`{}`'.format, cmd.all_names) for cmd in sorted_commands)
         formatted_lines = map(' | '.join, formatted_names)
         headers = (self.description, '', '**List of commands:**')
