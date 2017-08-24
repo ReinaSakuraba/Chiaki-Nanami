@@ -54,18 +54,19 @@ class SelfRole(search.RoleSearch):
 class AutoRole(search.RoleSearch):
     async def _warn(self, warning, ctx):
         prompt = warning + "\nType `yes` or `no`"
+
         def check(m):
             return (m.channel == ctx.channel
                     and m.author.id == ctx.author.id
                     and m.content.lower() in {'yes', 'no', 'y', 'n'})
 
-        async with temp_message(ctx, warning) as m:
+        async with temp_message(ctx, prompt) as m:
             try:
                 answer = await ctx.bot.wait_for('message', timeout=30, check=check)
             except asyncio.TimeoutError:
                 raise commands.BadArgument("You took too long. Aborting.")
             else:
-                lowered = answer.lower()
+                lowered = answer.content.lower()
                 if lowered not in {'yes', 'y'}:
                     raise commands.BadArgument("Aborted.")
 
