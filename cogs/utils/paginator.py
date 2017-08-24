@@ -319,6 +319,16 @@ class ListPaginator(BaseReactionPaginator):
                .set_footer(text=f"From page {self._index + 1}")
                )
 
+    async def add_buttons(self):
+        fast_forwards = {'\U000023ed', '\U000023ee'}
+        small = len(self) <= 3
+
+        for emoji in self._reaction_map:
+            # Gotta do this inefficient branch because of stop not being moved to
+            # the end, so I can't just subract the two fast arrow emojis
+            if not (small and emoji in fast_forwards):
+                await self.message.add_reaction(emoji)
+
     async def interact(self, destination=None, *, message=None, timeout=120, delete_after=True):
         bot = self.context.bot
         with bot.temp_listener(self.on_reaction_remove):
