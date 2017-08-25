@@ -166,9 +166,11 @@ class BaseReactionPaginator:
 
         try:
             future = _put_reactions()
+            wait_for_reaction = functools.partial(ctx.bot.wait_for, 'reaction_add',
+                                                  check=self._check_reaction, timeout=timeout)
             while True:
                 try:
-                    react, user = await ctx.bot.wait_for('reaction_add', check=self._check_reaction, timeout=timeout)
+                    react, user = await wait_for_reaction()
                 except asyncio.TimeoutError:
                     break
                 else:
@@ -185,7 +187,8 @@ class BaseReactionPaginator:
                             future.cancel()
 
                         with contextlib.suppress(StopPagination):
-                            await next_.interact(destination, message=self.message, timeout=timeout, delete_after=False)
+                            await next_.interact(destination, message=self.message,
+                                                 timeout=timeout, delete_after=False)
 
                         # restore the old embed before we delegated
                         await self.message.edit(embed=self._current)
