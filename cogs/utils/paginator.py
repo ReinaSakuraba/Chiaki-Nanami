@@ -116,7 +116,7 @@ class BaseReactionPaginator:
         return len(self._reaction_map)
 
     def default(self):
-        raise NotImplementedError    
+        raise NotImplementedError
 
     @page('\N{BLACK SQUARE FOR STOP}')
     def stop(self):
@@ -157,15 +157,15 @@ class BaseReactionPaginator:
         print(self.message)
         message = self.message
 
-        try:
+        def _put_reactions():
             # We need at least the stop button for killing the pagination
             # Otherwise it would kill the page immediately.
-            if len(self) <= 1:
-                await self.on_only_one_page()
-            else:
-                await self.add_buttons()
+            coro = self.add_buttons() if len(self) > 1 else self.on_only_one_page()
+            # allow us to react to reactions right away if we're paginating
+            return asyncio.ensure_future(coro)
 
-            self.reactions_done.set()
+        try:
+            future = _put_reactions()
             while True:
                 try:
                     react, user = await ctx.bot.wait_for('reaction_add', check=self._check_reaction, timeout=timeout)
@@ -181,12 +181,16 @@ class BaseReactionPaginator:
                         continue
 
                     if isinstance(next_, BaseReactionPaginator):
+                        if not future.done():
+                            future.cancel()
+
                         with contextlib.suppress(StopPagination):
                             await next_.interact(destination, message=self.message, timeout=timeout, delete_after=False)
+
                         # restore the old embed before we delegated
                         await self.message.edit(embed=self._current)
                         # since upon stopping, the reactions would be cleared.
-                        await self.add_buttons()
+                        future = _put_reactions()
                     else:
                         self._current = next_
                         await message.remove_reaction(react.emoji, user)
