@@ -6,6 +6,7 @@ users can have the exact same name, which will confuse and potentially frustrate
 people when the wrong user is chosen.
 """
 
+import asyncio
 import discord
 import re
 
@@ -40,12 +41,15 @@ class Search:
                 .set_author(name=pluralize(**{thing: num_choices}))
                 )
 
+        async def _put_reactions(message):
+            for e in emojis:
+                await message.add_reaction(e)
+
         message = await ctx.send(embed=embed)
-        for e in emojis:
-            await message.add_reaction(e)
+        future = asyncio.ensure_future(_put_reactions(message))
 
         def check(reaction, user):
-            return (reaction.message.id == message.id 
+            return (reaction.message.id == message.id
                     and user.id == ctx.author.id
                     and reaction.emoji in emojis)
 
@@ -53,6 +57,9 @@ class Search:
             reaction, user = await ctx.bot.wait_for('reaction_add', timeout=self.timeout, check=check)
             return choices[emojis.index(reaction.emoji)]
         finally:
+            if not future.done():
+                future.cancel()
+
             if self.do_delete:
                 await message.delete()
 
