@@ -1,4 +1,5 @@
 import discord
+import functools
 import json
 import random
 
@@ -8,6 +9,7 @@ from datetime import datetime
 from .utils.converter import BotCogConverter, BotCommand
 from .utils.formats import multi_replace
 from .utils.misc import emoji_url, truncate
+from .utils.paginator import ListPaginator
 
  
 CHIAKI_TIP_EPOCH = datetime(2017, 8, 24)
@@ -31,6 +33,18 @@ def positive_index(s):
     if num <= 0:
         raise commands.BadArgument('Value must be positive.')
     return num
+
+
+class TipPaginator(ListPaginator):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.per_page = 1
+
+    def _create_embed(self, idx, page):
+        # page returns a tuple (because it returns a slice of entries)
+        p = page[0]
+        return (discord.Embed(colour=self.colour, description=p['description'])
+               .set_author(name=f"#{idx + 1}: {p['title']}", icon_url=TIP_EMOJI))
 
 
 def default_help_command(func=lambda s: s, **kwargs):
@@ -64,8 +78,10 @@ class Help:
         self.bot = bot
         self.bot.remove_command('help')
         self.bot.remove_command('h')
+
         with open('data/tips.json') as f:
             self.tips_list = json.load(f)
+        self._paginate_tips = functools.partial(TipPaginator, colour=bot.colour)
 
     help = default_help_command(name='help', aliases=['h'])
     halp = default_help_command(str.upper, name='halp', aliases=['HALP'], hidden=True)
@@ -136,8 +152,13 @@ class Help:
         if number is None:
             number = _get_tip_index() + 1
 
-
         await self._show_tip(ctx, number)
+
+    @commands.command()
+    async def tips(self, ctx):
+        """Shows all tips *up to today*"""
+        current_index = _get_tip_index() + 1
+        await self._paginate_tips(ctx, self.tips_list[:current_index]).interact()
 
     @commands.command()
     async def randomtip(self, ctx):
