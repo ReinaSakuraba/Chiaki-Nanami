@@ -92,7 +92,6 @@ TEN_SEC_REACTION = '\N{BLACK SQUARE FOR STOP}'
 class OtherStuffs:
     def __init__(self, bot):
         self.bot = bot
-        self.last_messages = {}
         self.default_time = datetime.utcnow()
         self.bot.loop.create_task(self._load())
 
@@ -216,28 +215,6 @@ class OtherStuffs:
                      )
         await ctx.send(embed=slap_embed)
 
-    @commands.command(name='lastseen', enabled=False)
-    async def last_seen(self, ctx, user: discord.User):
-        """Shows the last words of a user"""
-
-        # TODO: Save these (will probably require a DB).
-        message = self.last_messages.get(user.id)
-        colour = await user_colour(user)
-        if message is None:
-            embed = (discord.Embed(colour=colour, timestamp=self.default_time)
-                    .set_author(name=f'{user} has not been alive...')
-                    .set_thumbnail(url=user.avatar_url)
-                    .set_footer(text='Last seen ')
-                    )
-        else:
-            embed = (discord.Embed(colour=colour, description=message.content, timestamp=message.created_at)
-                    .set_author(name=f"{user}'s last words...")
-                    .set_thumbnail(url=user.avatar_url)
-                    .add_field(name='\u200b', value=f'From #{message.channel} in {message.guild}')
-                    .set_footer(text='Last seen ')
-                    )
-        await ctx.send(embed=embed)
-
     @commands.command(name='10s')
     async def ten_seconds(self, ctx):
         """Starts a 10s test. How well can you judge 10 seconds?"""
@@ -284,10 +261,6 @@ class OtherStuffs:
                 del cache[key]
 
         self._shipped.discard(before.id)
-
-    async def on_message(self, message):
-        self.last_messages[message.author.id] = message
-
 
 
 def setup(bot):
