@@ -35,6 +35,43 @@ class LowerRole(commands.RoleConverter):
         return role
 
 
+async def _warn(warning, ctx):
+    prompt = warning + "\n\n(Type `yes` or `no`)"
+
+    def check(m):
+        return (m.channel == ctx.channel
+                and m.author.id == ctx.author.id
+                and m.content.lower() in {'yes', 'no', 'y', 'n'})
+
+    async with temp_message(ctx, prompt):
+        try:
+            answer = await ctx.bot.wait_for('message', timeout=30, check=check)
+        except asyncio.TimeoutError:
+            raise commands.BadArgument("You took too long. Aborting.")
+        else:
+            lowered = answer.content.lower()
+            if lowered not in {'yes', 'y'}:
+                raise commands.BadArgument("Aborted.")
+
+
+async def _check_role(ctx, role, thing):
+    if role.managed:
+        raise commands.BadArgument("This is an integration role, I can't assign this to anyone!")
+
+    # Assigning people with the @everyone role is not possible
+    if role.is_default():
+        message = ("Wow, good job. I'm just gonna grab some popcorn now..."
+                   if ctx.message.mention_everyone else
+                   "You're lucky that didn't do anything...")
+        raise commands.BadArgument(message)
+
+    if role.permissions.administrator:
+        message = ("This role has the Administrator permission. "
+                   "It's very dangerous and can lead to terrible things. "
+                   f"Are you sure you wanna make this {thing} role?")
+        await _warn(message, ctx)
+
+
 class SelfRole(search.RoleSearch):
     async def convert(self, ctx, arg):
         # Assume this is invoked from the Admin cog, as we don't use self-roles
@@ -56,46 +93,14 @@ class SelfRole(search.RoleSearch):
 
 
 class AutoRole(search.RoleSearch):
-    async def _warn(self, warning, ctx):
-        prompt = warning + "\n\n(Type `yes` or `no`)"
-
-        def check(m):
-            return (m.channel == ctx.channel
-                    and m.author.id == ctx.author.id
-                    and m.content.lower() in {'yes', 'no', 'y', 'n'})
-
-        async with temp_message(ctx, prompt) as m:
-            try:
-                answer = await ctx.bot.wait_for('message', timeout=30, check=check)
-            except asyncio.TimeoutError:
-                raise commands.BadArgument("You took too long. Aborting.")
-            else:
-                lowered = answer.content.lower()
-                if lowered not in {'yes', 'y'}:
-                    raise commands.BadArgument("Aborted.")
-
     async def convert(self, ctx, arg):
         if not ctx.guild:
             raise commands.NoPrivateMessage
 
         role = await super().convert(ctx, arg)
-        if role.managed:
-            raise commands.BadArgument("This is an integration role, I can't assign this to anyone!")
-
-        # Assigning people with the @everyone role is not possible
-        if role.is_default():
-            message = ("Wow, good job. I'm just gonna grab some popcorn now..."
-                        if ctx.message.mention_everyone else
-                       "You're lucky that didn't do anything...")
-            raise commands.BadArgument(message)
-
-        if role.permissions.administrator:
-            await self._warn("This role has the Administrator permission. "
-                             "It's very dangerous and can lead to terrible things. "
-                             "Are you sure you wanna make this your auto-assign role?",
-                             ctx)
-
+        await _check_role(ctx, role, thing='an auto-assign')
         return role
+
 
 class Admin:
     """Admin-only commands"""
@@ -126,6 +131,7 @@ class Admin:
         A self-assignable role is one that you can assign to yourself
         using `{prefix}iam` or `{prefix}selfrole`
         """
+        await _check_role(ctx, role, thing='a self-assignable')
         self_roles = self.self_roles[ctx.guild]
         if role.id in self_roles:
             return await ctx.send("That role is already self-assignable... I think")
