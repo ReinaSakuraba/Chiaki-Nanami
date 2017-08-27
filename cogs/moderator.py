@@ -357,6 +357,7 @@ class Moderator:
         bot_id = ctx.bot.user.id
 
         bot_perms = ctx.channel.permissions_for(ctx.me)
+        purge = functools.partial(ctx.channel.purge, limit=limit, before=ctx.message)
         can_bulk_delete = bot_perms.manage_messages and bot_perms.read_message_history
 
         if can_bulk_delete:
@@ -364,23 +365,17 @@ class Moderator:
                 if m.author.id == bot_id:
                     return True
                 return m.content.startswith(prefixes) and not m.content[1:2].isspace()
-
-            deleted = await ctx.channel.purge(limit=limit, before=ctx.message, check=is_possible_command_invoke)
-            spammers = Counter(str(m.author) for m in deleted)
+            deleted = await purge(check=is_possible_command_invoke)
         else:
             # We can only delete the bot's messages, because trying to delete
             # other users' messages without Manage Messages will raise an error.
             # Also we can't use bulk-deleting for the same reason.
-            counter = 0
-            async for m in ctx.history(limit=limit, before=ctx.message):
-                if m.author.id == bot_id:
-                    await m.delete()
-                    counter += 1
-            spammers = Counter({ctx.me.display_name: counter})
+            deleted = await purge(check=lambda m: m.author.id == bot_id, bulk=False)
 
-        deleted = sum(spammers.values())
-        second_part = 's was' if deleted == 1 else ' were'
-        title = f'{deleted} messages{second_part} removed.'
+        spammers = Counter(str(m.author) for m in deleted)
+        total_deleted = sum(spammers.values())
+        second_part = 's was' if total_deleted == 1 else ' were'
+        title = f'{total_deleted} messages{second_part} removed.'
         joined = '\n'.join(itertools.starmap('**{0}**: {1}'.format, spammers.most_common()))
         spammer_stats = joined or discord.Embed.Empty
 
@@ -389,7 +384,8 @@ class Moderator:
                 )
         await ctx.send(embed=embed, delete_after=20)
         await asyncio.sleep(20)
-        await ctx.message.delete()
+        with contextlib.suppress(discord.HTTPException):
+            await ctx.message.delete()
 
     @clear.error
     @cleanup.error
