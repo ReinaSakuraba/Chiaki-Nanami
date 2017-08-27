@@ -43,6 +43,10 @@ class SelfRole(search.RoleSearch):
             raise commands.NoPrivateMessage
 
         self_roles = ctx.cog.get_self_roles(ctx.guild)
+        if not self_roles:
+            message = ("This server has no self-assignable roles. "
+                       f"Use `{ctx.prefix}asar` to add one.")
+            raise commands.BadArgument(message)
 
         with temp_attr(ctx.guild, 'roles', self_roles):
             try:
