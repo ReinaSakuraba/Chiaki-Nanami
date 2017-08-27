@@ -35,6 +35,10 @@ class LowerRole(commands.RoleConverter):
         return role
 
 
+class LowerRoleSearch(search.RoleSearch, LowerRole):
+    pass
+
+
 async def _warn(warning, ctx):
     prompt = warning + "\n\n(Type `yes` or `no`)"
 
@@ -125,7 +129,7 @@ class Admin:
 
     @commands.command(name='addselfrole', aliases=['asar', ])
     @commands.has_permissions(manage_roles=True, manage_guild=True)
-    async def add_self_role(self, ctx, *, role: LowerRole):
+    async def add_self_role(self, ctx, *, role: LowerRoleSearch):
         """Adds a self-assignable role to the server
 
         A self-assignable role is one that you can assign to yourself
