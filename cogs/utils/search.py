@@ -72,7 +72,7 @@ class RoleSearch(commands.IDConverter, Search):
     async def convert(self, ctx, argument):
         guild = ctx.guild
         if not guild:
-            raise NoPrivateMessage()
+            raise commands.NoPrivateMessage()
 
         # Let ID's and mentions take priority
         match = self._get_id_match(argument) or re.match(r'<@&([0-9]+)>$', argument)
