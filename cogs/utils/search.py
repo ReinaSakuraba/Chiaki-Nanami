@@ -31,14 +31,17 @@ class Search:
     def _format_choices(emojis, choices):
         return '\n'.join(map('{0} = {1}'.format, emojis, choices))
 
-    async def search(self, ctx, choices, *, thing=''):
+    async def search(self, ctx, arg, choices, *, thing):
         num_choices = len(choices)
         choices = choices[:self.max_choices]
         emojis = REGIONAL_INDICATORS[:len(choices)]
 
         description = self._format_choices(emojis, choices)
+        pluralized = pluralize(**{thing: num_choices})
+        field_value = 'Please click one of the reactions below.'
         embed = (discord.Embed(colour=0x00FF00, description=description)
-                .set_author(name=pluralize(**{thing: num_choices}))
+                .set_author(name=f'{pluralized} have been found for "{arg}"')
+                .add_field(name='Instructions', value=field_value)
                 )
 
         async def _put_reactions(message):
@@ -84,7 +87,7 @@ class RoleSearch(commands.IDConverter, Search):
         if len(results) == 1:
             return results[0]
 
-        return await self.search(ctx, results, thing='role')
+        return await self.search(ctx, argument, results, thing='role')
 
 
 class MemberSearch(commands.MemberConverter, Search):
@@ -127,7 +130,7 @@ class MemberSearch(commands.MemberConverter, Search):
             raise commands.BadArgument(f'Member "{argument}" not found')
         elif len(result) == 1:
             return result[0]
-        return await self.search(ctx, result, thing='member')
+        return await self.search(ctx, argument, result, thing='member')
 
 # A mapping for the discord.py class and it's corresponding searcher.
 _type_search_maps = {
@@ -148,7 +151,7 @@ class union(Search, commands.Converter):
 
     # stubbing out each converters' search so it doesn't accidentally do the
     # reaction thing prematurely.
-    async def search(self, ctx, choices, *, thing):
+    async def search(self, ctx, argument, choices, *, thing):
         return choices
 
     async def convert(self, ctx, argument):
@@ -168,7 +171,7 @@ class union(Search, commands.Converter):
             raise commands.BadArgument(message)
         if len(choices) == 1:
             return choices[0]
-        return await super().search(ctx, choices, thing='entry')
+        return await super().search(ctx, argument, choices, thing='entry')
 
     @property
     def searchers(self):        
