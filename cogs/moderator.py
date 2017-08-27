@@ -387,7 +387,9 @@ class Moderator:
         embed = (discord.Embed(colour=0x00FF00, description=spammer_stats, timestamp=ctx.message.created_at)
                 .set_author(name=title)
                 )
-        await ctx.send(embed=embed)
+        await ctx.send(embed=embed, delete_after=20)
+        await asyncio.sleep(20)
+        await ctx.message.delete()
 
     @clear.error
     @cleanup.error
