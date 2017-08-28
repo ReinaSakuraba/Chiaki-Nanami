@@ -245,14 +245,16 @@ class RNG:
     async def colour(self, ctx):
         """Generates a random colo(u)r."""
         colour = discord.Colour(random.randint(0, 0xFFFFFF))
+        as_str = str(colour)
         rgb = colour.to_rgb()
         h, s, v = colorsys.rgb_to_hsv(*(v / 255 for v in rgb))
         hsv = h * 360, s * 100, v * 100
 
-        colour_embed = (discord.Embed(title=str(colour), colour=colour)
+
+        colour_embed = (discord.Embed(title=as_str, colour=colour)
+                       .set_thumbnail(url=f'http://colorhexa.com/{as_str[1:]}.png')
                        .add_field(name="RGB", value='%d, %d, %d' % rgb)
-                       .add_field(name="HSV", value='%.03f, %.03f, %.03f' % hsv)
-                       )
+                       .add_field(name="HSV", value='%.03f, %.03f, %.03f' % hsv))
         if webcolors:
             colour_embed.description = get_colour_name(rgb)
         await ctx.send(embed=colour_embed)
