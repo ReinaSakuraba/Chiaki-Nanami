@@ -23,11 +23,11 @@ from .utils.paginator import ListPaginator
 from .utils.timer import Scheduler, TimerEntry
 
 
-def _mod_file(filename): 
+def _mod_file(filename):
     return os.path.join('mod', filename)
 
 def _rreplace(s, old, new, count=1):
-    li = s.rsplit(old, count)  
+    li = s.rsplit(old, count)
     return new.join(li)
 
 
@@ -142,7 +142,7 @@ class Moderator:
     # ---------------- Slowmode ------------------
 
     def _is_slowmode_immune(self, member):
-        immune_roles = self.slow_immune.get(member.guild, []) 
+        immune_roles = self.slow_immune.get(member.guild, [])
         return any(r.id in immune_roles for r in member.roles)
 
     @staticmethod
@@ -179,10 +179,10 @@ class Moderator:
     async def slowmode(self, ctx, duration: positive_duration, *, member: discord.Member=None):
         """Puts a thing in slowmode.
 
-        An optional member argument can be provided. If it's given, it puts only 
+        An optional member argument can be provided. If it's given, it puts only
         that user in slowmode for the entire server. Otherwise it puts the channel in slowmode.
 
-        Those with a slowmode-immune role will not be affected. 
+        Those with a slowmode-immune role will not be affected.
         If you want to put them in slowmode too, use `{prefix}slowmode noimmune`
         """
 
@@ -261,7 +261,7 @@ class Moderator:
     async def slowmode_immune(self, ctx):
         """Lists all the roles that are immune to slowmode.
 
-        If a member has any of these roles, during a normal slowmode, 
+        If a member has any of these roles, during a normal slowmode,
         they won't have their messages deleted.
         """
         if ctx.invoked_subcommand is not self.slowmode_immune:
@@ -390,7 +390,7 @@ class Moderator:
     @clear.error
     @cleanup.error
     async def clear_error(self, ctx, error):
-        # We need to use the __cause__ because any non-CommandErrors will be 
+        # We need to use the __cause__ because any non-CommandErrors will be
         # wrapped in CommandInvokeError
         cause = error.__cause__
         if isinstance(cause, discord.Forbidden):
@@ -548,7 +548,7 @@ class Moderator:
         return discord.utils.get(server.roles, id=role_id)
 
     async def _setdefault_muted_role(self, server):
-        # Role could've been deleted, which means it will be None. 
+        # Role could've been deleted, which means it will be None.
         # So we have to account for that.
         return self._get_muted_role(server) or await self._create_muted_role(server)
 
@@ -596,13 +596,13 @@ class Moderator:
         if member is None:
             member = ctx.author
 
-        # early out for the case of premature role removal, 
+        # early out for the case of premature role removal,
         # either by ->unmute or manually removing the role
         role = self._get_muted_role(ctx.guild)
         if role not in member.roles:
             return await ctx.send(f'{member} is not muted...')
 
-        try:    
+        try:
             entry = self.mutes[_member_key(member)]
         except KeyError:
             await ctx.send(f"{member} has been perm-muted, you must've "
@@ -629,7 +629,7 @@ class Moderator:
                 self.mute_scheduler.remove_entry(entry)
 
         # Order is important here. If the user had the muted role removed manually,
-        # it won't notify the scheduler. This can be disatrous if the user needs 
+        # it won't notify the scheduler. This can be disatrous if the user needs
         # to be muted for a longer period of time after this. This is why the entry
         # has to be removed BEFORE the actual role removal.
         role = self._get_muted_role(member.guild)
@@ -653,20 +653,20 @@ class Moderator:
         mute_role = await self._setdefault_muted_role(ctx.guild)
         await self._regen_muted_role_perms(mute_role, *ctx.guild.channels)
         await ctx.send('\N{THUMBS UP SIGN}')
-        
+
     @commands.command(name='setmuterole', aliases=['smur'], usage=['My Cooler Mute Role'])
     @commands.has_permissions(manage_roles=True, manage_guild=True)
     async def set_muted_role(self, ctx, *, role: discord.Role):
         """Sets the muted role for the server.
-        
-        Ideally you shouldn't have to do this, as I already create a muted role 
-        when I attempt to mute someone. This is just in case you already have a 
+
+        Ideally you shouldn't have to do this, as I already create a muted role
+        when I attempt to mute someone. This is just in case you already have a
         muted role and would like to use that one instead.
         """
         await self._regen_muted_role_perms(role, *ctx.guild.channels)
         self.muted_roles[str(ctx.guild.id)] = role.id
         await ctx.send(f'Set the muted role to **{role}**!')
-        
+
     @commands.command(name='muterole', aliases=['mur'])
     async def muted_role(self, ctx):
         """Gets the current muted role."""
@@ -714,7 +714,7 @@ class Moderator:
     async def ban(self, ctx, member: MemberID, *, reason: str=None):
         """Bans a user (obviously)
 
-        You can also use this to ban someone even if they're not in the server, 
+        You can also use this to ban someone even if they're not in the server,
         just use the ID. (not so obviously)
         """
 
@@ -758,7 +758,7 @@ class Moderator:
     @unban.error
     @massban.error
     async def mod_action_error(self, ctx, error):
-        # We need to use the __cause__ because any non-CommandErrors will be 
+        # We need to use the __cause__ because any non-CommandErrors will be
         # wrapped in CommandInvokeError
         cause = error.__cause__
         command = ctx.command
@@ -800,7 +800,7 @@ class Moderator:
     # -------- Custom Events (used in schedulers) -----------
 
     async def on_mute_end(self, timer):
-        # Bot.get_guild will return None if there are any pending mutes 
+        # Bot.get_guild will return None if there are any pending mutes
         # when this cog first gets loaded. Thus we have to wait until the bot has logged in.
         await self.bot.wait_until_ready()
         server_id, member_id, mute_role_id = timer.args

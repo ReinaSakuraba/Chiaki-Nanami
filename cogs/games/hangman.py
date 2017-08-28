@@ -213,7 +213,7 @@ class Hangman:
         """It's hangman..."""
         if self.manager.session_exists(ctx.channel):
              return await ctx.send("A hangman game is already running in this channel...")
-        
+
         words = await self._get_category(ctx, category)
         word = self._get_random_word(words)
         with self.manager.temp_session(ctx.channel, HangmanSession(ctx, word)) as inst:
@@ -222,7 +222,7 @@ class Hangman:
                 return
 
             game_over_message = 'You did it!' if success else 'Noooo you lost. \N{CRYING FACE}'
-            await ctx.send(f'{game_over_message} {message}') 
+            await ctx.send(f'{game_over_message} {message}')
 
     @hangman.command(name='stop')
     async def hangman_stop(self, ctx):

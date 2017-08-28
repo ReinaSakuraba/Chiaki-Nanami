@@ -46,7 +46,7 @@ class RockPaperScissors:
         elif res == 0:
             return Winner("It's a tie. No one", None)
         return Winner(ctx.author, ctx.author.avatar_url)
-    
+
     async def _rps_result(self, ctx, elem, counters, *, title):
         if elem.lower() in ('chiaki', 'chiaki nanami'):
             return await ctx.send("Hey, I'm not an RPS object!")
@@ -65,17 +65,17 @@ class RockPaperScissors:
             embed.set_thumbnail(url=thumbnail)
 
         await ctx.send(embed=embed)
-            
+
     @commands.command(pass_context=True)
     async def rps(self, ctx, *, elem : str):
         """Rock Paper Scissors"""
         await self._rps_result(ctx, elem, RPS_COUNTERS, title='Rock-Paper-Scissors')
-        
+
     @commands.command(pass_context=True)
     async def rpsls(self, ctx, *, elem : str):
         """Rock Paper Scissors Lizard Spock"""
         await self._rps_result(ctx, elem, RPSLS_COUNTERS, title="Rock-Paper-Scissors-Lizard-Spock")
-    
+
 
 def setup(bot):
     bot.add_cog(RockPaperScissors())

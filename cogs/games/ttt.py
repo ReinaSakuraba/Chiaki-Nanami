@@ -50,7 +50,7 @@ class Board:
         return Tile.BLANK not in itertools.chain.from_iterable(self._board)
 
     def will_tie(self):
-        return all(len(set(line) - {Tile.BLANK}) == 2 
+        return all(len(set(line) - {Tile.BLANK}) == 2
                    for line in itertools.chain(self.rows(), self.columns(), self.diagonals()))
 
     def mark_winning_line(self):
@@ -109,7 +109,7 @@ class Board:
         """
 
         yield tuple(self._board[i][i] for i in range(self.size))
-        yield tuple(self._board[i][~i] for i in range(self.size))    
+        yield tuple(self._board[i][~i] for i in range(self.size))
 
 
 Player = namedtuple('Player', 'user symbol')
@@ -117,7 +117,7 @@ Stats = namedtuple('Stats', 'winner turns')
 
 
 _draw_warning = '''
-\N{WARNING SIGN} **Warning** 
+\N{WARNING SIGN} **Warning**
 This game will be a tie. Type `draw` to request a draw.
 Continuing this game will most likely be a waste of time.
 '''
@@ -130,7 +130,7 @@ class TicTacToeSession:
         self._opponent = opponent
         self._opponent_ready = asyncio.Event()
 
-    def _init_players(self):        
+    def _init_players(self):
         xo = (Tile.X, Tile.O) if random.random() < 0.5 else (Tile.O, Tile.X)
         self.players = list(map(Player, (self.ctx.author, self.opponent), xo))
         random.shuffle(self.players)
@@ -223,7 +223,7 @@ class TicTacToeSession:
             await message.add_reaction(emoji)
 
         def confirm_check(reaction, user):
-            return (other == user 
+            return (other == user
                     and reaction.message.id == message.id
                     and reaction.emoji in confirm_options)
 
@@ -235,7 +235,7 @@ class TicTacToeSession:
         for turn, self._current in enumerate(cycle, start=1):
             user, tile = self._current
             self._update_display()
-            async with temp_message(self.ctx, content=f'{user.mention} It is your turn.', 
+            async with temp_message(self.ctx, content=f'{user.mention} It is your turn.',
                                     embed=self._game_screen) as m:
                 while True:
                     try:
@@ -291,7 +291,7 @@ class TicTacToe(two_player_plugin('TicTacToe', cls=TicTacToeSession, aliases=['t
                 await message.add_reaction(emoji)
 
             def check(react, user):
-                return (react.message.id == message.id 
+                return (react.message.id == message.id
                         and user.id == ctx.author.id
                         and react.emoji in BOARD_SIZE_EMOJIS
                         )
@@ -313,7 +313,7 @@ class TicTacToe(two_player_plugin('TicTacToe', cls=TicTacToeSession, aliases=['t
             message = ("There's a Tic-Tac-Toe running in this channel right now. "
                        "Gomen'nasai... ;-;")
             return await ctx.send(message)
-    
+
         ctx._ttt_size = await self.get_board_size(ctx)
         await super()._do_game(ctx, member)
 

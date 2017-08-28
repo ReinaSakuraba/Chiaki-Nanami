@@ -52,10 +52,10 @@ class Reminder:
 
     @staticmethod
     def _create_reminder_embed(ctx, when, message):
-        # Discord attempts to be smart with breaking up long lines. If a line 
-        # is extremely long, it will attempt to insert a line break before the 
-        # next word. This is good in some uses. However, lines that are just one 
-        # really long word won't be broken up into lines. This leads to the 
+        # Discord attempts to be smart with breaking up long lines. If a line
+        # is extremely long, it will attempt to insert a line break before the
+        # next word. This is good in some uses. However, lines that are just one
+        # really long word won't be broken up into lines. This leads to the
         # embed being stretched all the way to the right.
         #
         # To avoid giving myself too much of a headache, I've decided to not
@@ -149,7 +149,7 @@ class Reminder:
         with contextlib.suppress(discord.HTTPException):
             await user.send(embed=embed)
         try:
-            await channel.send(f"<@{user_id}>", embed=embed)    
+            await channel.send(f"<@{user_id}>", embed=embed)
         except discord.HTTPException:
             await channel.send(f'<@{user_id}> {human_delta} ago you wanted to be reminded of {message}')
         finally:

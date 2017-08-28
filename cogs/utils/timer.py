@@ -20,7 +20,7 @@ class TimerEntry(namedtuple('TimerEntry', 'when args')):
         return datetime.utcfromtimestamp(self.when)
 
 
-class Scheduler:    
+class Scheduler:
     """Manages timing related things.
 
     This is largely used as a workaround for asyncio.sleep(), as asyncio.sleep()
@@ -50,7 +50,7 @@ class Scheduler:
             self._next_timestamp = timer.when
             delta = self._next_timestamp - datetime.utcnow().timestamp()
             log.debug('sleeping for %s seconds', delta)
- 
+
             while delta > 0:
                 await asyncio.sleep(min(self.MAX_SLEEP_TIME, delta))
                 delta -= self.MAX_SLEEP_TIME

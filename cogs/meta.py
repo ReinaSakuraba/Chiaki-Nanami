@@ -401,7 +401,7 @@ class Meta:
         permissions_in = ctx.author.permissions_in
 
         def get_channels(channels, prefix, permission):
-            return [f'**{prefix}{escape_markdown(str(c))}**' if getattr(permissions_in(c), permission) 
+            return [f'**{prefix}{escape_markdown(str(c))}**' if getattr(permissions_in(c), permission)
                     else f'{prefix}{escape_markdown(str(c))}' for c in channels]
 
         text_channels  = get_channels(ctx.guild.text_channels,  prefix='#', permission='read_messages')
@@ -512,7 +512,7 @@ class Meta:
         """Checks which members have a given role.
         If you have the role, your name will be in **bold**.
 
-        Only one role can be specified. For multiple roles, use `{prefix}inanyrole` 
+        Only one role can be specified. For multiple roles, use `{prefix}inanyrole`
         or `{prefix}inallrole`.
         """
         await self._inrole(ctx, role, members=role.members)
@@ -523,7 +523,7 @@ class Meta:
         """Checks which members have any of the given role(s).
         If you have the role, your name will be in **bold**.
 
-        If you don't want to mention a role and there's a space in the role name, 
+        If you don't want to mention a role and there's a space in the role name,
         you must put the role in quotes
         """
         await self._inrole(ctx, *roles, members=set(chain.from_iterable(map(attrgetter('members'), roles))),
@@ -535,7 +535,7 @@ class Meta:
         """Checks which members have all of the given role(s).
         If you have the role, your name will be in **bold**.
 
-        If you don't want to mention a role and there's a space in the role name, 
+        If you don't want to mention a role and there's a space in the role name,
         you must put that role in quotes
         """
         role_members = (role.members for role in roles)
@@ -558,7 +558,7 @@ class Meta:
         entries = map(get_name, roles)
 
         pages = ListPaginator(ctx, entries, title=title, colour=ctx.bot.colour)
-        await pages.interact()    
+        await pages.interact()
 
     @staticmethod
     async def _display_permissions(ctx, thing, permissions, extra=''):

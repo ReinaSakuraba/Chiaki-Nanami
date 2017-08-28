@@ -1,6 +1,6 @@
 """Converters that provide a "search" functionality
 
-In order to create case-insensitive converters, we need to be able to handle 
+In order to create case-insensitive converters, we need to be able to handle
 conflicts. This becomes especially important when dealing with users, because two
 users can have the exact same name, which will confuse and potentially frustrate
 people when the wrong user is chosen.
@@ -107,9 +107,9 @@ class MemberSearch(commands.MemberConverter, Search):
             # This will transform result into a tuple, which is important.
             # Because len(discord.Member) will error.
             result = guild.get_member_named(argument),
-            # Will only be False if only the name was provided, or a user with 
-            # the same nickname as another user's fullname was provided. 
-            # (eg if someone nicknames themself "rjt#2336", and rjt#2336 was in 
+            # Will only be False if only the name was provided, or a user with
+            # the same nickname as another user's fullname was provided.
+            # (eg if someone nicknames themself "rjt#2336", and rjt#2336 was in
             # the server)
             if str(result[0]) != argument:
                 lowered = argument.lower()
@@ -122,7 +122,7 @@ class MemberSearch(commands.MemberConverter, Search):
                 result = list(filter(predicate, guild.members))
 
         else:
-            # We can't use the "fuzzy" match here, due to potential conflicts 
+            # We can't use the "fuzzy" match here, due to potential conflicts
             # and duplicate results.
             result = _get_from_guilds(bot, 'get_member_named', argument), # See comment in "if guild:"
 
@@ -174,6 +174,6 @@ class union(Search, commands.Converter):
         return await super().search(ctx, argument, choices, thing='entry')
 
     @property
-    def searchers(self):        
+    def searchers(self):
         return list(filter(None, map(_type_search_maps.get, self.types)))
 

@@ -154,7 +154,7 @@ class RNG:
 
     @commands.command(usage='Nadeko Salt PvPCraft mee6 "Chiaki Nanami"')
     async def choose(self, ctx, *choices: commands.clean_content):
-        """Chooses between a list of choices. 
+        """Chooses between a list of choices.
 
         If one of your choices requires a space, it must be wrapped in quotes.
         """

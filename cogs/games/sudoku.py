@@ -33,7 +33,7 @@ def _make_board(m=3):
             if (x not in board[i]                     # row
                 and all(row[j] != x for row in board) # column
                 and all(x not in row[j0:j0+m]         # block
-                        for row in board[i0:i])): 
+                        for row in board[i0:i])):
                 board[i][j] = x
                 if c + 1 >= nn or search(c + 1):
                     return board
@@ -193,8 +193,8 @@ class SudokuSession(BaseReactionPaginator):
                        )
 
     def check_message(self, message):
-        return (self._state == State.default 
-                and message.channel == self.ctx.channel 
+        return (self._state == State.default
+                and message.channel == self.ctx.channel
                 and message.author == self.ctx.author)
 
     @staticmethod
@@ -230,7 +230,7 @@ class SudokuSession(BaseReactionPaginator):
                 x, y, number = self.parse_message(message.content)
             except ValueError:
                 continue
-            
+
             try:
                 self.board[x, y] = number
             except (IndexError, ValueError):
@@ -293,12 +293,12 @@ class SudokuSession(BaseReactionPaginator):
         """Shows this page (you knew that already)"""
         self._state = State.on_help
         help_text = textwrap.dedent('''
-        The objective is to fill a 9×9 grid with digits so that each column, 
-        each row, and each of the nine 3×3 subgrids that compose the grid 
-        (also called "boxes", "blocks", or "regions") contains all of the 
-        digits from 1 to 9. 
+        The objective is to fill a 9×9 grid with digits so that each column,
+        each row, and each of the nine 3×3 subgrids that compose the grid
+        (also called "boxes", "blocks", or "regions") contains all of the
+        digits from 1 to 9.
 
-        This basically means no row, column, or block should have more than 
+        This basically means no row, column, or block should have more than
         one of the same number.
         \u200b
         ''')

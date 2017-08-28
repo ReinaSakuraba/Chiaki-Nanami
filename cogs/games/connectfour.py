@@ -91,7 +91,7 @@ class ConnectFourSession:
         self._opponent = opponent
         self._opponent_ready = asyncio.Event()
 
-    def _init_players(self):        
+    def _init_players(self):
         xo = (Tile.X, Tile.O) if random.random() < 0.5 else (Tile.O, Tile.X)
         self.players = list(map(Player, (self.ctx.author, self.opponent), xo))
         random.shuffle(self.players)
@@ -205,10 +205,10 @@ class ConnectFourSession:
     def winner(self):
         return discord.utils.get(self.players, symbol=self.board.winner)
 
-class Connect4(two_player_plugin('Connect4', cls=ConnectFourSession, 
+class Connect4(two_player_plugin('Connect4', cls=ConnectFourSession,
                game_name='Connect 4', aliases=['con4'])):
 
-    
+
 
     @staticmethod
     def _make_invite_embed(ctx, member):

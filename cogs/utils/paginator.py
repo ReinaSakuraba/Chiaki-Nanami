@@ -62,13 +62,13 @@ def page(emoji):
     return decorator
 
 _extra_remarks = [
-    'Does nothing', 
-    'Does absolutely nothing', 
-    'Still does nothing', 
-    'Really does nothing', 
+    'Does nothing',
+    'Does absolutely nothing',
+    'Still does nothing',
+    'Really does nothing',
     'What did you expect',
     'Make Chiaki do a hula hoop',
-    'Get slapped by Chiaki', 
+    'Get slapped by Chiaki',
     'Hug Chiaki',
     ]
 
@@ -86,12 +86,12 @@ class BaseReactionPaginator:
         for name, member in itertools.chain.from_iterable(b.__dict__.items() for b in cls.__mro__):
             if name.startswith('_'):
                 continue
-            # When looking at the member through the class-dict, any partialmethods 
+            # When looking at the member through the class-dict, any partialmethods
             # are not considered callable by default. They only reveal themselves when you actually
             # get the attribute of the member through the class (eg Foo.bar),
             # or using inspect.getmembers(Foo)
-            # 
-            # The reason why we can't use inspect.getmembers is because it 
+            #
+            # The reason why we can't use inspect.getmembers is because it
             # returns the members out of order, regardless of how it's defined in the class.
             # Metaclasses with __prepare__ returning an OrderedDict is not a solution,
             # because somehow inspect.getmembers disregards that as well.
@@ -106,7 +106,7 @@ class BaseReactionPaginator:
                 print(name)
                 cls._reaction_map[emoji] = name
 
-        # We need to move stop to the end (assuming it exists). 
+        # We need to move stop to the end (assuming it exists).
         # Otherwise it will show up somewhere in the middle
         with contextlib.suppress(StopIteration):
             key = next(k for k, v in cls._reaction_map.items() if v == 'stop')
@@ -124,8 +124,8 @@ class BaseReactionPaginator:
         raise StopPagination
 
     def _check_reaction(self, reaction, user):
-        return (reaction.message.id == self.message.id 
-                and user.id == self.context.author.id 
+        return (reaction.message.id == self.message.id
+                and user.id == self.context.author.id
                 and reaction.emoji in self._reaction_map
                )
 
@@ -213,7 +213,7 @@ class BaseReactionPaginator:
 
 
 class ListPaginator(BaseReactionPaginator):
-    def __init__(self, context, entries, *, title=discord.Embed.Empty, 
+    def __init__(self, context, entries, *, title=discord.Embed.Empty,
                  color=0, colour=0, lines_per_page=15):
         super().__init__(context)
         self.entries = tuple(entries)
@@ -224,12 +224,12 @@ class ListPaginator(BaseReactionPaginator):
         self._extra = set()
 
     def _check_reaction(self, reaction, user):
-        return (super()._check_reaction(reaction, user) 
+        return (super()._check_reaction(reaction, user)
                 or (not self._extra.difference_update(self._reaction_map)
                 and self._extra.add(reaction.emoji)))
 
     def _create_embed(self, idx, page):
-        # Override this if you want paginated embeds 
+        # Override this if you want paginated embeds
         # but you want to handle the pagination differently
 
         # XXX: Should this respect the embed description limit (2048 chars)?
@@ -294,7 +294,7 @@ class ListPaginator(BaseReactionPaginator):
         def check(m):
             return (m.channel.id == ctx.channel.id and
                     m.author.id == ctx.author.id)
-        
+
         async with temp_message(self.context, f'Please enter a number from 1 to {len(self)}'):
             while True:
                 try:
@@ -306,7 +306,7 @@ class ListPaginator(BaseReactionPaginator):
                     result = int(result.content)
                 except ValueError:
                     continue
-                
+
                 try:
                     return self.page_at(result - 1)
                 except IndexError:
@@ -377,7 +377,7 @@ class TitleBasedPages(ListPaginator):
 
 class EmbedFieldPages(ListPaginator):
     """Similat to EmbedPages, but uses the fields instead of the description"""
-    def __init__(self, context, entries, *, 
+    def __init__(self, context, entries, *,
                 description=discord.Embed.Empty, inline=True, **kwargs):
         super().__init__(context, entries, **kwargs)
 

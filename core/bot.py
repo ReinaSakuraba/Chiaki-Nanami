@@ -45,7 +45,7 @@ _FULL_PERMISSIONS = [
     "kick_members",
     "ban_members",
     "create_instant_invite",
-    
+
     "manage_messages",
     "read_message_history",
 
@@ -74,7 +74,7 @@ _chiaki_formatter = ChiakiFormatter(width=MAX_FORMATTER_WIDTH, show_check_failur
 
 class Chiaki(commands.Bot):
     def __init__(self):
-        super().__init__(command_prefix=_callable_prefix, 
+        super().__init__(command_prefix=_callable_prefix,
                          formatter=_chiaki_formatter,
                          description=config.description,
                          pm_help=None)
@@ -90,7 +90,7 @@ class Chiaki(commands.Bot):
         for ext in config.extensions:
             # Errors should never pass silently, if there's a bug in an extension,
             # better to know now before the bot logs in, because a restart
-            # can become extremely expensive later on, especially with the 
+            # can become extremely expensive later on, especially with the
             # 1000 IDENTIFYs a day limit.
             self.load_extension(ext)
 
@@ -252,7 +252,7 @@ class Chiaki(commands.Bot):
     @property
     def support_invite(self):
         # The following is the link to the bot's support server.
-        # You are allowed to change this to be another server of your choice. 
+        # You are allowed to change this to be another server of your choice.
         # However, doing so will instantly void your warranty.
         # Change this at your own peril.
         return 'https://discord.gg/WtkPTmE'

@@ -180,7 +180,7 @@ class Racing:
     def __init__(self, bot):
         self.bot = bot
         self.manager = SessionManager()
-        self.horses = database.Database('gameconfigs/race-horses.json')        
+        self.horses = database.Database('gameconfigs/race-horses.json')
 
     @commands.group(invoke_without_command=True)
     async def race(self, ctx):
@@ -227,7 +227,7 @@ class Racing:
             print(self, ctx, horse)
             horse = self.horses.get(ctx.author.id, None)
             message = (f'{horse} will be racing on your behalf, I think.'
-                       if horse else 
+                       if horse else
                        "You don't have a horse. I'll give you one when you race though!")
             return await ctx.send(message)
         if isinstance(horse, str) and len(horse) != 1:

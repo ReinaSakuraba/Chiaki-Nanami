@@ -53,7 +53,7 @@ class ShipRating(namedtuple('ShipRating', 'value comment')):
         if comment is None:
             index = round(_value_to_index(value))
             comment = _default_rating_comments[index]
-        return super().__new__(cls, value, comment) 
+        return super().__new__(cls, value, comment)
 
 _special_pairs = {}
 
@@ -152,7 +152,7 @@ class OtherStuffs:
         self._shipped.update((user1.id, user2.id))
 
         # TODO: Use pillow to make an image out of the two users' thumbnails.
-        field_name = 'I give it a...'       # In case I decide to have it choose between mulitiple field_names 
+        field_name = 'I give it a...'       # In case I decide to have it choose between mulitiple field_names
         description = f'{user1.mention} x {user2.mention}?'
         colour = discord.Colour.from_rgb(*_lerp_red(rating.value / 100))
         ship_embed = (discord.Embed(description=description, colour=colour)
@@ -228,7 +228,7 @@ class OtherStuffs:
         await message.add_reaction(TEN_SEC_REACTION)
 
         def check(reaction, user):
-            return (reaction.message.id == message.id 
+            return (reaction.message.id == message.id
                     and user.id == ctx.author.id
                     and reaction.emoji == TEN_SEC_REACTION
                    )

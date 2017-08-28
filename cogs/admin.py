@@ -283,7 +283,7 @@ class Admin:
             return
 
         verb = ctx.command.callback.__name__.partition('_')[0]
-        role = ctx.kwargs['name'] if verb == 'create' else ctx.kwargs['role'] 
+        role = ctx.kwargs['name'] if verb == 'create' else ctx.kwargs['role']
 
         print(type(error.original))
         if isinstance(error.original, discord.Forbidden):

@@ -18,7 +18,7 @@ default_key = functools.partial(functools._make_key, typed=False)
 typed_key = functools.partial(functools._make_key, typed=True)
 
 
-# From Danny's cache.py, just with some modifications to allow for 
+# From Danny's cache.py, just with some modifications to allow for
 # custom key args, and the strategy is determined by the maxsize arg.
 # https://github.com/Rapptz/RoboDanny/blob/rewrite/cogs/utils/cache.py
 def cache(maxsize=128, make_key=default_key):
@@ -41,7 +41,7 @@ def cache(maxsize=128, make_key=default_key):
             async def new_coroutine():
                 return value
             return new_coroutine()
- 
+
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             key = make_key(args, kwargs)
@@ -65,7 +65,7 @@ def cache(maxsize=128, make_key=default_key):
         def invalidate(*args, **kwargs):
             # LRU.pop isn't a thing :(
             # Implementation if LRU.pop existed would be much simpler:
-            # 
+            #
             # _sentinel = object()
             # return cache.pop(make_key(args, kwargs), _sentinel) is not _sentinel
             try:

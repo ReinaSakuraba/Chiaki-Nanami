@@ -21,7 +21,7 @@ _mod_actions = {
     'tempban' : ModAction('temporarily banned', '\N{ALARM CLOCK}', 0xA00000),
     'ban'     : ModAction('banned', '\N{HAMMER}', 0x800000),
     'unban'   : ModAction('unbanned', '\N{HAMMER}', 0x00FF00),
-    'massban' : ModAction('massbanned', '\N{NO ENTRY}', 1)    
+    'massban' : ModAction('massbanned', '\N{NO ENTRY}', 1)
 }
 # punishments that have a duration argument
 PUNISHMENTS_WITH_DURATION = ['tempban', 'mute']
@@ -154,7 +154,7 @@ class Cases:
     async def embed_from_index(self, server, idx):
         entry = self.cases[server][idx]
         user = self.bot.get_user(entry['user'])
-        # The user wasn't found, so we'll have to just grab the embed that 
+        # The user wasn't found, so we'll have to just grab the embed that
         # was previously sent before
         if user is None:
             channel = self.bot.get_channel(entry['channel_id'])
@@ -200,7 +200,7 @@ class Cases:
     @case.command(name='channel')
     @commands.has_permissions(manage_guild=True)
     async def case_channel(self, ctx, channel: discord.TextChannel = None):
-        """Sets the channel to log cases. 
+        """Sets the channel to log cases.
 
         If given no arguments, it shows the current channel that is being used.
         """
@@ -230,7 +230,7 @@ class Cases:
 
     @commands.command()
     async def reason(self, ctx, index: int, *, reason):
-        """Sets the reason for a given case entry. 
+        """Sets the reason for a given case entry.
 
         You can only edit a case that's yours.
         """
@@ -286,12 +286,12 @@ class Cases:
         action = ctx.command.qualified_name
 
         targets = [m for m in ctx.args if isinstance(m, discord.Member)]
-        
+
         duration = ctx.args[3] if action in PUNISHMENTS_WITH_DURATION else None
         reason = ctx.kwargs['reason'] if action != 'massban' else ctx.args[2]
         auto_punished = getattr(ctx, 'auto_punished', False)
 
-        await self.send_case(action, ctx.guild, ctx.author, *targets, 
+        await self.send_case(action, ctx.guild, ctx.author, *targets,
                              reason=reason, duration=duration, auto=auto_punished)
         await self.notify_user(action, ctx.guild, ctx.author, *targets,
                                reason=reason, duration=duration, auto=auto_punished)

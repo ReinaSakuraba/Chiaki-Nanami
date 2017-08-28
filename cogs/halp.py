@@ -11,7 +11,7 @@ from .utils.formats import multi_replace
 from .utils.misc import emoji_url, truncate
 from .utils.paginator import ListPaginator
 
- 
+
 CHIAKI_TIP_EPOCH = datetime(2017, 8, 24)
 TIP_EMOJI = emoji_url('\N{ELECTRIC LIGHT BULB}')
 DEFAULT_TIP = {
@@ -86,7 +86,7 @@ class Help:
     help = default_help_command(name='help', aliases=['h'])
     halp = default_help_command(str.upper, name='halp', aliases=['HALP'], hidden=True)
     pleh = default_help_command((lambda s: multi_replace(s[::-1], _bracket_repls)), name='pleh', hidden=True)
-    pleh = default_help_command((lambda s: multi_replace(s[::-1].upper(), _bracket_repls)), 
+    pleh = default_help_command((lambda s: multi_replace(s[::-1].upper(), _bracket_repls)),
                                 name='plah', aliases=['PLAH'], hidden=True)
     Halp = default_help_command(str.title, name='Halp', hidden=True)
 

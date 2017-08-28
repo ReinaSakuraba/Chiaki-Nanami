@@ -62,7 +62,7 @@ class RussianRouletteSession:
                 return (m.channel       == self.context.channel
                         and m.author.id == current.id
                         and m.content   == self._required_message)
-            
+
             await send(f'Alright {current.mention}, it is now your turn. '
                        f'Type `{self._required_message}` to pull the trigger...')
 
@@ -72,7 +72,7 @@ class RussianRouletteSession:
                 await send(f"{current.mention} took too long. They must've died "
                             "a long time ago, and we didn't even realize it.")
                 continue
-            
+
             if not random.randrange(6):
                 await send(f"{current.mention} died... there's blood everywhere... "
                             "brains all over the wall")

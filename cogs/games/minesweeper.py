@@ -82,7 +82,7 @@ class Board:
             raise ValueError("A least one mine is required")
 
         self._mine_count = mines
-        
+
         self._board = [[Tile.blank] * width for _ in range(height)]
         self.visible = set()
         self.flags = set()
@@ -246,7 +246,7 @@ class MinesweeperDisplay(BaseReactionPaginator):
         top_row = ' '.join(REGIONAL_INDICATORS[:self.board.width])
         # Discord strips any leading and trailing spaces.
         # By putting a zero-width space we bypass that
-        return f'\N{BLACK LARGE SQUARE} {top_row}\n{self.board}' 
+        return f'\N{BLACK LARGE SQUARE} {top_row}\n{self.board}'
 
     @staticmethod
     def _possible_spaces():
@@ -257,7 +257,7 @@ class MinesweeperDisplay(BaseReactionPaginator):
         {Tile.numbered(number)} - Displays the number of mines surrounding it.
         This one shows that they are {number} mines around it.
 
-        {Tile.boom} - BOOM! Selecting a mine makes it explode, causing all other mines to explode 
+        {Tile.boom} - BOOM! Selecting a mine makes it explode, causing all other mines to explode
         and thus ending the game. Avoid mines at any costs!
         \u200b
         ''')
@@ -303,7 +303,7 @@ class MinesweeperDisplay(BaseReactionPaginator):
         \u200b
         ''')
 
-        reaction_text = '\n'.join(f'{em} => {getattr(self, f).__doc__}' 
+        reaction_text = '\n'.join(f'{em} => {getattr(self, f).__doc__}'
                                   for em, f in self._reaction_map.items())
         return (discord.Embed(colour=self.context.bot.colour, description=text)
                .set_author(name='Welcome to Minesweeper!')
@@ -348,7 +348,7 @@ class MinesweeperSession:
             x, y = map(ascii_lowercase.index, splitted[:2])
         except ValueError:
             return None
-        else: 
+        else:
             if (x, y) not in self.board:
                 return None
             return x, y, flag
@@ -360,11 +360,11 @@ class MinesweeperSession:
 
             if not new_colour:
                 embed.set_author(name='Minesweeper stopped.')
-        
+
         await self._game_screen.message.edit(embed=embed)
 
     async def _loop(self):
-        start = time.perf_counter() 
+        start = time.perf_counter()
         while True:
             colour = None
             try:
@@ -403,7 +403,7 @@ class MinesweeperSession:
             finally:
                 await self.edit_board(colour)
 
-    async def run_loop(self): 
+    async def run_loop(self):
         try:
            return await self._loop()
         except asyncio.CancelledError:
@@ -419,7 +419,7 @@ class MinesweeperSession:
             return await self._runner
         finally:
             self._interaction.cancel()
-       
+
     def stop(self):
         for task in (self._runner, self._interaction):
             with contextlib.suppress(BaseException):
@@ -484,7 +484,7 @@ class Minesweeper:
     async def minesweeper_stop(self, ctx, level: Level):
         """Stops a currently running minesweeper game.
 
-        Ideally, you should not have to call this, because the game already 
+        Ideally, you should not have to call this, because the game already
         has a stop button in place.
         """
         manager = self.manager_bucket[level]

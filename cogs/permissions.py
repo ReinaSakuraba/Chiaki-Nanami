@@ -98,7 +98,7 @@ class Action(namedtuple('Action', 'value action emoji colour')):
             return cls(value=False, action='disabled', emoji='\U0001f512', colour=discord.Colour.red())
         raise commands.BadArgument(f"Don't know what to do with {arg}.")
 
-    @classmethod 
+    @classmethod
     async def convert(cls, ctx, arg):
         return cls.from_arg(arg)
 
@@ -187,7 +187,7 @@ class Permissions:
     @staticmethod
     def _perm_result_embed(ctx, level, mode, name, *args, thing):
         originals = ', '.join(str(arg.original) for arg in args)
-        return (discord.Embed(colour=mode.colour, timestamp=ctx.message.created_at) 
+        return (discord.Embed(colour=mode.colour, timestamp=ctx.message.created_at)
                .set_author(name=f'{thing} {mode.action}!', icon_url=emoji_url(mode.emoji))
                .add_field(name=thing, value=name)
                .add_field(name=level.name.title(), value=originals, inline=False)
@@ -209,7 +209,7 @@ class Permissions:
     # commands will inevitably clash with cogs of the same name, creating confusion.
     # This is also why the default help command only takes commands, as opposed to either a command or cog.
     @commands.command(name='permsetcommand', aliases=['psc'], help=_perm_set_command_help)
-    
+
     @commands.guild_only()
     async def perm_set_command(self, ctx, level: Level, mode: Action, command: BotCommand, *args):
         self._assert_is_valid_cog(command)
@@ -217,7 +217,7 @@ class Permissions:
         await self._perm_set(ctx, level, mode, command.qualified_name, *ids, thing='Command')
 
     @commands.command(name='permsetmodule', aliases=['psm'], help=_make_doc('a module'))
-    
+
     @commands.guild_only()
     async def perm_set_module(self, ctx, level: Level, mode: Action, module: BotCogConverter, *args):
         self._assert_is_valid_cog(module)
@@ -270,7 +270,7 @@ class Permissions:
     @commands.is_owner()
     async def blacklist(self, ctx, *, user: discord.User):
         """Blacklists a user. This prevents them from ever using the bot, regardless of other permissions."""
-        await self._modify_blacklist(ctx, user, 'append', contains_op=contains, 
+        await self._modify_blacklist(ctx, user, 'append', contains_op=contains,
                                      block_type=BlockType.blacklist)
 
     @commands.command(aliases=['wl'])
@@ -280,7 +280,7 @@ class Permissions:
 
         This doesn't make them immune to any other checks.
         """
-        await self._modify_blacklist(ctx, user, 'remove', contains_op=lambda a, b: b not in a, 
+        await self._modify_blacklist(ctx, user, 'remove', contains_op=lambda a, b: b not in a,
                                      block_type=BlockType.whitelist)
 
     @commands.group(name='permshow', aliases=['pshow'])
@@ -339,5 +339,5 @@ class Permissions:
         pages = ListPaginator(ctx, permissions, title=title, colour=ctx.bot.colour)
         await pages.interact()
 
-def setup(bot):     
+def setup(bot):
     bot.add_cog(Permissions())

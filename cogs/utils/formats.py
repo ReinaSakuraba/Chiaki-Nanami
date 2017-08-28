@@ -11,9 +11,9 @@ def pluralize(**thing):
     return f'{value} {name}{"s" * (value != 1)}'
 
 def human_join(iterable, delim=', ', *, final='and'):
-    """Joins an iterable in a human-readable way. 
+    """Joins an iterable in a human-readable way.
 
-    The items are joined such that the last two items will be joined with a 
+    The items are joined such that the last two items will be joined with a
     different delimiter than the rest.
     """
     seq = tuple(iterable)
