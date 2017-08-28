@@ -4,6 +4,7 @@ import itertools
 import parsedatetime
 
 from discord.ext import commands
+from datetime import timedelta
 
 from .utils.context_managers import redirect_exception
 from .utils.converter import duration
