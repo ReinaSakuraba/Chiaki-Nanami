@@ -76,7 +76,8 @@ def positive_duration(arg):
     return amount
 
 
-_warn_punishments = {'mute', 'kick', 'softban', 'tempban', 'ban',}
+_warn_punishments = ['mute', 'kick', 'softban', 'tempban', 'ban',]
+_is_valid_punishment = frozenset(_warn_punishments).__contains__
 
 
 WarnEntry = namedtuple('WarnEntry', 'time user reason')
@@ -488,22 +489,30 @@ class Moderator:
     @commands.command(name='warnpunish', usage=['4 softban', '5 ban'])
     @commands.has_permissions(manage_messages=True, manage_guild=True)
     async def warn_punish(self, ctx, num: int, punishment, duration: duration=None):
-        """Sets the punishment a user receives upon exceeding a given warn limit"""
-        punish_lower = punishment.lower()
-        if punish_lower not in _warn_punishments:
-            message = (f'{punish_lower} is not a valid punishment.\n'
+        """Sets the punishment a user receives upon exceeding a given warn limit.
+
+        Valid punishments are:
+        `mute` (requires a duration argument)
+        `kick`
+        `softban`
+        `tempban` (requires a duration argument)
+        `ban`
+        """
+        lowered = punishment.lower()
+        if not _is_valid_punishment(lowered):
+            message = (f'{lowered} is not a valid punishment.\n'
                        f'Valid punishments: {", ".join(_warn_punishments)}')
             raise errors.InvalidUserArgument(message)
 
-        if punish_lower in {'tempban', 'mute'} and duration is None:
-            raise errors.InvalidUserArgument(f'A duration is required for {punish_lower}...')
+        if lowered in {'tempban', 'mute'} and duration is None:
+            raise errors.InvalidUserArgument(f'A duration is required for {lowered}...')
 
         payload = {
-            'punish': punish_lower,
+            'punish': lowered,
             'duration': duration,
         }
         self.guild_warn_config[ctx.guild]['punishments'][str(num)] = payload
-        await ctx.send(f'\N{OK HAND SIGN} if a user has been warned {num} times, I will **{punish_lower}** them.')
+        await ctx.send(f'\N{OK HAND SIGN} if a user has been warned {num} times, I will **{lowered}** them.')
 
     @commands.command(name='warnpunishments', aliases=['warnpl'])
     async def warn_punishments(self, ctx):
