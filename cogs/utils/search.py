@@ -12,7 +12,9 @@ import re
 
 from discord.ext import commands
 from more_itertools import always_iterable
+from string import ascii_lowercase
 
+from . import prompt
 from .context_managers import temp_attr
 from .formats import human_join, pluralize
 from .misc import REGIONAL_INDICATORS
@@ -32,39 +34,32 @@ class Search:
         return '\n'.join(map('{0} = {1}'.format, emojis, choices))
 
     async def search(self, ctx, arg, choices, *, thing):
-        num_choices = len(choices)
+        num_entries = len(choices)
         choices = choices[:self.max_choices]
-        emojis = REGIONAL_INDICATORS[:len(choices)]
+        num_choices = len(choices)
+        emojis = REGIONAL_INDICATORS[:num_choices]
+        letters = ascii_lowercase[:num_choices]
+        first, *_, last = letters
 
         description = self._format_choices(emojis, choices)
-        pluralized = pluralize(**{thing: num_choices})
-        field_value = 'Please click one of the reactions below.'
+        pluralized = pluralize(**{thing: num_entries})
+        field_value = f'Please click one of the reactions below. Or type a letter from {first}-{last}'
         embed = (discord.Embed(colour=0x00FF00, description=description)
                 .set_author(name=f'{pluralized} have been found for "{arg}"')
                 .add_field(name='Instructions', value=field_value)
                 )
 
-        async def _put_reactions(message):
-            for e in emojis:
-                await message.add_reaction(e)
+        def message_check(m, s=frozenset(letters)):
+            return m.content.lower() in s
 
-        message = await ctx.send(embed=embed)
-        future = asyncio.ensure_future(_put_reactions(message))
+        thing = await prompt.prompt(embed, ctx, emojis, timeout=self.timeout,
+                                    check=message_check, delete_message=self.do_delete)
 
-        def check(reaction, user):
-            return (reaction.message.id == message.id
-                    and user.id == ctx.author.id
-                    and reaction.emoji in emojis)
-
-        try:
-            reaction, user = await ctx.bot.wait_for('reaction_add', timeout=self.timeout, check=check)
-            return choices[emojis.index(reaction.emoji)]
-        finally:
-            if not future.done():
-                future.cancel()
-
-            if self.do_delete:
-                await message.delete()
+        if isinstance(thing, discord.Message):
+            index = letters.index(thing.content.lower())
+        else:
+            index = emojis.index(thing[0].emoji)
+        return choices[index]
 
 
 class RoleSearch(commands.IDConverter, Search):

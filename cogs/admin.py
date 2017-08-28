@@ -7,7 +7,7 @@ from discord.ext import commands
 from functools import partial
 from itertools import starmap
 
-from .utils import errors, search
+from .utils import errors, prompt, search
 from .utils.converter import duration
 from .utils.context_managers import redirect_exception, temp_attr, temp_message
 from .utils.database import Database
@@ -40,22 +40,18 @@ class LowerRoleSearch(search.RoleSearch, LowerRole):
 
 
 async def _warn(warning, ctx):
-    prompt = warning + "\n\n(Type `yes` or `no`)"
+    warning += "\n\n(Type `yes` or `no`)"
 
     def check(m):
-        return (m.channel == ctx.channel
-                and m.author.id == ctx.author.id
-                and m.content.lower() in {'yes', 'no', 'y', 'n'})
+        return m.content.lower() in {'yes', 'no', 'y', 'n'}
 
-    async with temp_message(ctx, prompt):
-        try:
-            answer = await ctx.bot.wait_for('message', timeout=30, check=check)
-        except asyncio.TimeoutError:
-            raise commands.BadArgument("You took too long. Aborting.")
-        else:
-            lowered = answer.content.lower()
-            if lowered not in {'yes', 'y'}:
-                raise commands.BadArgument("Aborted.")
+    try:
+        answer = await prompt.prompt(warning, ctx, timeout=30, check=check)
+    except asyncio.TimeoutError:
+        raise commands.BadArgument("You took too long. Aborting.")
+    else:
+        if answer.content.lower() not in {'yes', 'y'}:
+            raise commands.BadArgument("Aborted.")
 
 
 async def _check_role(ctx, role, thing):
