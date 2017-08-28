@@ -12,7 +12,6 @@ from discord.ext import commands
 from more_itertools import always_iterable
 
 from .utils import cache
-from .utils.compat import user_colour
 from .utils.misc import emoji_url, load_async
 
 

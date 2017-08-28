@@ -17,7 +17,7 @@ from math import log10
 from operator import attrgetter
 
 from .utils import cache, search
-from .utils.compat import url_color, user_color
+from .utils.colours import url_color, user_color
 from .utils.context_managers import redirect_exception, temp_message
 from .utils.converter import BotCommand, union
 from .utils.errors import InvalidUserArgument, ResultsNotFound
