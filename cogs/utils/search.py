@@ -159,11 +159,11 @@ class union(Search, commands.Converter):
         for searcher in self.searchers:
             try:
                 with temp_attr(searcher, 'search', self.search):
-                    entries = always_iterable(await searcher(**self.kwargs).convert(ctx, argument))
+                    entries = await searcher(**self.kwargs).convert(ctx, argument)
             except commands.BadArgument:
                 continue
             else:
-                choices.extend(entries)
+                choices.extend(always_iterable(entries))
 
         if not choices:
             type_names = (getattr(t, '__name__', t.__class__.__name__) for t in self.types)
