@@ -623,14 +623,6 @@ class Meta:
                    )
         await ctx.send(embed=av_embed)
 
-    @commands.command()
-    async def cmdhistory(self, ctx):
-        """Displays up to the last 50 commands you've input"""
-        history = self.cmd_history[ctx.author]
-        msg = (f"Your last {len(history)} commands:\n```\n{', '.join(history)}```"
-               if history else "You have not input any commands...")
-        await ctx.send(msg)
-
     @commands.command(name='cmdranks')
     async def command_ranks(self, ctx, n=10):
         """Shows the most common commands"""
