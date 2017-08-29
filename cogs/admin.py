@@ -102,6 +102,13 @@ class AutoRole(search.RoleSearch):
         return role
 
 
+class Prefix(commands.Converter):
+    async def convert(self, ctx, argument):
+        user_id = ctx.bot.user.id
+        if argument.startswith((f'<@{user_id}>', f'<@!{user_id}>')):
+            raise commands.BadArgument('That is a reserved prefix already in use.')
+        return argument
+
 class Admin:
     """Admin-only commands"""
     __aliases__ = "Administrator", "Administration"
@@ -492,7 +499,7 @@ class Admin:
 
     # ------------------------- PREFIX RELATED STUFF -------------------
 
-    @commands.group(aliases=['prefixes'])
+    @commands.group(aliases=['prefixes'], invoke_without_command=True)
     @commands.has_permissions(manage_guild=True)
     async def prefix(self, ctx):
         """Shows the prefixes that you can use in this server."""
@@ -508,10 +515,19 @@ class Admin:
                               colour=self.bot.colour, description=description)
         await ctx.send(embed=embed)
 
-    @prefix.command(name='add')
+    @prefix.command(name='add', ignore_extra=False)
     @commands.has_permissions(manage_guild=True)
-    async def add_prefix(self, ctx, *, prefix):
-        """Adds a custom prefix for this server"""
+    async def add_prefix(self, ctx, prefix: Prefix):
+        """Adds a custom prefix for this server.
+
+        To have a word prefix, you should quote it and end it with a space, e.g.
+        "hello " to set the prefix to "hello ". This is because Discord removes
+        spaces when sending messages so the spaces are not preserved.
+
+        (Unless, you want to do hellohelp or something...)
+
+        Multi-word prefixes must be quoted also.
+        """
         prefixes = self.bot.custom_prefixes.setdefault(ctx.guild, [])
         if prefix in prefixes:
             await ctx.send(f"\"{prefix}\" was already a custom prefix...")
@@ -519,10 +535,19 @@ class Admin:
             prefixes.append(prefix)
             await ctx.send(f"Successfully added prefix \"{prefix}\"!")
 
-    @prefix.command(name='remove')
+    @add_prefix.error
+    async def prefix_add_error(self, ctx, error):
+        print('handling', type(error), error)
+        if isinstance(error, commands.TooManyArguments):
+            await ctx.send("Nya~~! Too many! Go slower or put it in quotes!")
+
+    @prefix.command(name='remove', ignore_extra=False)
     @commands.has_permissions(manage_guild=True)
-    async def remove_prefix(self, ctx, *, prefix):
-        """Removes a prefix for this server"""
+    async def remove_prefix(self, ctx, prefix: Prefix):
+        """Removes a prefix for this server.
+
+        This is effectively the inverse to `{prefix}prefix add`.
+        """
         prefixes = self.bot.custom_prefixes.get(ctx.guild)
         if not prefixes:
             raise errors.InvalidUserArgument("This server doesn't use any custom prefixes")
