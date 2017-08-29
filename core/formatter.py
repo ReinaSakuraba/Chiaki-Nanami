@@ -27,7 +27,7 @@ To invite me to your server, use `->invite`, or just use this link:
 
 If you need help with something, or there's some weird issue with me, which will usually happen
 (since the owners don't tend to test me a lot), use this link to join the **Official** Chiaki Nanami Server:
-https://{0.support_invite}
+{0.support_invite}
 
 *Use `->modules` for all the modules with commands.
 Or `->commands "module"` for a list of commands for a particular module.*
