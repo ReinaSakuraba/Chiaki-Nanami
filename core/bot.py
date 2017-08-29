@@ -190,8 +190,13 @@ class Chiaki(commands.Bot):
         self.loop.create_task(self.change_game())
 
     async def on_command_error(self, ctx, error):
+        print(type(error), error, isinstance(error, commands.CheckFailure))
+        print(ctx, ctx.command)
         if isinstance(error, commands.CheckFailure) and await self.is_owner(ctx.author):
-            await ctx.reinvoke()
+            try:
+                await ctx.reinvoke()
+            except Exception as exc:
+                await ctx.command.dispatch_error(ctx, exc)
             return
 
         # command_counter['failed'] += 0 sets the 'failed' key. We don't want that.
