@@ -3,12 +3,36 @@ import contextlib
 import discord
 import inspect
 import io
+import itertools
 import textwrap
 import traceback
 
 from discord.ext import commands
 
 from .utils.context_managers import temp_attr
+
+
+def _tabulate(rows, headers=()):
+    display_rows = [list(map(str, r)) for r in rows]
+    widths = [max(map(len, column)) for column in zip(*display_rows)]
+    widths[:] = (max(len(c), w) for c, w in itertools.zip_longest(headers, widths, fillvalue=''))
+
+    sep = '+'.join('-' * w for w in widths)
+    sep = f'+{sep}+'
+
+    to_draw = [sep]
+
+    def get_entry(d):
+        elem = '|'.join(f'{e:^{w}}' for e, w in zip(d, widths))
+        return f'|{elem}|'
+
+    if headers:
+        to_draw.append(get_entry(headers))
+        to_draw.append(sep)
+
+    to_draw.extend(get_entry(row) for row in display_rows)
+    to_draw.append(sep)
+    return '\n'.join(to_draw)
 
 
 class Owner:
@@ -95,6 +119,42 @@ class Owner:
                 else:
                     self._last_result = ret
                     await ctx.send(f'```py\n{value}{ret}\n```')
+
+    @commands.command(hidden=True)
+    async def sql(self, ctx, *, query: str):
+        """Run some SQL."""
+        # the imports are here because I imagine some people would want to use
+        # this cog as a base for their other cog, and since this one is kinda
+        # odd and unnecessary for most people, I will make it easy to remove
+        # for those people.
+        from .utils.formats import pluralize
+        import time
+
+        query = self.cleanup_code(query)
+
+        is_multistatement = query.count(';') > 1
+        async with ctx.db.get_session() as session:
+            try:
+                start = time.perf_counter()
+                results = [dict(r) async for r in await session.cursor(query)]
+                dt = (time.perf_counter() - start) * 1000.0
+            except Exception:
+                return await ctx.send(f'```py\n{traceback.format_exc()}\n```')
+
+        if is_multistatement or not results:
+            return await ctx.send(f'`{dt:.2f}ms: {results}`')
+
+        print(results)
+        num_rows = len(results)
+        headers = list(results[0])
+        rendered = _tabulate((list(r.values()) for r in results), headers)
+
+        fmt = f'```\n{rendered}\n```\n*Returned {pluralize(row=num_rows)} in {dt:.2f}ms*'
+        if len(fmt) > 2000:
+            fp = io.BytesIO(fmt.encode('utf-8'))
+            await ctx.send('Too many results...', file=discord.File(fp, 'results.txt'))
+        else:
+            await ctx.send(fmt)
 
     @commands.command()
     async def botav(self, ctx, *, avatar):
