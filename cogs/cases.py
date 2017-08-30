@@ -13,6 +13,11 @@ from .utils.time import duration_units
 from .utils.timer import Scheduler, TimerEntry
 
 
+def _rreplace(s, old, new, count=1):
+    li = s.rsplit(old, count)
+    return new.join(li)
+
+
 ModAction = namedtuple('ModAction', 'repr emoji colour')
 _mod_actions = {
     'warn'    : ModAction('warned', '\N{WARNING SIGN}', 0xFFAA00),

@@ -27,10 +27,6 @@ from .utils.timer import Scheduler, TimerEntry
 def _mod_file(filename):
     return os.path.join('mod', filename)
 
-def _rreplace(s, old, new, count=1):
-    li = s.rsplit(old, count)
-    return new.join(li)
-
 def _make_entries(scheduler, data):
     print(dict(data))
     data.update(zip(data, map(TimerEntry._make, data.values())))
