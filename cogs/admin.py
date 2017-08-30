@@ -593,9 +593,6 @@ class Admin:
             del self.bot.custom_prefixes[ctx.guild]
         await ctx.send(f"Done. **{ctx.guild}** no longer has any custom prefixes")
 
-    async def on_guild_role_delete(self, role):
-        with contextlib.suppress(ValueError):
-            self.self_roles[role.guild].remove(role.id)
 
 def setup(bot):
     bot.add_cog(Admin(bot))
