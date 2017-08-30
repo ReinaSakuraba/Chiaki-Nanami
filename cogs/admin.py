@@ -1,4 +1,6 @@
 import asyncio
+import asyncqlio
+import asyncpg
 import contextlib
 import discord
 
@@ -14,11 +16,23 @@ from .utils.formats import multi_replace
 from .utils.misc import nice_time, ordinal, str_join
 
 
-def special_message(message):
-    return message if '{user}' in message else f'{{user}}{message}'
+_Table = asyncqlio.table_base()
+
+
+class SelfRoles(_Table):
+    guild_id = asyncqlio.Column(asyncqlio.BigInt)
+    role_id = asyncqlio.Column(asyncqlio.BigInt, primary_key=True, unique=True)
+
+class AutoRoles(_Table):
+    guild_id = asyncqlio.Column(asyncqlio.BigInt, primary_key=True)
+    role_id = asyncqlio.Column(asyncqlio.BigInt, primary_key=True)
 
 
 welcome_leave_message_check = partial(commands.has_permissions, manage_guild=True)
+
+
+def special_message(message):
+    return message if '{user}' in message else f'{{user}}{message}'
 
 
 class LowerRole(commands.RoleConverter):
@@ -71,14 +85,23 @@ async def _check_role(ctx, role, thing):
         await _warn(message, ctx)
 
 
+async def _get_self_roles(ctx):
+    server = ctx.guild
+    async with ctx.db.get_session() as session:
+        query = session.select.from_(SelfRoles).where(SelfRoles.guild_id == server.id)
+
+        getter = partial(discord.utils.get, server.roles)
+        roles = (getter(id=row.role_id) async for row in query)
+        # in case there are any non-existent roles
+        return [r async for r in roles if r]
+
+
 class SelfRole(search.RoleSearch):
     async def convert(self, ctx, arg):
-        # Assume this is invoked from the Admin cog, as we don't use self-roles
-        # anywhere else.
         if not ctx.guild:
             raise commands.NoPrivateMessage
 
-        self_roles = ctx.cog.get_self_roles(ctx.guild)
+        self_roles = await _get_self_roles(ctx)
         if not self_roles:
             message = ("This server has no self-assignable roles. "
                        f"Use `{ctx.prefix}asar` to add one.")
@@ -114,20 +137,12 @@ class Admin:
 
     def __init__(self, bot):
         self.bot = bot
-        self.self_roles = Database("admin/selfroles.json", default_factory=list)
-        self.auto_assign_roles = Database("admin/autoroles.json")
+        self.bot.db.bind_tables(_Table)
         self.welcome_message_config = Database("admin/onjoin.json", default_factory=dict)
         self.leave_message_config = Database("admin/onleave.json", default_factory=dict)
 
     def __local_check(self, ctx):
         return bool(ctx.guild)
-
-    def get_self_roles(self, server):
-        ids = self.self_roles[server]
-        getter = partial(discord.utils.get, server.roles)
-        roles = (getter(id=id) for id in ids)
-        # in case there are any non-existent roles
-        return list(filter(None, roles))
 
     @commands.command(name='addselfrole', aliases=['asar', ])
     @commands.has_permissions(manage_roles=True, manage_guild=True)
@@ -138,12 +153,13 @@ class Admin:
         using `{prefix}iam` or `{prefix}selfrole`
         """
         await _check_role(ctx, role, thing='a self-assignable')
-        self_roles = self.self_roles[ctx.guild]
-        if role.id in self_roles:
-            return await ctx.send("That role is already self-assignable... I think")
-
-        self_roles.append(role.id)
-        await ctx.send(f"**{role}** is now a self-assignable role!")
+        try:
+            async with ctx.db.get_session() as session:
+                await session.add(SelfRoles(guild_id=ctx.guild.id, role_id=role.id))
+        except asyncpg.UniqueViolationError:
+            await ctx.send(f'{role} is already a self-assignable role.')
+        else:
+            await ctx.send(f"**{role}** is now a self-assignable role!")
 
     @commands.command(name='removeselfrole', aliases=['rsar', ])
     @commands.has_permissions(manage_roles=True, manage_guild=True)
@@ -153,7 +169,9 @@ class Admin:
         A self-assignable role is one that you can assign to yourself
         using `{prefix}iam` or `{prefix}selfrole`
         """
-        self.self_roles[ctx.guild].remove(role.id)
+        async with ctx.db.get_session() as session:
+            await session.remove(SelfRoles(guild_id=ctx.guild.id, role_id=role.id))
+
         await ctx.send(f"**{role}** is no longer a self-assignable role!")
 
     @commands.command(name='listselfrole', aliases=['lsar'])
@@ -163,7 +181,7 @@ class Admin:
         A self-assignable role is one that you can assign to yourself
         using `{prefix}iam` or `{prefix}selfrole`
         """
-        self_roles = self.get_self_roles(ctx.guild)
+        self_roles = await _get_self_roles(ctx)
         msg = (f'List of self-assignable roles: \n{str_join(", ", self_roles)}'
                if self_roles else 'There are no self-assignable roles...')
         await ctx.send(msg)
@@ -208,18 +226,31 @@ class Admin:
 
         This can be removed with `{prefix}delautorole` or `{prefix}daar`
         """
-        self.auto_assign_roles[ctx.guild.id] = role.id
+        async with ctx.db.get_session() as session:
+            query = session.select(AutoRoles).where(AutoRoles.guild_id == ctx.guild.id)
+            auto_role = await query.first()
+
+            if auto_role is None:
+                await session.add(AutoRoles(guild_id=ctx.guild.id, role_id=role.id))
+            elif auto_role.role_id == role.id:
+                return await ctx.send("You silly baka, you've already made this auto-assignable!")
+            else:
+                auto_role.role_id = role.id
+                await session.merge(auto_role)
+
         await ctx.send(f"I'll now give new members {role}. Hope that's ok with you (and them :p)")
 
     @commands.command(name='delautorole', aliases=['daar'])
     @commands.has_permissions(manage_roles=True, manage_guild=True)
     async def del_auto_assign_role(self, ctx):
-        try:
-            del self.auto_assign_roles[ctx.guild.id]
-        except KeyError:
-            await ctx.send("There's no auto-assign role here...")
-        else:
-            await ctx.send("Ok, no more auto-assign roles :(")
+        async with ctx.db.get_session() as session:
+            query = session.select(AutoRoles).where(AutoRoles.guild_id == ctx.guild.id)
+            role = await query.first()
+            if role is None:
+                return await ctx.send("There's no auto-assign role here...")
+            await session.remove(role)
+
+        await ctx.send("Ok, no more auto-assign roles :(")
 
     async def _add_auto_role(self, member):
         server = member.guild
@@ -229,7 +260,6 @@ class Admin:
 
         # TODO: respect the high verification level
         await member.add_roles(discord.Object(id=role))
-
 
     @commands.command(name='addrole', aliases=['ar'])
     @commands.has_permissions(manage_roles=True)

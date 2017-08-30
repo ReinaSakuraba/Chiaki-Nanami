@@ -1,4 +1,5 @@
 import asyncio
+import asyncqlio
 import collections
 import contextlib
 import discord
@@ -13,6 +14,7 @@ from datetime import datetime
 from discord.ext import commands
 from more_itertools import always_iterable
 
+from . import context
 from .formatter import ChiakiFormatter
 
 from cogs.utils import errors
@@ -94,6 +96,9 @@ class Chiaki(commands.Bot):
 
         self.reset_requested = False
 
+        self.db = asyncqlio.DatabaseInterface(config.postgresql)
+        self.loop.create_task(self._connect_to_db())
+
         for ext in config.extensions:
             # Errors should never pass silently, if there's a bug in an extension,
             # better to know now before the bot logs in, because a restart
@@ -101,8 +106,13 @@ class Chiaki(commands.Bot):
             # 1000 IDENTIFYs a day limit.
             self.load_extension(ext)
 
+    async def _connect_to_db(self):
+        log.info('Connecting to postgresql DB...')
+        await self.db.connect()
+
     async def close(self):
         await self.dump_databases()
+        await self.db.close()
         await super().close()
 
     def add_cog(self, cog):
@@ -173,6 +183,14 @@ class Chiaki(commands.Bot):
         proxy_msg = discord.Object(id=None)
         proxy_msg.guild = guild
         return _callable_prefix(self, proxy_msg)
+
+    async def process_commands(self, message):
+        ctx = await self.get_context(message, cls=context.Context)
+
+        if ctx.command is None:
+            return
+
+        await self.invoke(ctx)
 
     # --------- Events ----------
 
