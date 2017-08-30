@@ -514,7 +514,6 @@ class Meta:
 
         There is a per-user, 2 times per 5 seconds cooldown in order to prevent spam.
         """
-        # TODO: use GitHub
         paginator = commands.Paginator(prefix='```py')
         for line in inspect.getsourcelines(command.callback)[0]:
             # inspect.getsourcelines returns the lines with the newlines at the
