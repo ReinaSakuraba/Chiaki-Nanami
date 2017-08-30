@@ -6,6 +6,7 @@ import discord
 import functools
 import inspect
 import json
+import os
 import psutil
 import sys
 
@@ -483,15 +484,51 @@ class Meta:
         pages = ListPaginator(ctx, emojis, title=f'Emojis in {ctx.guild}', colour=self.bot.colour)
         await pages.interact()
 
-    async def _source(self, ctx, thing):
-        lines = inspect.getsourcelines(thing)[0]
-        await iterable_limit_say(lines, '', ctx=ctx, prefix='```py\n', escape_code=True)
+    @commands.command(name='githubsource', aliases=['ghsource'])
+    async def github_source(self, ctx, *, command: BotCommand = None):
+        """Displays the github link for the source code of a particular command.
 
-    # @commands.command(disabled=True)
-    async def source(self, ctx, *, cmd: BotCommand):
-        """Displays the source code for a particular command"""
+        Keep in mind that although this is less spammy. It may be inaccurate or
+        even in a completely different place if last-minute changes were applied
+        to the code and weren't pushed to GitHub.
+
+        If you truly want the most accurate code, use `{prefix}source`.
+        """
+        source_url = f'https://github.com/Ikusaba-san/Chiaki-Nanami/tree/dev'
+        if command is None: 
+            return await ctx.send(source_url)
+
+        src = command.callback.__code__
+        lines, firstlineno = inspect.getsourcelines(src)
+        lastline = firstlineno + len(lines) - 1
+        # We don't use the built-in commands so we can eliminate this branch
+        location = os.path.relpath(src.co_filename).replace('\\', '/')
+
+        url = f'<{source_url}/{location}#L{firstlineno}-L{lastline}>'
+        await ctx.send(url)
+
+    @commands.command(disabled=True)
+    @commands.cooldown(rate=2, per=5, type=commands.BucketType.user)
+    async def source(self, ctx, *, command: BotCommand):
+        """Displays the source code for a particular command.
+
+        There is a per-user, 2 times per 5 seconds cooldown in order to prevent spam.
+        """
         # TODO: use GitHub
-        await self._source(ctx, cmd.callback)
+        paginator = commands.Paginator(prefix='```py')
+        for line in inspect.getsourcelines(command.callback)[0]:
+            # inspect.getsourcelines returns the lines with the newlines at the
+            # end. However, the paginator will add it's own newlines when joining
+            # up the lines. We don't want to have double lines. So we have to
+            # strip off the ends.
+            #
+            # Also, because we prefix each page with a code block (```), we need
+            # to make sure that other triple-backticks don't prematurely end the
+            # block.
+            paginator.add_line(line.rstrip().replace('`', '\u200b`'))
+
+        for p in paginator.pages:
+            await ctx.send(p)
 
     @staticmethod
     async def _inrole(ctx, *roles, members, final='and'):
