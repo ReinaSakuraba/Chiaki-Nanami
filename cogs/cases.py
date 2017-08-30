@@ -8,7 +8,8 @@ from discord.ext import commands
 
 from .utils import cache
 from .utils.database import Database
-from .utils.misc import duration_units, emoji_url, ordinal
+from .utils.misc import emoji_url, ordinal
+from .utils.time import duration_units
 from .utils.timer import Scheduler, TimerEntry
 
 

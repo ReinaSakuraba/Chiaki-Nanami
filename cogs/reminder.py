@@ -7,9 +7,9 @@ from discord.ext import commands
 from datetime import timedelta
 
 from .utils.context_managers import redirect_exception
-from .utils.converter import duration
 from .utils.database import Database
-from .utils.misc import duration_units, emoji_url, truncate
+from .utils.misc import emoji_url, truncate
+from .utils.time import duration, duration_units
 from .utils.timer import Scheduler, TimerEntry
 
 

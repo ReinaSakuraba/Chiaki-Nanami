@@ -32,22 +32,6 @@ def parse_int(maybe_int, base=10):
         return None
 
 
-TIME_UNITS = ('week', 'day', 'hour', 'minute')
-
-def duration_units(secs):
-    m, s = divmod(secs, 60)
-    h, m = divmod(m, 60)
-    d, h = divmod(h, 24)
-    w, d = divmod(d, 7)
-    # Weeks, days, hours, and minutes are guaranteed to be integral due to being
-    # the quotient rather than the remainder, so these can be safely made to ints.
-    # The reason for the int cast is because if the seconds is a float,
-    # the other units will be floats too.
-    unit_list = [*zip(TIME_UNITS, map(int, (w, d, h, m))),
-                 ('second', round(s, 2) if s % 1 else int(s))]
-    joined = ', '.join(pluralize(**{u: n}) for u, n in unit_list if n)
-    return joined
-
 def ordinal(num):
     # pay no attention to this ugliness
     return "%d%s" % (num, "tsnrhtdd"[(num//10%10!=1)*(num%10<4)*num%10::4])

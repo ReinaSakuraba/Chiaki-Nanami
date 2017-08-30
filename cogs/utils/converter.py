@@ -1,15 +1,9 @@
 import argparse
 import discord
-import re
 
 from discord.ext import commands
 from functools import partial
 from more_itertools import grouper
-
-from .errors import InvalidUserArgument
-
-
-_pairwise = partial(grouper, 2)
 
 
 class NoBots(commands.BadArgument):
@@ -77,34 +71,6 @@ def number(s):
         except ValueError:
             continue
     raise commands.BadArgument(f"{s} is not a number.")
-
-
-DURATION_MULTIPLIERS = {
-    'y': 60 * 60 * 24 * 365, 'yr' : 60 * 60 * 24 * 365,
-    'w': 60 * 60 * 24 * 7,   'wk' : 60 * 60 * 24 * 7,
-    'd': 60 * 60 * 24,       'day': 60 * 60 * 24,
-    'h': 60 * 60,            'hr' : 60 * 60,
-    'm': 60,                 'min': 60,
-    's': 1,                  'sec': 1,
-}
-
-_time_pattern = ''.join(f'(?:([0-9]{{1,5}})({u1}|{u2}))?'
-                        for u1, u2 in _pairwise(DURATION_MULTIPLIERS))
-_time_compiled = re.compile(f'{_time_pattern}$')
-
-
-def duration(string):
-    try:
-        return float(string)
-    except ValueError as e:
-        match = _time_compiled.match(string)
-        if match is None:
-            # cannot use commands.BadArgument because on_command_error will
-            # say the command's __cause__ rather than the actual error.
-            raise InvalidUserArgument(f'{string} is not a valid time.') from e
-        no_nones = filter(None, match.groups())
-        return sum(float(amount) * DURATION_MULTIPLIERS[unit]
-                   for amount, unit in _pairwise(no_nones))
 
 
 class union(commands.Converter):

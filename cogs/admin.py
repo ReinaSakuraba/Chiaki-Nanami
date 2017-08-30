@@ -7,12 +7,11 @@ from discord.ext import commands
 from functools import partial
 from itertools import starmap
 
-from .utils import errors, prompt, search
-from .utils.converter import duration
+from .utils import errors, prompt, search, time
 from .utils.context_managers import redirect_exception, temp_attr, temp_message
 from .utils.database import Database
 from .utils.formats import multi_replace
-from .utils.misc import duration_units, nice_time, ordinal, str_join
+from .utils.misc import nice_time, ordinal, str_join
 
 
 def special_message(message):
@@ -372,12 +371,12 @@ class Admin:
         if duration is None:
             duration = db.get('delete_after')
             message = (f"I won't delete the {thing} message." if not duration else
-                       f"I will delete the {thing} message after {duration_units(duration)}.")
+                       f"I will delete the {thing} message after {time.duration_units(duration)}.")
             await ctx.send(message)
         else:
             auto_delete = duration > 0
             db['delete_after'] = duration if auto_delete else None
-            message = (f"Ok, I'm deleting the {thing} message after {duration_units(duration)}" if auto_delete else
+            message = (f"Ok, I'm deleting the {thing} message after {time.duration_units(duration)}" if auto_delete else
                        f"Ok, I won't delete the {thing} message.")
             await ctx.send(message)
 
@@ -415,7 +414,7 @@ class Admin:
 
     @welcome.command(name='delete', aliases=['del'], help=_delete_after_format.format(thing='welcome'))
     @welcome_leave_message_check()
-    async def welcome_delete(self, ctx, duration: duration = None):
+    async def welcome_delete(self, ctx, duration: time.duration = None):
         await self._delete_after_config(ctx, duration, thing='welcome')
 
     @commands.group(aliases=['bye'], invoke_without_command=True)
@@ -451,7 +450,7 @@ class Admin:
 
     @byebye.command(name='delete', aliases=['del'], help=_delete_after_format.format(thing='leave'))
     @welcome_leave_message_check()
-    async def byebye_delete(self, ctx, duration: duration = None):
+    async def byebye_delete(self, ctx, duration: time.duration = None):
         await self._delete_after_config(ctx, duration, thing='leave')
 
     async def _maybe_do_message(self, member, config, time):

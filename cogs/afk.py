@@ -6,9 +6,9 @@ from collections import defaultdict, deque
 from datetime import datetime
 from discord.ext import commands
 
+from .utils import time
 from .utils.colours import user_color
 from .utils.database import Database
-from .utils.misc import duration_units
 
 
 class AFKConfig(enum.IntEnum):
@@ -97,7 +97,7 @@ class AFK:
             self._remove_afk(author)
             await message.channel.send(f"{author.mention}, you are no longer AFK as you have messaged "
                                        f"{AFKConfig.MAX_MESSAGES} times in less than "
-                                       f"{duration_units(AFKConfig.MAX_INTERVAL)}.")
+                                       f"{time.duration_units(AFKConfig.MAX_INTERVAL)}.")
 
     async def check_user_mention(self, message):
         if not self._afk_messages_enabled(message.guild):

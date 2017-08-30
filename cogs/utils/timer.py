@@ -7,7 +7,6 @@ from collections import namedtuple
 from datetime import datetime
 from more_itertools import consume, iter_except
 
-from .misc import duration_units
 
 log = logging.getLogger(__name__)
 

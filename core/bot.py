@@ -17,7 +17,8 @@ from .formatter import ChiakiFormatter
 
 from cogs.utils import errors
 from cogs.utils.database import Database
-from cogs.utils.misc import duration_units, file_handler
+from cogs.utils.misc import file_handler
+from cogs.utils.time import duration_units
 
 # The bot's config file
 import config

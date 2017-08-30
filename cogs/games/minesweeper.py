@@ -14,8 +14,9 @@ from string import ascii_lowercase, ascii_uppercase
 from .manager import SessionManager
 
 from ..utils.converter import ranged
-from ..utils.misc import REGIONAL_INDICATORS, duration_units
+from ..utils.misc import REGIONAL_INDICATORS
 from ..utils.paginator import BaseReactionPaginator, page
+from ..utils.time import duration_units
 
 
 class MinesweeperException(Exception):

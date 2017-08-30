@@ -12,14 +12,14 @@ from datetime import datetime, timedelta
 from discord.ext import commands
 from operator import attrgetter, contains, itemgetter
 
-from .utils import errors, formats
+from .utils import errors, formats, time
 from .utils.context_managers import redirect_exception, temp_attr
-from .utils.converter import duration, in_, union
+from .utils.converter import in_, union
 from .utils.database import Database
 from .utils.json_serializers import (
     DatetimeEncoder, DequeEncoder, decode_datetime, decode_deque, union_decoder
     )
-from .utils.misc import duration_units, emoji_url, ordinal
+from .utils.misc import emoji_url, ordinal
 from .utils.paginator import ListPaginator, EmbedFieldPages
 from .utils.timer import Scheduler, TimerEntry
 
@@ -36,15 +36,6 @@ def _make_entries(scheduler, data):
     data.update(zip(data, map(TimerEntry._make, data.values())))
     for entry in data.values():
         scheduler.add_entry(entry)
-
-def _human_timedelta(dt, *, source=None):
-    if source is None:
-        source = datetime.utcnow()
-
-    delta = source - dt
-    print(source, dt, delta)
-    return duration_units(delta.total_seconds())
-
 
 class MemberID(union):
     def __init__(self):
@@ -76,7 +67,7 @@ class BannedMember(commands.Converter):
 
 
 def positive_duration(arg):
-    amount = duration(arg)
+    amount = time.duration(arg)
     if amount <= 0:
         rounded = round(amount, 2) if amount % 1 else int(amount)
         raise commands.BadArgument(f"I can't go forward {rounded} seconds. "
@@ -204,7 +195,7 @@ class Moderator:
                 return await ctx.send(message)
 
             self.slowusers[_member_key(member)] = duration
-            await ctx.send(f'{member.mention} is now in slowmode! They must wait {duration_units(duration)} '
+            await ctx.send(f'{member.mention} is now in slowmode! They must wait {time.duration_units(duration)} '
                             'between each message they send.')
         else:
             channel = ctx.channel
@@ -215,7 +206,7 @@ class Moderator:
 
             self.slowmodes[ctx.channel] = SlowmodeEntry(duration, False)
             await ctx.send(f'{channel.mention} is now in slowmode! '
-                           f'Everyone must wait {duration_units(duration)} between each message they send.')
+                           f'Everyone must wait {time.duration_units(duration)} between each message they send.')
 
     @slowmode.command(name='noimmune', aliases=['n-i'], usage=['10', '1000000000 @b1nzy#1337'])
     @commands.has_permissions(manage_messages=True)
@@ -334,13 +325,14 @@ class Moderator:
 
         The minimum is 3 members. If no number is given I'll show the last 5 members.
         """
+        human_delta = time.human_timedelta
         count = max(count, 3)
         members = heapq.nlargest(count, ctx.guild.members, key=attrgetter('joined_at'))
 
         names = map(str, members)
         values = (
-            (f'**Joined:** {_human_timedelta(member.joined_at)} ago\n'
-             f'**Created:** {_human_timedelta(member.created_at)} ago\n{"-" * 40}')
+            (f'**Joined:** {human_delta(member.joined_at)}\n'
+             f'**Created:** {human_delta(member.created_at)}\n{"-" * 40}')
             for member in members
         )
         entries = zip(names, values)
@@ -480,7 +472,7 @@ class Moderator:
         duration = punishment['duration']
         if duration is not None:
             args += duration,
-            punished_for = f' for {duration_units(duration)}'
+            punished_for = f' for {time.duration_units(duration)}'
         else:
             punished_for = f''
 
@@ -522,7 +514,7 @@ class Moderator:
 
     @commands.command(name='warnpunish', usage=['4 softban', '5 ban'])
     @commands.has_permissions(manage_messages=True, manage_guild=True)
-    async def warn_punish(self, ctx, num: int, punishment, duration: duration=None):
+    async def warn_punish(self, ctx, num: int, punishment, duration: positive_duration=None):
         """Sets the punishment a user receives upon exceeding a given warn limit.
 
         Valid punishments are:
@@ -559,12 +551,12 @@ class Moderator:
 
     @commands.command(name='warntimeout', usage=['10', '15m', '1h20m10s'])
     @commands.has_permissions(manage_messages=True, manage_guild=True)
-    async def warn_timeout(self, ctx, duration: duration):
+    async def warn_timeout(self, ctx, duration: positive_duration):
         """Sets the maximum time between the oldest warn and the most recent warn.
         If a user hits a warn limit within this timeframe, they will be punished.
         """
         self.guild_warn_config[ctx.guild]['timeout'] = duration
-        await ctx.send(f'Alright, if a user was warned within {duration_units(duration)} '
+        await ctx.send(f'Alright, if a user was warned within {time.duration_units(duration)} '
                         'after their oldest warn, bad things will happen.')
 
     @staticmethod
@@ -623,7 +615,7 @@ class Moderator:
 
     async def _default_mute_command(self, ctx, member, when, *, duration, reason):
         await self._do_mute(member, when)
-        await ctx.send(f"Done. {member.mention} will now be muted for {duration_units(duration)}... \N{ZIPPER-MOUTH FACE}")
+        await ctx.send(f"Done. {member.mention} will now be muted for {time.duration_units(duration)}... \N{ZIPPER-MOUTH FACE}")
 
     @commands.command(usage=['192060404501839872 stfu about your gf'])
     @commands.has_permissions(manage_messages=True)
@@ -653,7 +645,7 @@ class Moderator:
         else:
             when = datetime.utcfromtimestamp(entry.when)
             delta = entry.when - datetime.utcnow().timestamp()
-            await ctx.send(f'{member} will be muted for {duration_units(delta)}. '
+            await ctx.send(f'{member} will be muted for {time.duration_units(delta)}. '
                            f'They will be unmuted on {when: %c}.')
 
     @commands.command(usage=['@rjt#2336 sorry bb'])
