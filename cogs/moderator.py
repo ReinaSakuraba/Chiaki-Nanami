@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import discord
 import functools
+import heapq
 import itertools
 import json
 import os
@@ -19,7 +20,7 @@ from .utils.json_serializers import (
     DatetimeEncoder, DequeEncoder, decode_datetime, decode_deque, union_decoder
     )
 from .utils.misc import duration_units, emoji_url, ordinal
-from .utils.paginator import ListPaginator
+from .utils.paginator import ListPaginator, EmbedFieldPages
 from .utils.timer import Scheduler, TimerEntry
 
 
@@ -30,12 +31,19 @@ def _rreplace(s, old, new, count=1):
     li = s.rsplit(old, count)
     return new.join(li)
 
-
 def _make_entries(scheduler, data):
     print(dict(data))
     data.update(zip(data, map(TimerEntry._make, data.values())))
     for entry in data.values():
         scheduler.add_entry(entry)
+
+def _human_timedelta(dt, *, source=None):
+    if source is None:
+        source = datetime.utcnow()
+
+    delta = source - dt
+    print(source, dt, delta)
+    return duration_units(delta.total_seconds())
 
 
 class MemberID(union):
@@ -314,6 +322,32 @@ class Moderator:
 
         immune.clear()
         await ctx.send('Done, there are no more slowmode-immune roles.')
+
+    # ----------------------- End slowmode ---------------------
+
+    @commands.command(aliases=['newmembers', 'joined'])
+    @commands.guild_only()
+    async def newusers(self, ctx, *, count=5):
+        """Tells you the newest members of the server.
+
+        This is useful to check if any suspicious members have joined.
+
+        The minimum is 3 members. If no number is given I'll show the last 5 members.
+        """
+        count = max(count, 3)
+        members = heapq.nlargest(count, ctx.guild.members, key=attrgetter('joined_at'))
+
+        names = map(str, members)
+        values = (
+            (f'**Joined:** {_human_timedelta(member.joined_at)} ago\n'
+             f'**Created:** {_human_timedelta(member.created_at)} ago\n{"-" * 40}')
+            for member in members
+        )
+        entries = zip(names, values)
+
+        title = f'The {formats.pluralize(**{"newest members": len(members)})}'
+        pages = EmbedFieldPages(ctx, entries, lines_per_page=5, colour=0x00FF00, title=title)
+        await pages.interact()
 
     @commands.command(aliases=['clr'], usage=['', '50', '@Corrupt X#6821'])
     @commands.has_permissions(manage_messages=True)

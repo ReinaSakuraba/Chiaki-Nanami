@@ -137,7 +137,6 @@ class Meta:
     def __init__(self, bot):
         self.bot = bot
         self.cmd_history = collections.defaultdict(default_last_n())
-        self.last_members = collections.defaultdict(default_last_n())
         self.session = aiohttp.ClientSession()
         self.process = psutil.Process()
 
@@ -697,18 +696,6 @@ class Meta:
             help_lines = output.getvalue().splitlines()
             await iterable_limit_say(help_lines, ctx=ctx)
 
-    async def lastjoin(self, ctx, n: int=10):
-        """Display the last n members that have joined the server. Default is 10. Maximum is 50."""
-        if not 0 < n < 50:
-            raise InvalidUserArgument("I can only show between 1 and 50 members. Sorry. :(")
-
-        members = str_join(', ', islice(self.last_members[ctx.guild], n))
-        message = (f'These are the last {n} members that have joined the server:```\ncss{members}```'
-                   if members else "I don't think any members joined this server yet :(")
-        await ctx.send(message)
-
-    async def on_member_join(self, member):
-        self.last_members[member.guild].append(member)
 
 def setup(bot):
     if not hasattr(bot, 'command_leaderboard'):
