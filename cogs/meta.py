@@ -507,7 +507,7 @@ class Meta:
         url = f'<{source_url}/{location}#L{firstlineno}-L{lastline}>'
         await ctx.send(url)
 
-    @commands.command(disabled=True)
+    @commands.command()
     @commands.cooldown(rate=2, per=5, type=commands.BucketType.user)
     async def source(self, ctx, *, command: BotCommand):
         """Displays the source code for a particular command.
