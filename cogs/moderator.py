@@ -502,10 +502,10 @@ class Moderator:
         if not _is_valid_punishment(lowered):
             message = (f'{lowered} is not a valid punishment.\n'
                        f'Valid punishments: {", ".join(_warn_punishments)}')
-            raise errors.InvalidUserArgument(message)
+            return await ctx.send(message)
 
         if lowered in {'tempban', 'mute'} and duration is None:
-            raise errors.InvalidUserArgument(f'A duration is required for {lowered}...')
+            return await ctx.send(f'A duration is required for {lowered}...')
 
         payload = {
             'punish': lowered,
