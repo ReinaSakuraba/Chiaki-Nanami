@@ -76,13 +76,13 @@ class Reminder:
     async def cancel_reminder(self, ctx, index: int=1):
         """Cancels a running reminder with a given index. Reminders start at 1.
 
-        If no args are given, it defaults to the earliest one.
+        If an index is not given, it defaults to the one that will end first.
         """
         query = """SELECT *
                    FROM schedule
                    WHERE event = 'reminder_complete'
                    AND args_kwargs #>> '{args,0}' = $1
-                   ORDER BY created
+                   ORDER BY expires
                    OFFSET $2
                    LIMIT 1;
                 """
@@ -113,8 +113,8 @@ class Reminder:
 
     @commands.command()
     async def reminders(self, ctx):
-        """Lists all the pending reminders that you currently have."""     
-        query = """SELECT expires, args_kwargs #>> '{args,1}', args_kwargs #>> '{args,2}'
+        """Lists all the pending reminders that you currently have."""
+        query = """SELECT created, expires, args_kwargs #>> '{args,1}', args_kwargs #>> '{args,2}'
                    FROM schedule
                    WHERE event = 'reminder_complete'
                    AND args_kwargs #>> '{args,0}' = $1
@@ -134,9 +134,10 @@ class Reminder:
              .set_author(name=f'Reminders for {ctx.author}')
              )
 
-        for expires, channel_id, message in reminders:
-            em.add_field(name=f'In {human_timedelta(expires)} from now.', 
-                         value=truncate(f'<#{channel_id}>: {message}', 1024, '...'), inline=False)
+        for created, expires, channel_id, message in reminders:
+            value = f'Created {human_timedelta(created)}\n<#{channel_id}>: {message}'
+            em.add_field(name=f'In {human_timedelta(expires)} from now.',
+                         value=truncate(value, 1024, '...'), inline=False)
 
         await ctx.send(embed=em)
 
