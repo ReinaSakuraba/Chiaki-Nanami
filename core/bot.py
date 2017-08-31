@@ -190,7 +190,8 @@ class Chiaki(commands.Bot):
         if ctx.command is None:
             return
 
-        await self.invoke(ctx)
+        async with ctx.db.get_session() as ctx.session:
+            await self.invoke(ctx)
 
     # --------- Events ----------
 

@@ -3,6 +3,7 @@ import asyncqlio
 import asyncpg
 import contextlib
 import discord
+import enum
 
 from datetime import datetime
 from discord.ext import commands
@@ -26,6 +27,22 @@ class SelfRoles(_Table):
 class AutoRoles(_Table):
     guild_id = asyncqlio.Column(asyncqlio.BigInt, primary_key=True)
     role_id = asyncqlio.Column(asyncqlio.BigInt, primary_key=True)
+
+class ServerMessage(_Table, table_name='server_messages'):
+    guild_id = asyncqlio.Column(asyncqlio.BigInt, primary_key=True)
+    is_welcome = asyncqlio.Column(asyncqlio.Boolean, primary_key=True)
+    channel_id = asyncqlio.Column(asyncqlio.BigInt, default=-1, primary_key=True)
+    enabled = asyncqlio.Column(asyncqlio.Boolean, default=False)
+    delete_after = asyncqlio.Column(asyncqlio.SmallInt, default=0)
+    message_text = asyncqlio.Column(asyncqlio.String(2000), default='', nullable=True)
+
+
+class ServerMessageType(enum.Enum):
+    leave = False
+    welcome = True
+
+    def __str__(self):
+        return self.name
 
 
 welcome_leave_message_check = partial(commands.has_permissions, manage_guild=True)
@@ -87,13 +104,12 @@ async def _check_role(ctx, role, thing):
 
 async def _get_self_roles(ctx):
     server = ctx.guild
-    async with ctx.db.get_session() as session:
-        query = session.select.from_(SelfRoles).where(SelfRoles.guild_id == server.id)
+    query = ctx.session.select.from_(SelfRoles).where(SelfRoles.guild_id == server.id)
 
-        getter = partial(discord.utils.get, server.roles)
-        roles = (getter(id=row.role_id) async for row in query)
-        # in case there are any non-existent roles
-        return [r async for r in roles if r]
+    getter = partial(discord.utils.get, server.roles)
+    roles = (getter(id=row.role_id) async for row in query)
+    # in case there are any non-existent roles
+    return [r async for r in roles if r]
 
 
 class SelfRole(search.RoleSearch):
@@ -137,9 +153,7 @@ class Admin:
 
     def __init__(self, bot):
         self.bot = bot
-        self.bot.db.bind_tables(_Table)
-        self.welcome_message_config = Database("admin/onjoin.json", default_factory=dict)
-        self.leave_message_config = Database("admin/onleave.json", default_factory=dict)
+        self._md = self.bot.db.bind_tables(_Table)
 
     def __local_check(self, ctx):
         return bool(ctx.guild)
@@ -154,8 +168,7 @@ class Admin:
         """
         await _check_role(ctx, role, thing='a self-assignable')
         try:
-            async with ctx.db.get_session() as session:
-                await session.add(SelfRoles(guild_id=ctx.guild.id, role_id=role.id))
+            await ctx.session.add(SelfRoles(guild_id=ctx.guild.id, role_id=role.id))
         except asyncpg.UniqueViolationError:
             await ctx.send(f'{role} is already a self-assignable role.')
         else:
@@ -169,9 +182,7 @@ class Admin:
         A self-assignable role is one that you can assign to yourself
         using `{prefix}iam` or `{prefix}selfrole`
         """
-        async with ctx.db.get_session() as session:
-            await session.remove(SelfRoles(guild_id=ctx.guild.id, role_id=role.id))
-
+        await ctx.session.remove(SelfRoles(guild_id=ctx.guild.id, role_id=role.id))
         await ctx.send(f"**{role}** is no longer a self-assignable role!")
 
     @commands.command(name='listselfrole', aliases=['lsar'])
@@ -226,40 +237,40 @@ class Admin:
 
         This can be removed with `{prefix}delautorole` or `{prefix}daar`
         """
-        async with ctx.db.get_session() as session:
-            query = session.select(AutoRoles).where(AutoRoles.guild_id == ctx.guild.id)
-            auto_role = await query.first()
+        query = ctx.session.select(AutoRoles).where(AutoRoles.guild_id == ctx.guild.id)
+        auto_role = await query.first()
 
-            if auto_role is None:
-                await session.add(AutoRoles(guild_id=ctx.guild.id, role_id=role.id))
-            elif auto_role.role_id == role.id:
-                return await ctx.send("You silly baka, you've already made this auto-assignable!")
-            else:
-                auto_role.role_id = role.id
-                await session.merge(auto_role)
+        if auto_role is None:
+            await ctx.session.add(AutoRoles(guild_id=ctx.guild.id, role_id=role.id))
+        elif auto_role.role_id == role.id:
+            return await ctx.send("You silly baka, you've already made this auto-assignable!")
+        else:
+            auto_role.role_id = role.id
+            await ctx.session.merge(auto_role)
 
         await ctx.send(f"I'll now give new members {role}. Hope that's ok with you (and them :p)")
 
     @commands.command(name='delautorole', aliases=['daar'])
     @commands.has_permissions(manage_roles=True, manage_guild=True)
     async def del_auto_assign_role(self, ctx):
-        async with ctx.db.get_session() as session:
-            query = session.select(AutoRoles).where(AutoRoles.guild_id == ctx.guild.id)
-            role = await query.first()
-            if role is None:
-                return await ctx.send("There's no auto-assign role here...")
-            await session.remove(role)
+        query = ctx.session.select(AutoRoles).where(AutoRoles.guild_id == ctx.guild.id)
+        role = await query.first()
+        if role is None:
+            return await ctx.send("There's no auto-assign role here...")
 
+        await ctx.session.remove(role)
         await ctx.send("Ok, no more auto-assign roles :(")
 
     async def _add_auto_role(self, member):
         server = member.guild
-        role = self.auto_assign_roles.get(server)
+        async with self.bot.db.get_session() as session:
+            query = await session.select.from_(AutoRoles).where(AutoRoles.guild_id == server.id)
+            role = await query.first()
+
         if role is None:
             return
-
         # TODO: respect the high verification level
-        await member.add_roles(discord.Object(id=role))
+        await member.add_roles(discord.Object(id=role.role_id))
 
     @commands.command(name='addrole', aliases=['ar'])
     @commands.has_permissions(manage_roles=True)
@@ -360,35 +371,45 @@ class Admin:
         A number less than or equal 0 will disable automatic deletion.
         """
 
-    async def _toggle_config(self, ctx, do_thing, *, thing, text):
-        db = getattr(self, f'{thing}_message_config')[ctx.guild]
-        if do_thing is None:
-            do_thing = not db.get('enabled', False)
+    async def _get_server_message_setting(self, session, guild_id, thing):
+        query = session.select(ServerMessage).where((ServerMessage.guild_id == guild_id)
+                                                    & (ServerMessage.is_welcome == thing.value))
+        return await query.first()
 
-        print(do_thing)
-        db['enabled'] = do_thing
-        to_say = (f"Yay I will {text}" if do_thing else
+    async def _setdefault_server_message_setting(self, session, guild_id, thing):
+        config = await self._get_server_message_setting(session, guild_id, thing)
+        return config or ServerMessage(guild_id=guild_id, is_welcome=thing.value)
+
+    async def _toggle_config(self, ctx, do_thing, *, thing, text):
+        config = await self._setdefault_server_message_setting(ctx.session, ctx.guild.id, thing)    
+        config.enabled = do_thing if do_thing is not None else not config.enabled
+        await ctx.session.add(config)
+
+        to_say = (f"Yay I will {text}" if config.enabled else
                   "Oki I'll just sit in my corner then :~")
         await ctx.send(to_say)
 
     async def _message_config(self, ctx, message, *, thing):
-        db = getattr(self, f'{thing}_message_config')[ctx.guild]
+        config = await self._setdefault_server_message_setting(ctx.session, ctx.guild.id, thing)
+
         if message:
-            db['message'] = message
-            await ctx.send(f"{thing.title()} message has been set to *{message}*")
+            config.message_text = message
+            await ctx.session.add(config)
+            await ctx.send(f"{thing.name.title()} message has been set to *{message}*")
         else:
-            message = db.get('message')
+            message = config.message_text
             to_say = f"I will say {message} to the user." if message else "I won't say anything..."
             await ctx.send(to_say)
 
     async def _channel_config(self, ctx, channel, *, thing):
-        db = getattr(self, f'{thing}_message_config')[ctx.guild]
+        config = await self._setdefault_server_message_setting(ctx.session, ctx.guild.id, thing)
+
         if channel:
-            db['channel'] = channel.id
+            config.channel_id = channel.id
+            await ctx.session.add(config)
             await ctx.send(f'Ok, {channel.mention} it is then!')
         else:
-            channel_id = db.get('channel')
-            channel = self.bot.get_channel(channel_id)
+            channel = self.bot.get_channel(config.channel_id)
             if not channel:
                 message = ("I don't have a channel at the moment, "
                            f"set one with `{ctx.prefix}{ctx.command} my_channel`")
@@ -397,15 +418,17 @@ class Admin:
             await ctx.send(message)
 
     async def _delete_after_config(self, ctx, duration, *, thing):
-        db = getattr(self, f'{thing}_message_config')[ctx.guild]
+        config = await self._setdefault_server_message_setting(ctx.session, ctx.guild.id, thing)
+
         if duration is None:
-            duration = db.get('delete_after')
-            message = (f"I won't delete the {thing} message." if not duration else
+            duration = config.delete_after
+            message = (f"I won't delete the {thing} message." if not duration or duration < 0 else
                        f"I will delete the {thing} message after {time.duration_units(duration)}.")
             await ctx.send(message)
         else:
             auto_delete = duration > 0
-            db['delete_after'] = duration if auto_delete else None
+            config.delete_after = duration
+            await ctx.session.add(config)
             message = (f"Ok, I'm deleting the {thing} message after {time.duration_units(duration)}" if auto_delete else
                        f"Ok, I won't delete the {thing} message.")
             await ctx.send(message)
@@ -418,7 +441,7 @@ class Admin:
         """Sets whether or not I announce when someone joins the server.
         Specifying with no arguments will toggle it.
         """
-        await self._toggle_config(ctx, do_welcome, thing='welcome',
+        await self._toggle_config(ctx, do_welcome, thing=ServerMessageType.welcome,
                                   text='welcome all new members to the server! ^o^')
 
     @welcome.command(name='message', aliases=['msg'])
@@ -434,18 +457,18 @@ class Admin:
         `{{countord}}` = Like `{{count}}`, but as an ordinal, eg instead of `5` it becomes `5th`.
         `{{time}}`     = The date and time when the member joined.
         """
-        await self._message_config(ctx, message, thing='welcome')
+        await self._message_config(ctx, message, thing=ServerMessageType.welcome)
 
     @welcome.command(name='channel', aliases=['chnl'],
                      help=_channel_format.format(thing='greet the user'))
     @welcome_leave_message_check()
     async def welcome_channel(self, ctx, *, channel: discord.TextChannel=None):
-        await self._channel_config(ctx, channel, thing='welcome')
+        await self._channel_config(ctx, channel, thing=ServerMessageType.welcome)
 
     @welcome.command(name='delete', aliases=['del'], help=_delete_after_format.format(thing='welcome'))
     @welcome_leave_message_check()
     async def welcome_delete(self, ctx, duration: time.duration = None):
-        await self._delete_after_config(ctx, duration, thing='welcome')
+        await self._delete_after_config(ctx, duration, thing=ServerMessageType.welcome)
 
     @commands.group(aliases=['bye'], invoke_without_command=True)
     @welcome_leave_message_check()
@@ -453,7 +476,7 @@ class Admin:
         """Sets whether or not I announce when someone leaves the server.
         Specifying with no arguments will toggle it.
         """
-        await self._toggle_config(ctx, do_bye, thing='leave',
+        await self._toggle_config(ctx, do_bye, thing=ServerMessageType.leave,
                                   text='mourn the loss of members. ;-;')
 
     @byebye.command(name='message', aliases=['msg'])
@@ -470,35 +493,34 @@ class Admin:
         `{{time}}`     = The date and time when the member left the server.
         """
 
-        await self._message_config(ctx, message, thing='leave')
+        await self._message_config(ctx, message, thing=ServerMessageType.leave)
 
     @byebye.command(name='channel', aliases=['chnl'],
                     help=_channel_format.format(thing='mourn for the user'))
     @welcome_leave_message_check()
     async def byebye_channel(self, ctx, *, channel: discord.TextChannel = None):
-        await self._channel_config(ctx, channel, thing='leave')
+        await self._channel_config(ctx, channel, thing=ServerMessageType.leave)
 
     @byebye.command(name='delete', aliases=['del'], help=_delete_after_format.format(thing='leave'))
     @welcome_leave_message_check()
     async def byebye_delete(self, ctx, duration: time.duration = None):
-        await self._delete_after_config(ctx, duration, thing='leave')
+        await self._delete_after_config(ctx, duration, thing=ServerMessageType.leave)
 
-    async def _maybe_do_message(self, member, config, time):
+    async def _maybe_do_message(self, member, thing, time):
         guild = member.guild
-        config = config[member.guild]
-        if not config.get('enabled', False):
+        async with self.bot.db.get_session() as session:
+            config = await self._get_server_message_setting(session, guild.id, thing)
+        if not (config and config.enabled):
             return
 
-        message = config.get('message')
-        if not message:
-            return
-
-        channel_id = config.get('channel')
+        channel_id = config.channel_id
         channel = self.bot.get_channel(channel_id)
         if channel is None:
             return
 
-        delete_after = config.get('delete_after')
+        message = config.message_text
+        if not message:
+            return
 
         member_count = len(guild.members)
 
@@ -512,19 +534,22 @@ class Admin:
             '{time}': nice_time(time)
         }
 
+        delete_after = config.delete_after
+        if delete_after <= 0:
+            delete_after = None
 
         # Not using str.format because that will raise KeyError on anything surrounded in {}
         message = multi_replace(message, replacements)
         await channel.send(message, delete_after=delete_after)
 
     async def on_member_join(self, member):
-        await self._maybe_do_message(member, self.welcome_message_config, member.joined_at)
+        await self._maybe_do_message(member, ServerMessageType.welcome, member.joined_at)
         await self._add_auto_role(member)
 
     # Hm, this needs less repetition
     # XXX: Lower the repetition
     async def on_member_remove(self, member):
-        await self._maybe_do_message(member, self.leave_message_config, datetime.utcnow())
+        await self._maybe_do_message(member, ServerMessageType.leave, datetime.utcnow())
 
     # ------------------------- PREFIX RELATED STUFF -------------------
 
