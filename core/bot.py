@@ -5,6 +5,7 @@ import contextlib
 import discord
 import functools
 import inspect
+import json
 import logging
 import random
 import sys
@@ -20,6 +21,7 @@ from .formatter import ChiakiFormatter
 from cogs.utils import errors
 from cogs.utils.database import Database
 from cogs.utils.misc import file_handler
+from cogs.utils.scheduler import DatabaseScheduler
 from cogs.utils.time import duration_units
 
 # The bot's config file
@@ -97,6 +99,8 @@ class Chiaki(commands.Bot):
         self.reset_requested = False
 
         self.db = asyncqlio.DatabaseInterface(config.postgresql)
+        self.db_scheduler = DatabaseScheduler(self.db, timefunc=datetime.utcnow)
+        self.db_scheduler.add_callback(self._dispatch_from_scheduler)
         self.loop.create_task(self._connect_to_db())
 
         for ext in config.extensions:
@@ -106,8 +110,18 @@ class Chiaki(commands.Bot):
             # 1000 IDENTIFYs a day limit.
             self.load_extension(ext)
 
+    def _dispatch_from_scheduler(self, entry):
+        self.dispatch(entry.event, entry)
+
     async def _connect_to_db(self):
-        log.info('Connecting to postgresql DB...')
+        # Unfortunately, while DatabaseInterface.connect takes in **kwargs, and
+        # passes them to the underlying connector, the AsyncpgConnector doesn't
+        # take them AT ALL. This is a big problem for my case, because I use JSONB
+        # types, which requires the type_codec to be set first (they need to be str).
+        #
+        # As a result I have to explicitly use json.dumps when storing them,
+        # which is rather annoying, but doable, since I only use JSONs in two
+        # places (reminders and welcome/leave messages).
         await self.db.connect()
 
     async def close(self):
@@ -200,6 +214,7 @@ class Chiaki(commands.Bot):
         print(self.user.name)
         print(self.user.id)
         print('------')
+        self.db_scheduler.run()
 
         if not hasattr(self, 'appinfo'):
             self.appinfo = (await self.application_info())

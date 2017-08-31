@@ -1,16 +1,15 @@
 import contextlib
 import discord
 import itertools
+import json
 import parsedatetime
 
 from discord.ext import commands
 from datetime import timedelta
 
 from .utils.context_managers import redirect_exception
-from .utils.database import Database
 from .utils.misc import emoji_url, truncate
-from .utils.time import duration, duration_units
-from .utils.timer import Scheduler, TimerEntry
+from .utils.time import duration, human_timedelta
 
 
 MAX_REMINDERS = 10
@@ -28,28 +27,10 @@ def parse_time(time_string):
 class Reminder:
     def __init__(self, bot):
         self.bot = bot
-        self.reminder_data = Database('reminders.json', default_factory=list)
-        self.scheduler = Scheduler(bot, 'reminder_complete')
-
-        self.reminder_data.update((m_id, list(map(TimerEntry._make, v)))
-                                  for m_id, v in self.reminder_data.items())
-        for entry in itertools.chain.from_iterable(self.reminder_data.values()):
-            self.scheduler.add_entry(entry)
 
     def __unload(self):
         with contextlib.suppress(BaseException):
             self.manager.close()
-
-    def add_reminder(self, member, when, duration, channel_id, message):
-        entry = TimerEntry(when, (duration, channel_id, member.id, message))
-        self.reminder_data[member].append(entry)
-        self.scheduler.add_entry(entry)
-
-    def remove_reminder(self, entry):
-        with contextlib.suppress(ValueError):
-            self.reminder_data[entry.args[2]].remove(entry)
-        with contextlib.suppress(ValueError):
-            self.scheduler.remove_entry(entry)
 
     @staticmethod
     def _create_reminder_embed(ctx, when, message):
@@ -69,13 +50,17 @@ class Reminder:
                .set_footer(text='Set to go off at')
                )
 
+    async def _add_reminder(self, ctx, when, message):
+        args = (ctx.author.id, ctx.channel.id, message)
+        await ctx.bot.db_scheduler.add_abs(when, 'reminder_complete', args)
+        await ctx.send(embed=self._create_reminder_embed(ctx, when, message))
+
     @commands.group(invoke_without_command=True)
     async def remind(self, ctx, duration: duration, *, message: commands.clean_content='nothing'):
         """Adds a reminder that will go off after a certain amount of time."""
 
         when = ctx.message.created_at + timedelta(seconds=duration)
-        self.add_reminder(ctx.author, when.timestamp(), duration, ctx.channel.id, message)
-        await ctx.send(embed=self._create_reminder_embed(ctx, when, message))
+        await self._add_reminder(ctx, when, message)
 
     @remind.command(name='at')
     async def remind_at(self, ctx, when: parse_time, *, message: commands.clean_content='nothing'):
@@ -83,31 +68,43 @@ class Reminder:
 
         Times are based off UTC.
         """
-        delta = when - ctx.message.created_at
-        seconds = delta.total_seconds()
-
-        if seconds < 0:
+        if when < ctx.message.created_at:
             return await ctx.send("I can't go back in time for you. Sorry.")
-
-        self.add_reminder(ctx.author, when.timestamp(), seconds, ctx.channel.id, message)
-        await ctx.send(embed=self._create_reminder_embed(ctx, when, message))
+        await self._add_reminder(ctx, when, message)
 
     @remind.command(name='cancel', aliases=['del'])
-    async def cancel_reminder(self, ctx, index: int):
-        """Cancels a pending reminder with a given index."""
-        with redirect_exception((IndexError, f'{index} is either not valid, or out of range... I think.')):
-            entry = self.reminder_data[ctx.author][index - (index > 0)]
+    async def cancel_reminder(self, ctx, index: int=1):
+        """Cancels a running reminder with a given index. Reminders start at 1.
 
-        actual = index if index > 0 else index + 1 if not index else index + len(self.reminder_data[ctx.author]) + 1
-        self.remove_reminder(entry)
+        If no args are given, it defaults to the earliest one.
+        """
+        query = """SELECT *
+                   FROM schedule
+                   WHERE event = 'reminder_complete'
+                   AND args_kwargs #>> '{args,0}' = $1
+                   ORDER BY created
+                   OFFSET $2
+                   LIMIT 1;
+                """
 
-        _, channel_id, _, message = entry.args
+        # We have to go to the lowest level possible, because simply using
+        # ctx.session.cursor WILL NOT work, as it uses str.format to format
+        # the parameters, which will throw a KeyError due to the {} in the
+        # JSON operators.
+        async with ctx.db.connector.pool.acquire() as session:
+            entry = await session.fetchrow(query, str(ctx.author.id), index - 1)
+        if entry is None:
+            return await ctx.send(f'Reminder #{index} does not exist... baka...')
+
+        await ctx.bot.db_scheduler.remove(discord.Object(id=entry['id']))
+
+        _, channel_id, message = json.loads(entry['args_kwargs'])['args']
         channel = self.bot.get_channel(channel_id) or 'deleted-channel'
         # In case the channel doesn't exist anymore
         server = getattr(channel, 'guild', None)
 
-        embed = (discord.Embed(colour=0xFF0000, description=message, timestamp=entry.dt)
-                .set_author(name=f'Reminder #{actual} cancelled!', icon_url=CANCELED_URL)
+        embed = (discord.Embed(colour=0xFF0000, description=message, timestamp=entry['expires'])
+                .set_author(name=f'Reminder #{index} cancelled!', icon_url=CANCELED_URL)
                 .add_field(name='Was for', value=f'{channel} in {server}')
                 .set_footer(text='Was set to go off at')
                 )
@@ -116,45 +113,56 @@ class Reminder:
 
     @commands.command()
     async def reminders(self, ctx):
-        """Lists all the pending reminders that you currently have."""
-        reminders = self.reminder_data.get(ctx.author)
+        """Lists all the pending reminders that you currently have."""     
+        query = """SELECT expires, args_kwargs #>> '{args,1}', args_kwargs #>> '{args,2}'
+                   FROM schedule
+                   WHERE event = 'reminder_complete'
+                   AND args_kwargs #>> '{args,0}' = $1
+                   ORDER BY expires;
+                """
+        # We have to go to the lowest level possible, because simply using
+        # ctx.session.cursor WILL NOT work, as it uses str.format to format
+        # the parameters, which will throw a KeyError due to the {} in the
+        # JSON operators.
+        async with ctx.db.connector.pool.acquire() as session:
+            reminders = await session.fetch(query, str(ctx.author.id))
+
         if not reminders:
-            return await ctx.send('You have no pending reminders...')
+            return await ctx.send("You have no reminders at the moment.")
 
-        embed = (discord.Embed(colour=self.bot.colour)
-                .set_author(name=f'Reminders for {ctx.author}')
-                )
+        em = (discord.Embed(colour=self.bot.colour)
+             .set_author(name=f'Reminders for {ctx.author}')
+             )
 
-        for i, entry in enumerate(self.reminder_data[ctx.author][:], start=1):
-            _, channel_id, _, message = entry.args
-            channel = self.bot.get_channel(channel_id)
-            name = f'{i}. For {channel} from {channel.guild}'
-            value = f'Finishes in {entry.dt :%c}\n"{truncate(message, 20, "...")}"'
-            embed.add_field(name=name, value=value, inline=False)
+        for expires, channel_id, message in reminders:
+            em.add_field(name=f'In {human_timedelta(expires)} from now.', 
+                         value=truncate(f'<#{channel_id}>: {message}', 1024, '...'), inline=False)
 
-        await ctx.send(embed=embed)
+        await ctx.send(embed=em)
 
     async def on_reminder_complete(self, timer):
-        duration, channel_id, user_id, message = timer.args
-        human_delta = duration_units(duration)
+        user_id, channel_id, message = timer.args
+        human_delta = human_timedelta(timer.created)
         channel = self.bot.get_channel(channel_id)
+        if channel is None:
+            # rip
+            return
+
         user = self.bot.get_user(user_id)
 
         is_private = isinstance(channel, discord.abc.PrivateChannel)
         destination_format = ('Direct Message' if is_private else f'#{channel} in {channel.guild}!')
-        embed = (discord.Embed(description=message, colour=0x00ff00, timestamp=timer.dt)
+        embed = (discord.Embed(description=message, colour=0x00ff00, timestamp=timer.utc)
                 .set_author(name=f'Reminder for {destination_format}', icon_url=ALARM_CLOCK_URL)
-                .set_footer(text=f'From {human_delta} ago. ')
+                .set_footer(text=f'From {human_delta}.')
                 )
 
         with contextlib.suppress(discord.HTTPException):
             await user.send(embed=embed)
         try:
             await channel.send(f"<@{user_id}>", embed=embed)
-        except discord.HTTPException:
+        except discord.HTTPException:  # can't embed
             await channel.send(f'<@{user_id}> {human_delta} ago you wanted to be reminded of {message}')
-        finally:
-            self.remove_reminder(timer)
 
 
 def setup(bot):
