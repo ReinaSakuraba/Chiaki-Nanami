@@ -77,6 +77,8 @@ class Reminder:
         """Cancels a running reminder with a given index. Reminders start at 1.
 
         If an index is not given, it defaults to the one that will end first.
+        
+        You can't cancel reminders that you've set to go off in 30 seconds or less.
         """
         query = """SELECT *
                    FROM schedule
@@ -91,8 +93,8 @@ class Reminder:
         # ctx.session.cursor WILL NOT work, as it uses str.format to format
         # the parameters, which will throw a KeyError due to the {} in the
         # JSON operators.
-        async with ctx.db.connector.pool.acquire() as session:
-            entry = await session.fetchrow(query, str(ctx.author.id), index - 1)
+        session = ctx.session.transaction.acquired_connection
+        entry = await session.fetchrow(query, str(ctx.author.id), index - 1)
         if entry is None:
             return await ctx.send(f'Reminder #{index} does not exist... baka...')
 
@@ -113,7 +115,10 @@ class Reminder:
 
     @commands.command()
     async def reminders(self, ctx):
-        """Lists all the pending reminders that you currently have."""
+        """Lists all the pending reminders that you currently have.
+
+        Reminder that you've set to go off in 30 seconds or less will not be shown, however.
+        """
         query = """SELECT created, expires, args_kwargs #>> '{args,1}', args_kwargs #>> '{args,2}'
                    FROM schedule
                    WHERE event = 'reminder_complete'
@@ -124,8 +129,8 @@ class Reminder:
         # ctx.session.cursor WILL NOT work, as it uses str.format to format
         # the parameters, which will throw a KeyError due to the {} in the
         # JSON operators.
-        async with ctx.db.connector.pool.acquire() as session:
-            reminders = await session.fetch(query, str(ctx.author.id))
+        session = ctx.session.transaction.acquired_connection
+        reminders = await session.fetchrow(query, str(ctx.author.id))
 
         if not reminders:
             return await ctx.send("You have no reminders at the moment.")

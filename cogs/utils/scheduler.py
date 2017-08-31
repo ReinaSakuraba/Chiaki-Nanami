@@ -38,11 +38,28 @@ class _Entry(collections.namedtuple('_Entry', 'time event args kwargs created id
             return t
         return datetime.datetime.utcfromtimestamp(t)
 
+    @property
+    def seconds(self):
+        delta = self.time - self.created
+        if isinstance(delta, datetime.timedelta):
+            delta = delta.total_seconds()
+
+        return delta
+
+    @property
+    def short(self):
+        """Returns True if the event is "short".
+
+        A short event gives an optimization opportunity, it doesn't have to be
+        sorted, in the queue or database. Instead, a Task can be created where
+        it sleeps for a period of time before being dispatched.
+        """
+        return self.seconds <= 30
 
 class BaseScheduler:
     """Manages timing related things.
 
-    Unlike the scheduler in sched.py, this is designed for asyncio coroutines.
+    Unlike the scheduler in sched.py, this is designed for coroutines.
     This is why most of the public methods (adding and removing entries) are
     coroutines and must be awaited (e.g. await scheduler.add(*stuff)).
 
@@ -54,6 +71,7 @@ class BaseScheduler:
     PS. I don't claim credit for this.
     """
     MAX_SLEEP_TIME = 60 * 60 * 24
+    SHORT_TASK_DURATION = 30
 
     def __init__(self, *, loop=None, timefunc=time.monotonic):
         self.time_function = timefunc
@@ -96,11 +114,17 @@ class BaseScheduler:
                 delta -= self.MAX_SLEEP_TIME
 
             log.debug('entry %r is done, dispatching now.', timer)
-            self._dispatch()
+            self._dispatch(self._current)
 
     def _restart(self):
         self.stop()
         self.run()
+
+    async def _short_task_optimization(self, delta, event):
+        # XXX: Is it a good idea to use self._loop.call_later? It's short enough,
+        #      and self._dispatch is not a coroutine.
+        await asyncio.sleep(delta)
+        self._dispatch(event)
 
     async def add_abs(self, when, action, args=(), kwargs=None, id=None):
         """Enter a new event in the queue at an absolute time.
@@ -111,6 +135,11 @@ class BaseScheduler:
 
         kwargs = kwargs or {}
         event = _Entry(when, action, args, kwargs, None)
+        if event.short:
+            # Allow for short timer optimization
+            self._loop.create_task(self._short_task_optimization(event.seconds, event))
+            return
+
         await self._put(event)
 
         if self._current and event.time <= self._current.time:
@@ -132,14 +161,14 @@ class BaseScheduler:
         self._restart()
 
     # Callback-related things
-    def _dispatch(self):
+    def _dispatch(self, timer):
         for cb in self._callbacks:
             try:
-                cb(self._current)
+                cb(timer)
             except Exception as e:
                 log.error('Callback %r raised %r', cb, e)
                 raise
-        log.debug('All callbacks for %r have been called successfully', self._current)
+        log.debug('All callbacks for %r have been called successfully', timer)
 
     def add_callback(self, callback):
         self._callbacks.append(callback)
@@ -259,6 +288,9 @@ class DatabaseScheduler(BaseScheduler):
         # might grab the already done entry and dispatch it again.
         # We need to make sure that doesn't happen. Which is why this
         # asyncio.Event is here to keep it synchronized.
+        if getattr(entry, 'short', False):
+            # The entry was short, so there's no entry to remove in the database.
+            return 
         self._db_lock.clear()
         self._loop.create_task(self._remove(entry))
 
