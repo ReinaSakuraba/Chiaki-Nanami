@@ -264,7 +264,7 @@ class Admin:
     async def _add_auto_role(self, member):
         server = member.guild
         async with self.bot.db.get_session() as session:
-            query = await session.select.from_(AutoRoles).where(AutoRoles.guild_id == server.id)
+            query = session.select.from_(AutoRoles).where(AutoRoles.guild_id == server.id)
             role = await query.first()
 
         if role is None:
