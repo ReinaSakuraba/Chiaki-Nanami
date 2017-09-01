@@ -1,4 +1,5 @@
 import asyncio
+import asyncqlio
 import contextlib
 import discord
 import functools
@@ -21,17 +22,17 @@ from .utils.json_serializers import (
     )
 from .utils.misc import emoji_url, ordinal
 from .utils.paginator import ListPaginator, EmbedFieldPages
-from .utils.timer import Scheduler, TimerEntry
+
+
+_Table = asyncqlio.table_base()
+class MuteRole(_Table, table_name='muted_roles'):
+    guild_id = asyncqlio.Column(asyncqlio.BigInt, primary_key=True)
+    role_id = asyncqlio.Column(asyncqlio.BigInt)
 
 
 def _mod_file(filename):
     return os.path.join('mod', filename)
 
-def _make_entries(scheduler, data):
-    print(dict(data))
-    data.update(zip(data, map(TimerEntry._make, data.values())))
-    for entry in data.values():
-        scheduler.add_entry(entry)
 
 class MemberID(union):
     def __init__(self):
@@ -107,6 +108,7 @@ _default_warn_config = {
 class Moderator:
     def __init__(self, bot):
         self.bot = bot
+        self._md = self.bot.db.bind_tables(_Table)
 
         # Current statuses
         self.current_slowmodes = defaultdict(dict)
@@ -116,15 +118,7 @@ class Moderator:
         self.guild_warn_config = Database(_mod_file('warnconfig.json'), default_factory=_default_warn_config.copy)
         self.warn_log = Database(_mod_file('warnlog.json'), default_factory=deque, encoder=WarnEncoder, object_hook=warn_hook)
         self.raids = Database(_mod_file('raids.json'))
-        self.mutes = Database(_mod_file('mutes.json'))
-        self.tempbans = Database(_mod_file('tempbans.json'))
         self.muted_roles = Database(_mod_file('muted_roles.json'), default_factory=None)
-
-        self.mute_scheduler = Scheduler(bot, 'mute_end')
-        self.tempban_scheduler = Scheduler(bot, 'tempban_end')
-
-        _make_entries(self.mute_scheduler, self.mutes)
-        _make_entries(self.tempban_scheduler, self.tempbans)
 
         self.slowmodes = Database(_mod_file('slowmode.json'))
         self.slowusers = Database(_mod_file('slow-users.json'))
@@ -562,26 +556,33 @@ class Moderator:
         if member.id == ctx.bot.user.id:
             raise errors.InvalidUserArgument("Hey, what did I do??")
 
-    async def _create_muted_role(self, server):
-        role = await server.create_role(name='Chiaki-Muted', colour=discord.Colour.red())
-        await self._regen_muted_role_perms(role, *server.channels)
-
-        self.muted_roles[str(server.id)] = role.id
-        # Explicit dump to make sure the roles get updated
-        await self.muted_roles.dump()
-        return role
-
-    def _get_muted_role(self, server):
-        if server is None:
+    async def _get_muted_role(self, guild):
+        async with self.bot.db.get_session() as session:
+            row = await session.select.from_(MuteRole).where(MuteRole.guild_id == guild.id).first()
+        if row is None:
             return None
 
-        role_id = self.muted_roles.get(str(server.id))
-        return discord.utils.get(server.roles, id=role_id)
+        return discord.utils.get(guild.roles, id=row.role_id)
+
+    async def _update_muted_role(self, guild, new_role):
+        await self._regen_muted_role_perms(new_role, *guild.channels)
+        async with self.bot.db.get_session() as session:
+            row = await session.select.from_(MuteRole).where(MuteRole.guild_id == guild.id).first()
+            if row is None:
+                row = MuteRole(guild_id=guild.id)
+
+            row.role_id = new_role.id
+            await session.add(row)
+
+    async def _create_muted_role(self, guild):
+        role = await guild.create_role(name='Chiaki-Muted', colour=discord.Colour.red())
+        await self._update_muted_role(guild, role)
+        return role
 
     async def _setdefault_muted_role(self, server):
         # Role could've been deleted, which means it will be None.
         # So we have to account for that.
-        return self._get_muted_role(server) or await self._create_muted_role(server)
+        return await self._get_muted_role(server) or await self._create_muted_role(server)
 
     @staticmethod
     async def _regen_muted_role_perms(role, *channels):
@@ -590,28 +591,14 @@ class Moderator:
         for channel in channels:
             await channel.set_permissions(role, **muted_permissions)
 
-    def put_payload(db, member, duration):
-        payload = {
-            'time': str(datetime.utcnow()),
-            'duration': duration,
-        }
-
-        db[_member_key(member)] = payload
-
     async def _do_mute(self, member, when):
         mute_role = await self._setdefault_muted_role(member.guild)
         if mute_role in member.roles:
             raise errors.InvalidUserArgument(f'{member.mention} is already been muted... ;-;')
 
         await member.add_roles(mute_role)
-
-        entry = TimerEntry(when, (member.guild.id, member.id, mute_role.id))
-        self.mute_scheduler.add_entry(entry)
-        self.mutes[_member_key(member)] = entry
-
-    async def _default_mute_command(self, ctx, member, when, *, duration, reason):
-        await self._do_mute(member, when)
-        await ctx.send(f"Done. {member.mention} will now be muted for {time.duration_units(duration)}... \N{ZIPPER-MOUTH FACE}")
+        args = (member.guild.id, member.id, mute_role.id)
+        await self.bot.db_scheduler.add_abs(when, 'mute_complete', args)
 
     @commands.command(usage=['192060404501839872 stfu about your gf'])
     @commands.has_permissions(manage_messages=True)
@@ -619,7 +606,9 @@ class Moderator:
         """Mutes a user (obviously)"""
         self._check_user(ctx, member)
         when = datetime.utcnow() + timedelta(seconds=duration)
-        await self._default_mute_command(ctx, member, when.timestamp(), duration=duration, reason=reason)
+        await self._do_mute(member, when)
+        await ctx.send(f"Done. {member.mention} will now be muted for "
+                       f"{time.human_timedelta(when)}... \N{ZIPPER-MOUTH FACE}")
 
     @commands.command(usage=['80528701850124288', '@R. Danny#6348'])
     async def mutetime(self, ctx, member: discord.Member=None):
@@ -629,45 +618,68 @@ class Moderator:
 
         # early out for the case of premature role removal,
         # either by ->unmute or manually removing the role
-        role = self._get_muted_role(ctx.guild)
+        role = await self._get_muted_role(ctx.guild)
         if role not in member.roles:
             return await ctx.send(f'{member} is not muted...')
 
-        try:
-            entry = self.mutes[_member_key(member)]
-        except KeyError:
-            await ctx.send(f"{member} has been perm-muted, you must've "
-                            "added the role manually or something...")
-        else:
-            when = datetime.utcfromtimestamp(entry.when)
-            delta = entry.when - datetime.utcnow().timestamp()
-            await ctx.send(f'{member} will be muted for {time.duration_units(delta)}. '
-                           f'They will be unmuted on {when: %c}.')
+        # This fourth condition is in case we have this scenario:
+        # - Member was muted
+        # - Mute role was changed while the user was muted
+        # - Member was muted again with the new role.
+        query = """SELECT expires
+                   FROM schedule
+                   WHERE event = 'mute_complete'
+                   AND args_kwargs #>> '{args,0}' = $1
+                   AND args_kwargs #>> '{args,1}' = $2
+                   AND args_kwargs #>> '{args,2}' = $3
+                   LIMIT 1;
+                """
+
+        # We have to go to the lowest level possible, because simply using
+        # ctx.session.cursor WILL NOT work, as it uses str.format to format
+        # the parameters, which will throw a KeyError due to the {} in the
+        # JSON operators.
+        session = ctx.session.transaction.acquired_connection
+        entry = await session.fetchrow(query, str(ctx.guild.id), str(member.id), str(role.id))
+        if entry is None:
+            return await ctx.send(f"{member} has been perm-muted, you must've "
+                                  "added the role manually or something...")
+
+        when = entry['expires']
+        await ctx.send(f'{member} has {time.human_timedelta(when)} remaining. '
+                       f'They will be unmuted on {when: %c}.')
+
+    async def _remove_time_entry(self, guild, member, session, *, event='mute_complete'):
+        query = """SELECT *
+                   FROM schedule
+                   WHERE event = $3
+                   AND args_kwargs #>> '{args,0}' = $1
+                   AND args_kwargs #>> '{args,1}' = $2
+                   ORDER BY expires
+                   LIMIT 1;
+                """
+        # We have to go to the lowest level possible, because simply using
+        # session.cursor WILL NOT work, as it uses str.format to format
+        # the parameters, which will throw a KeyError due to the {} in the
+        # JSON operators.
+        session = session.transaction.acquired_connection
+        entry = await session.fetchrow(query, str(guild.id), str(member.id), event)
+        if entry is None:
+            return None
+
+        await self.bot.db_scheduler.remove(discord.Object(id=entry['id']))
+        return entry
 
     @commands.command(usage=['@rjt#2336 sorry bb'])
     @commands.has_permissions(manage_messages=True)
     async def unmute(self, ctx, member: discord.Member, *, reason: str=None):
         """Unmutes a user (obviously)"""
-
-        # Remove the entry so that if a user needs to be muted for longer,
-        # the other mute doesn't prematurely end the longer mute.
-        try:
-            entry = self.mutes.pop(_member_key(member))
-        except KeyError:
-            pass
-        else:
-            with contextlib.suppress(ValueError):
-                self.mute_scheduler.remove_entry(entry)
-
-        # Order is important here. If the user had the muted role removed manually,
-        # it won't notify the scheduler. This can be disatrous if the user needs
-        # to be muted for a longer period of time after this. This is why the entry
-        # has to be removed BEFORE the actual role removal.
-        role = self._get_muted_role(member.guild)
+        role = await self._get_muted_role(member.guild)
         if role not in member.roles:
             return await ctx.send(f"{member} hasn't been muted!")
 
         await member.remove_roles(role)
+        await self._remove_time_entry(member.guild, member, ctx.session)
         await ctx.send(f'{member.mention} can now speak again... '
                         '\N{SMILING FACE WITH OPEN MOUTH AND COLD SWEAT}')
 
@@ -681,8 +693,7 @@ class Moderator:
         This is mainly a debug command. Which is why it's owner-only. A muted
         role is automatically created when you when first mute a user.
         """
-        mute_role = await self._setdefault_muted_role(ctx.guild)
-        await self._regen_muted_role_perms(mute_role, *ctx.guild.channels)
+        await self._setdefault_muted_role(ctx.guild)
         await ctx.send('\N{THUMBS UP SIGN}')
 
     @commands.command(name='setmuterole', aliases=['smur'], usage=['My Cooler Mute Role'])
@@ -694,14 +705,13 @@ class Moderator:
         when I attempt to mute someone. This is just in case you already have a
         muted role and would like to use that one instead.
         """
-        await self._regen_muted_role_perms(role, *ctx.guild.channels)
-        self.muted_roles[str(ctx.guild.id)] = role.id
+        await self._update_muted_role(ctx.guild, role)
         await ctx.send(f'Set the muted role to **{role}**!')
 
     @commands.command(name='muterole', aliases=['mur'])
     async def muted_role(self, ctx):
         """Gets the current muted role."""
-        role = self._get_muted_role(ctx.guild)
+        role = await self._get_muted_role(ctx.guild)
         msg = ("There is no muted role, either set one now or let me create one for you."
                if role is None else f"The current muted role is **{role}**")
         await ctx.send(msg)
@@ -734,11 +744,8 @@ class Moderator:
         await ctx.guild.ban(member, reason=reason)
         await ctx.send("Done. Please don't make me do that again...")
 
-        # gonna somehow refactor this out soon:tm:
-        when = datetime.utcnow() + timedelta(seconds=duration)
-        entry = TimerEntry(when.timestamp(), (ctx.guild.id, member.id))
-        self.tempban_scheduler.add_entry(entry)
-        self.tempbans[_member_key(member)] = entry
+        await ctx.bot.db_scheduler.add(timedelta(seconds=duration), 'tempban_complete', 
+                                       (ctx.guild.id, member.id))
 
     @commands.command(usage='@Nadeko#6685 Stealing my flowers.')
     @commands.has_permissions(ban_members=True)
@@ -748,7 +755,6 @@ class Moderator:
         You can also use this to ban someone even if they're not in the server,
         just use the ID. (not so obviously)
         """
-
         with contextlib.suppress(AttributeError):
             self._check_user(ctx, member)
 
@@ -760,8 +766,8 @@ class Moderator:
     async def unban(self, ctx, user: BannedMember, *, reason: str=None):
         """Unbans the user (obviously)"""
 
-        # Will not remove the scheduler (this is ok)
         await ctx.guild.unban(user.user)
+        await self._remove_time_entry(ctx.guild, user, ctx.session, event='tempban_complete')
         await ctx.send(f"Done. What did {user.user} do to get banned in the first place...?")
 
     @commands.command(usage='"theys f-ing up shit" @user1#0000 105635576866156544 user2#0001 user3')
@@ -817,23 +823,33 @@ class Moderator:
 
     async def on_member_join(self, member):
         # Prevent mute-evasion
-        entry = self.mutes.get(_member_key(member))
-        if not entry:
-            return
+        async with self.bot.db.get_session() as session:
+            entry = await self._remove_time_entry(member.guild, member, session)
+            if entry:
+                # mute them for an extra 60 mins
+                await self._do_mute(member, entry['expires'] + timedelta(seconds=3600))
 
-        # remove the old entry, we're gonna put a new one in its place anyway.
-        with contextlib.suppress(ValueError):
-            self.mute_scheduler.remove_entry(entry)
+    async def on_member_update(self, before, after):
+        # In the event of a manual unmute, this has to be covered.
+        removed_roles = set(before.roles).difference(after.roles)
+        if not removed_roles:
+            return  # Give an early out to save queries.
 
-        # mute them for an extra 60 mins
-        await self._do_mute(member, entry.when + 3600)
+        role = await self._get_muted_role(before.guild)
+        if role in removed_roles:
+            async with self.bot.db.get_session() as session:
+                # We need to remove this guy from the scheduler in the event of
+                # a manual unmute. Because if the guy was muted again, the old
+                # mute would still be in effect. So it would just remove the
+                # muted role.
+                await self._remove_time_entry(before.guild, before, session)
+
+    # XXX: Should I even bother to remove unbans from the scheduler in the event
+    #      of a manual unban?
 
     # -------- Custom Events (used in schedulers) -----------
 
-    async def on_mute_end(self, timer):
-        # Bot.get_guild will return None if there are any pending mutes
-        # when this cog first gets loaded. Thus we have to wait until the bot has logged in.
-        await self.bot.wait_until_ready()
+    async def on_mute_complete(self, timer):
         server_id, member_id, mute_role_id = timer.args
         server = self.bot.get_guild(server_id)
         if server is None:
@@ -851,19 +867,15 @@ class Moderator:
             return
 
         await member.remove_roles(role)
-        del self.mutes[_member_key(member)]
 
-    async def on_tempban_end(self, timer):
-        await self.bot.wait_until_ready()
-        server_id, user_id = timer.args
-        obj = discord.Object(id=user_id)
-        server = obj.guild = self.bot.get_guild(server_id)
-        if server is None:
+    async def on_tempban_complete(self, timer):
+        guild_id, user_id = timer.args
+        guild = self.bot.get_guild(guild_id)
+        if guild is None:
             # rip
             return
 
-        await server.unban(obj, reason='unban from tempban')
-        del self.tempbans[_member_key(obj)]
+        await guild.unban(discord.Object(id=user_id), reason='unban from tempban')
 
 
 def setup(bot):
