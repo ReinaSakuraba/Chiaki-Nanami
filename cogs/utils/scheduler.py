@@ -151,7 +151,7 @@ class BaseScheduler:
         This is actually the more commonly used interface.
         """
 
-        time = self.timefunc() + delay
+        time = self.time_function() + delay
         return await self.add_abs(time, action, args, kwargs, id)
 
     async def remove(self, entry):
