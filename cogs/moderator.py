@@ -1,6 +1,7 @@
 import asyncio
 import asyncqlio
 import contextlib
+import datetime
 import discord
 import functools
 import heapq
@@ -9,7 +10,6 @@ import json
 import os
 
 from collections import Counter, defaultdict, deque, namedtuple
-from datetime import datetime, timedelta
 from discord.ext import commands
 from operator import attrgetter, contains, itemgetter
 
@@ -17,17 +17,53 @@ from .utils import errors, formats, time
 from .utils.context_managers import redirect_exception, temp_attr
 from .utils.converter import in_, union
 from .utils.database import Database
-from .utils.json_serializers import (
-    DatetimeEncoder, DequeEncoder, decode_datetime, decode_deque, union_decoder
-    )
 from .utils.misc import emoji_url, ordinal
 from .utils.paginator import ListPaginator, EmbedFieldPages
 
 
+class Interval(asyncqlio.ColumnType):
+    def sql(self):
+        return 'INTERVAL'
+
+    def validate_set(self, row, value):
+        return isinstance(value, datetime.timedelta)
+
+
+class AutoIncrementInteger(asyncqlio.ColumnType):
+    """Helper type because asyncqlio doesn't support auto-increment ints at the moment."""
+    def sql(self):
+        return 'SERIAL'
+
+
 _Table = asyncqlio.table_base()
+
+class Warn(_Table, table_name='warn_entries'):
+    id = asyncqlio.Column(AutoIncrementInteger, primary_key=True)
+
+    guild_id = asyncqlio.Column(asyncqlio.BigInt)
+    user_id = asyncqlio.Column(asyncqlio.BigInt)
+    mod_id = asyncqlio.Column(asyncqlio.BigInt)
+    reason = asyncqlio.Column(asyncqlio.String(2000))
+    warned_at = asyncqlio.Column(asyncqlio.Timestamp)
+
+class WarnTimeout(_Table, table_name='warn_timeouts'):
+    guild_id = asyncqlio.Column(asyncqlio.BigInt, primary_key=True)
+    timeout = asyncqlio.Column(Interval)
+
+class WarnPunishment(_Table, table_name='warn_punishments'):
+    guild_id = asyncqlio.Column(asyncqlio.BigInt, primary_key=True)
+    warns = asyncqlio.Column(asyncqlio.SmallInt, primary_key=True)
+    type = asyncqlio.Column(asyncqlio.String(32))
+    duration = asyncqlio.Column(asyncqlio.Integer, default=0)
+
 class MuteRole(_Table, table_name='muted_roles'):
     guild_id = asyncqlio.Column(asyncqlio.BigInt, primary_key=True)
     role_id = asyncqlio.Column(asyncqlio.BigInt)
+
+# Dummy punishment class for default warn punishment
+_DummyPunishment = namedtuple('_DummyPunishment', 'warns type duration')
+_default_punishment = _DummyPunishment(warns=3, type='mute', duration=60 * 10)
+del _DummyPunishment
 
 
 def _mod_file(filename):
@@ -71,34 +107,19 @@ def positive_duration(arg):
                                     "Do you want me to go back in time or something?")
     return amount
 
+def int_duration(arg):
+    return int(positive_duration(arg))
+
 
 _warn_punishments = ['mute', 'kick', 'softban', 'tempban', 'ban',]
 _is_valid_punishment = frozenset(_warn_punishments).__contains__
 
-
-WarnEntry = namedtuple('WarnEntry', 'time user reason')
 
 SlowmodeEntry = namedtuple('SlowmodeEntry', 'duration no_immune')
 SlowmodeEntry.__new__.__defaults__ = (False, )
 
 
 _member_key = 's{0.guild.id};m{0.id}'.format
-
-
-class WarnEncoder(DequeEncoder, DatetimeEncoder):
-    pass
-
-warn_hook = union_decoder(decode_deque, decode_datetime)
-
-_default_warn_config = {
-    'timeout': 60 * 15,
-    'punishments': {
-        '2': {
-            'punish': 'mute',
-            'duration': 60 * 10,
-        }
-    }
-}
 
 
 # TODO:
@@ -115,10 +136,7 @@ class Moderator:
         self.current_slowonlys = {}
 
         # Databases / Configs
-        self.guild_warn_config = Database(_mod_file('warnconfig.json'), default_factory=_default_warn_config.copy)
-        self.warn_log = Database(_mod_file('warnlog.json'), default_factory=deque, encoder=WarnEncoder, object_hook=warn_hook)
         self.raids = Database(_mod_file('raids.json'))
-        self.muted_roles = Database(_mod_file('muted_roles.json'), default_factory=None)
 
         self.slowmodes = Database(_mod_file('slowmode.json'))
         self.slowusers = Database(_mod_file('slow-users.json'))
@@ -136,7 +154,7 @@ class Moderator:
         return any(r.id in immune_roles for r in member.roles)
 
     @staticmethod
-    async def _delete_if_rate_limited(bucket, key, duration, message):
+    async def _delete_if_rate_limited(bucket, key, duration, message):      
         time = bucket.get(key)
         if time is None or (message.created_at - time).total_seconds() >= duration:
             bucket[key] = message.created_at
@@ -416,65 +434,76 @@ class Moderator:
             await ctx.send("Couldn't delete the messages for some reason... Here's the error:\n"
                           f"```py\n{type(cause).__name__}: {cause}```")
 
+    async def _get_warn_timeout(self, session, guild_id):
+        query = session.select(WarnTimeout).where(WarnTimeout.guild_id == guild_id)
+        timeout = await query.first()
+        return timeout.timeout if timeout else datetime.timedelta(minutes=15)
+
     @commands.command(usage=['@XenaWolf#8379 NSFW'])
     @commands.has_permissions(manage_messages=True)
     async def warn(self, ctx, member: discord.Member, *, reason: str):
         """Warns a user (obviously)"""
         self._check_user(ctx, member)
-        author, current_time = ctx.author, ctx.message.created_at
-        warn_queue = self.warn_log[_member_key(member)]
+        author, current_time, guild_id = ctx.author, ctx.message.created_at, ctx.guild.id
+        timeout = await self._get_warn_timeout(ctx.session, guild_id)
+        query = (ctx.session.select.from_(Warn)
+                                   .where((Warn.guild_id == guild_id)
+                                          & (Warn.user_id == member.id)
+                                          & (Warn.warned_at > current_time - timeout)))
+        warn_queue = [r async for r in await query.all()]
 
         try:
             last_warn = warn_queue[-1]
         except IndexError:
             pass
         else:
-            retry_after = (current_time - last_warn[0]).total_seconds()
+            retry_after = (current_time - last_warn.warned_at).total_seconds()
             if retry_after <= 60:
                 # Must throw an error because return await triggers on_command_completion
                 # Which would end up logging a case even though it doesn't work.
                 raise RuntimeError(f"{member} has been warned already, try again in "
                                    f"{60 - retry_after :.2f} seconds...")
 
-        warn_queue.append(WarnEntry(current_time, author.id, reason))
-        current_warn_num = len(warn_queue)
+        entry = Warn(
+            guild_id=guild_id,
+            user_id=member.id,
+            mod_id=author.id,
+            reason=reason,
+            warned_at=current_time,
+        )
 
-        def check_warn_num():
-            if current_warn_num >= max(map(int, punishments)):
-                warn_queue.popleft()
+        await ctx.session.add(entry)
+        current_warn_number = len(warn_queue) + 1
+        query = (ctx.session.select(WarnPunishment)
+                            .where((WarnPunishment.guild_id == guild_id)
+                                   & (WarnPunishment.warns == current_warn_number)))
 
-        async def default_warn():
-            await ctx.send(f"\N{WARNING SIGN} Warned {member.mention} successfully!")
-            check_warn_num()
-
-        warn_config = self.guild_warn_config[ctx.guild]
-        punishments = warn_config['punishments']
-        punishment = punishments.get(str(current_warn_num))
+        punishment = await query.first()
         if punishment is None:
-            return await default_warn()
-
-        # warn is too old, ignore it.
-        if (current_time - warn_queue[0][0]).total_seconds() > warn_config['timeout']:
-            return await default_warn()
+            if current_warn_number == 3:
+                punishment = _default_punishment
+            else:
+                return await ctx.send(f"\N{WARNING SIGN} Warned {member.mention} successfully!")
 
         # Auto-punish the user
         args = member,
-        duration = punishment['duration']
-        if duration is not None:
+        duration = punishment.duration
+        if duration > 0:
             args += duration,
             punished_for = f' for {time.duration_units(duration)}'
         else:
             punished_for = f''
 
-        punish = punishment['punish']
+        punish = punishment.type
         punishment_command = getattr(self, punish)
-        punishment_reason = f'{reason}\n({ordinal(current_warn_num)} warning)'
+        punishment_reason = f'{reason}\n({ordinal(current_warn_number)} warning)'
         # Patch out the context's send method because we don't want it to be
         # sending the command's message.
+        # XXX: Should I suppress the error?
         with temp_attr(ctx, 'send', lambda *a, **kw: asyncio.sleep(0)):
             await ctx.invoke(punishment_command, *args, reason=punishment_reason)
 
-        message = (f"{member.mention} has {current_warn_num} warnings! "
+        message = (f"{member.mention} has {current_warn_number} warnings! "
                    f"**It's punishment time!** Today I'll {punish} you{punished_for}! "
                     "\N{SMILING FACE WITH HORNS}")
         await ctx.send(message)
@@ -485,7 +514,6 @@ class Moderator:
         ctx.command = punishment_command
         ctx.args[2:] = args
         ctx.kwargs['reason'] = punishment_reason
-        check_warn_num()
 
     @warn.error
     async def warn_error(self, ctx, error):
@@ -499,12 +527,13 @@ class Moderator:
     @commands.has_permissions(manage_messages=True)
     async def clear_warns(self, ctx, member: discord.Member):
         """Clears a member's warns."""
-        self.warn_log[_member_key(member)].clear()
+        await ctx.session.delete.table(Warn).where((Warn.guild_id == ctx.guild.id)
+                                                   & (Warn.user_id == member.id))
         await ctx.send(f"{member}'s warns have been reset!")
 
     @commands.command(name='warnpunish', usage=['4 softban', '5 ban'])
     @commands.has_permissions(manage_messages=True, manage_guild=True)
-    async def warn_punish(self, ctx, num: int, punishment, duration: positive_duration=None):
+    async def warn_punish(self, ctx, num: int, punishment, duration: int_duration=0):
         """Sets the punishment a user receives upon exceeding a given warn limit.
 
         Valid punishments are:
@@ -520,22 +549,29 @@ class Moderator:
                        f'Valid punishments: {", ".join(_warn_punishments)}')
             return await ctx.send(message)
 
-        if lowered in {'tempban', 'mute'} and duration is None:
+        if lowered in {'tempban', 'mute'} and not duration:
             return await ctx.send(f'A duration is required for {lowered}...')
 
-        payload = {
-            'punish': lowered,
-            'duration': duration,
-        }
-        self.guild_warn_config[ctx.guild]['punishments'][str(num)] = payload
-        await ctx.send(f'\N{OK HAND SIGN} if a user has been warned {num} times, I will **{lowered}** them.')
+        guild_id = ctx.guild.id
+        query = ctx.session.select(WarnPunishment).where((WarnPunishment.guild_id == guild_id)
+                                                         & (WarnPunishment.warns == num))
+        punishment = await query.first() or WarnPunishment(guild_id=guild_id, warns=num)
+        punishment.type = lowered
+        punishment.duration = int(duration)
+        await ctx.session.add(punishment)
+        await ctx.send(f'\N{OK HAND SIGN} if a user has been warned {num} times, '
+                       'I will **{lowered}** them.')
 
     @commands.command(name='warnpunishments', aliases=['warnpl'])
     async def warn_punishments(self, ctx):
         """Shows this list of warn punishments"""
-        punishments = sorted(self.guild_warn_config[ctx.guild]['punishments'].items(), key=lambda p: int(p[0]))
-        entries = (f'{num} warns => **{p["punish"].title()}**' for num, p in punishments)
+        query = ctx.session.select(WarnPunishment).where((WarnPunishment.guild_id == ctx.guild.id))
+        punishments = [(p.num, p.type.title()) async for p in await query.all()]
+        if not punishments:
+            punishments += (_default_punishment,)
+        punishments.sort()
 
+        entries = itertools.starmap('{0} => **{1}**'.format, punishments)
         pages = ListPaginator(ctx, entries, title=f'Punishments for {ctx.guild}', colour=ctx.bot.colour)
         await pages.interact()
 
@@ -545,7 +581,11 @@ class Moderator:
         """Sets the maximum time between the oldest warn and the most recent warn.
         If a user hits a warn limit within this timeframe, they will be punished.
         """
-        self.guild_warn_config[ctx.guild]['timeout'] = duration
+        query = ctx.session.select(WarnTimeout).where((WarnTimeout.guild_id == ctx.guild.id))
+        timeout = await query.first() or WarnTimeout(guild_id=ctx.guild.id)
+        timeout.timeout = datetime.timedelta(seconds=duration)
+        await ctx.session.add(timeout)
+
         await ctx.send(f'Alright, if a user was warned within {time.duration_units(duration)} '
                         'after their oldest warn, bad things will happen.')
 
@@ -605,7 +645,7 @@ class Moderator:
     async def mute(self, ctx, member: discord.Member, duration: positive_duration, *, reason: str=None):
         """Mutes a user (obviously)"""
         self._check_user(ctx, member)
-        when = datetime.utcnow() + timedelta(seconds=duration)
+        when = ctx.message.created_at + datetime.timedelta(seconds=duration)
         await self._do_mute(member, when)
         await ctx.send(f"Done. {member.mention} will now be muted for "
                        f"{time.human_timedelta(when)}... \N{ZIPPER-MOUTH FACE}")
@@ -744,7 +784,7 @@ class Moderator:
         await ctx.guild.ban(member, reason=reason)
         await ctx.send("Done. Please don't make me do that again...")
 
-        await ctx.bot.db_scheduler.add(timedelta(seconds=duration), 'tempban_complete', 
+        await ctx.bot.db_scheduler.add(datetime.timedelta(seconds=duration), 'tempban_complete',
                                        (ctx.guild.id, member.id))
 
     @commands.command(usage='@Nadeko#6685 Stealing my flowers.')
@@ -827,7 +867,7 @@ class Moderator:
             entry = await self._remove_time_entry(member.guild, member, session)
             if entry:
                 # mute them for an extra 60 mins
-                await self._do_mute(member, entry['expires'] + timedelta(seconds=3600))
+                await self._do_mute(member, entry['expires'] + datetime.timedelta(seconds=3600))
 
     async def on_member_update(self, before, after):
         # In the event of a manual unmute, this has to be covered.
