@@ -77,7 +77,7 @@ class Reminder:
         """Cancels a running reminder with a given index. Reminders start at 1.
 
         If an index is not given, it defaults to the one that will end first.
-        
+
         You can't cancel reminders that you've set to go off in 30 seconds or less.
         """
         query = """SELECT *
@@ -130,7 +130,7 @@ class Reminder:
         # the parameters, which will throw a KeyError due to the {} in the
         # JSON operators.
         session = ctx.session.transaction.acquired_connection
-        reminders = await session.fetchrow(query, str(ctx.author.id))
+        reminders = await session.fetch(query, str(ctx.author.id))
 
         if not reminders:
             return await ctx.send("You have no reminders at the moment.")
@@ -139,9 +139,10 @@ class Reminder:
              .set_author(name=f'Reminders for {ctx.author}')
              )
 
-        for created, expires, channel_id, message in reminders:
+        print(reminders)
+        for i, (created, expires, channel_id, message) in enumerate(reminders, start=1):
             value = f'Created {human_timedelta(created)}\n<#{channel_id}>: {message}'
-            em.add_field(name=f'In {human_timedelta(expires)} from now.',
+            em.add_field(name=f'{i}. In {human_timedelta(expires)} from now.',
                          value=truncate(value, 1024, '...'), inline=False)
 
         await ctx.send(embed=em)
