@@ -139,7 +139,6 @@ class Reminder:
              .set_author(name=f'Reminders for {ctx.author}')
              )
 
-        print(reminders)
         for i, (created, expires, channel_id, message) in enumerate(reminders, start=1):
             value = f'Created {human_timedelta(created)}\n<#{channel_id}>: {message}'
             em.add_field(name=f'{i}. In {human_timedelta(expires)} from now.',
