@@ -141,7 +141,8 @@ class Moderator:
         self.slowmodes = JSONFile(_mod_file('slowmode.json'))
         self.slowusers = JSONFile(_mod_file('slow-users.json'))
         # because namedtuples serialize a namedtuple as a list in JSON
-        self.slowmodes.update(zip(self.slowmodes, map(SlowmodeEntry._make, self.slowmodes.values())))
+        coro = self.slowmodes.update((k, SlowmodeEntry(*v)) for k, v in self.slowmodes.db.items())
+        self.bot.loop.create_task(coro)
 
         self.slow_immune = JSONFile(_mod_file('slow-immune-roles.json'), default_factory=list)
         self.slowmode_bucket = {}

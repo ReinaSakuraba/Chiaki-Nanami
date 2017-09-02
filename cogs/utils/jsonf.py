@@ -1,12 +1,13 @@
 import asyncio
 import contextlib
+import itertools
 import json
 import os
 import uuid
 
 
 JSONS_PATH = 'jsonfiles'
-os.makedirs(JSONS_PATH, exists_ok=True)
+os.makedirs(JSONS_PATH, exist_ok=True)
 
 
 # Shamelessly copied from Danny because he's Danny and he's cool.
@@ -38,8 +39,12 @@ class JSONFile:
     def __len__(self):
         return len(self._db)
 
+    @property
+    def db(self):
+        return self._db
+
     def load_from_file(self):
-        with contextlib.suppress(FileNotFoundError), open(self.name, 'r') as f:
+        with contextlib.suppress(FileNotFoundError), open(self._name, 'r') as f:
             self._db.update(json.load(f))
 
     async def load(self):
@@ -47,12 +52,12 @@ class JSONFile:
             await self._loop.run_in_executor(None, self.load_from_file)
 
     def _dump(self):
-        temp = f'{JSONS_PATH}/{self.name}-{uuid.uuid4()}.tmp'
+        temp = f'{JSONS_PATH}/{self._name}-{uuid.uuid4()}.tmp'
         with open(temp, 'w', encoding='utf-8') as tmp:
             json.dump(self._db.copy(), tmp, ensure_ascii=True, separators=(',', ':'))
 
         # atomically move the file
-        os.replace(temp, self.name)
+        os.replace(temp, self._name)
 
     async def save(self):
         async with self._lock:
@@ -67,3 +72,11 @@ class JSONFile:
         """Removes a config entry."""
         del self._db[self._transform_key(key)]
         await self.save()
+
+    async def update(self, mapping, **kwargs):
+        if hasattr(mapping, 'items'):
+            mapping = mapping.items()
+        to_update = ((self._transform_key(k), v) for k, v in itertools.chain(mapping, kwargs.items()))
+        self._db.update(to_update)
+        await self.save()
+
