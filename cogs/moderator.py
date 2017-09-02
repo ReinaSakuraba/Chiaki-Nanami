@@ -66,10 +66,6 @@ _default_punishment = _DummyPunishment(warns=3, type='mute', duration=60 * 10)
 del _DummyPunishment
 
 
-def _mod_file(filename):
-    return os.path.join('mod', filename)
-
-
 class MemberID(union):
     def __init__(self):
         super().__init__(discord.Member, int)
@@ -136,15 +132,15 @@ class Moderator:
         self.current_slowonlys = {}
 
         # Databases / Configs
-        self.raids = JSONFile(_mod_file('raids.json'))
+        self.raids = JSONFile('raids.json')
 
-        self.slowmodes = JSONFile(_mod_file('slowmode.json'))
-        self.slowusers = JSONFile(_mod_file('slow-users.json'))
+        self.slowmodes = JSONFile('slowmode.json')
+        self.slowusers = JSONFile('slow-users.json')
         # because namedtuples serialize a namedtuple as a list in JSON
-        coro = self.slowmodes.update((k, SlowmodeEntry(*v)) for k, v in self.slowmodes.db.items())
+        coro = self.slowmodes.update((k, SlowmodeEntry(*v)) for k, v in self.slowmodes.items())
         self.bot.loop.create_task(coro)
 
-        self.slow_immune = JSONFile(_mod_file('slow-immune-roles.json'), default_factory=list)
+        self.slow_immune = JSONFile('slow-immune-roles.json')
         self.slowmode_bucket = {}
         self.slowuser_bucket = {}
 
