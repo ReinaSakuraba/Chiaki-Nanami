@@ -198,6 +198,16 @@ class Chiaki(commands.Bot):
         proxy_msg.guild = guild
         return _callable_prefix(self, proxy_msg)
 
+    def get_raw_guild_prefixes(self, guild):
+        return self.custom_prefixes.get(guild.id, self.default_prefix)
+
+    async def set_guild_prefixes(self, guild, prefixes):
+        prefixes = prefixes or []
+        if len(prefixes) > 10:
+            raise RuntimeError("You have too many prefixes you indecisive goof!")
+
+        await self.custom_prefixes.put(guild.id, sorted(set(prefixes), reverse=True))
+
     async def process_commands(self, message):
         ctx = await self.get_context(message, cls=context.Context)
 
