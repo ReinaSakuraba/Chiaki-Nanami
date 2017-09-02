@@ -581,18 +581,13 @@ class Admin:
 
         Multi-word prefixes must be quoted also.
         """
-        prefixes = self.bot.custom_prefixes.setdefault(ctx.guild, [])
+        prefixes = self.bot.get_raw_guild_prefixes(ctx.guild)
         if prefix in prefixes:
-            await ctx.send(f"\"{prefix}\" was already a custom prefix...")
-        else:
-            prefixes.append(prefix)
-            await ctx.send(f"Successfully added prefix \"{prefix}\"!")
+            return await ctx.send(f"\"{prefix}\" was already a custom prefix...")
 
-    @add_prefix.error
-    async def prefix_add_error(self, ctx, error):
-        print('handling', type(error), error)
-        if isinstance(error, commands.TooManyArguments):
-            await ctx.send("Nya~~! Too many! Go slower or put it in quotes!")
+        prefixes += (prefix, )
+        await self.bot.set_guild_prefixes(ctx.guild, prefixes)
+        await ctx.send(f"Successfully added prefix \"{prefix}\"!")
 
     @prefix.command(name='remove', ignore_extra=False)
     @commands.has_permissions(manage_guild=True)
@@ -601,20 +596,33 @@ class Admin:
 
         This is effectively the inverse to `{prefix}prefix add`.
         """
-        prefixes = self.bot.custom_prefixes.get(ctx.guild)
+        prefixes = list(self.bot.get_raw_guild_prefixes(ctx.guild))
         if not prefixes:
-            raise errors.InvalidUserArgument("This server doesn't use any custom prefixes")
+            return await("This server doesn't use any custom prefixes")
 
-        with redirect_exception((ValueError, f"\"{prefix}\" was never a custom prefix in this server...")):
+        try:
             prefixes.remove(prefix)
+        except ValueError:
+            return await ctx.send(f'"{prefix}" isn\'t mine...')
+
+        await self.bot.set_guild_prefixes(ctx.guild, prefixes)
         await ctx.send(f"Successfully removed \"{prefix}\"!")
+
+    @add_prefix.error
+    @remove_prefix.error
+    async def prefix_error(self, ctx, error):
+        if isinstance(error, commands.TooManyArguments):
+            await ctx.send("Nya~~! Too many! Go slower or put it in quotes!")
+        else:
+            original = getattr(error, 'original', None)
+            if original:
+                await ctx.send(original)
 
     @prefix.command(name="reset")
     @commands.has_permissions(manage_guild=True)
     async def reset_prefix(self, ctx):
         """Resets the server's custom prefixes back to the default prefix ({prefix})"""
-        with redirect_exception((KeyError, f"**{ctx.guild}** never had any custom prefixes...")):
-            del self.bot.custom_prefixes[ctx.guild]
+        await self.bot.set_guild_prefixes(ctx.guild, [])
         await ctx.send(f"Done. **{ctx.guild}** no longer has any custom prefixes")
 
 
