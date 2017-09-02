@@ -12,7 +12,6 @@ from itertools import starmap
 
 from .utils import errors, prompt, search, time
 from .utils.context_managers import redirect_exception, temp_attr, temp_message
-from .utils.database import Database
 from .utils.formats import multi_replace
 from .utils.misc import nice_time, ordinal, str_join
 
