@@ -10,7 +10,7 @@ from operator import attrgetter
 
 from .manager import SessionManager
 
-from ..utils import converter, database
+from ..utils import converter, jsonf
 
 
 TRACK_LENGTH = 40
@@ -180,7 +180,7 @@ class Racing:
     def __init__(self, bot):
         self.bot = bot
         self.manager = SessionManager()
-        self.horses = database.Database('gameconfigs/race-horses.json')
+        self.horses = jsonf.JSONFile('gameconfigs/race-horses.json')
 
     @commands.group(invoke_without_command=True)
     async def race(self, ctx):

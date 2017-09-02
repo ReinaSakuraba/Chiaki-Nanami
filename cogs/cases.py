@@ -7,7 +7,7 @@ from datetime import datetime
 from discord.ext import commands
 
 from .utils import cache
-from .utils.database import Database
+from .utils.jsonf import JSONFile
 from .utils.misc import emoji_url, ordinal
 from .utils.time import duration_units
 from .utils.timer import Scheduler, TimerEntry
@@ -58,7 +58,7 @@ class Cases:
         # I'm storing the cases and the the configs separately
         # This lightens the cognitive overhead, as merging the actual cases
         # and their configs in one file would give me nothing but headaches
-        self.case_config = Database('cases/configs.json', default_factory=_case_config_default.copy)
+        self.case_config = JSONFile('cases/configs.json', default_factory=_case_config_default.copy)
         # A case has six entries
         # type     = The action that was done
         # user     = The ID of the user who did the action
@@ -69,7 +69,7 @@ class Cases:
         #
         # server is not needed, it's stored in the key.
         # Also there are message_id and channel_id that store the messages
-        self.cases = Database('cases/cases.json', default_factory=list)
+        self.cases = JSONFile('cases/cases.json', default_factory=list)
 
         # Somewhat hacky way to prevent doubling up the logs if a user uses the bot to ban.
         self._cache = set()

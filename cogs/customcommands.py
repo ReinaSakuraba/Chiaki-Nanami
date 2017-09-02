@@ -7,7 +7,7 @@ from itertools import starmap
 
 from .utils import errors
 from .utils.context_managers import temp_attr
-from .utils.database import Database
+from .utils.jsonf import JSONFile
 from .utils.paginator import ListPaginator
 
 
@@ -28,9 +28,9 @@ class CustomCommands:
 
     def __init__(self, bot):
         self.bot = bot
-        self.custom_reactions = Database("customcommands.json", default_factory=dict)
-        self.custom_reaction_pows = Database('custom-command-current-pow.json', default_factory=int)
-        self.aliases = Database('commandaliases.json', default_factory=dict)
+        self.custom_reactions = JSONFile("customcommands.json", default_factory=dict)
+        self.custom_reaction_pows = JSONFile('custom-command-current-pow.json', default_factory=int)
+        self.aliases = JSONFile('commandaliases.json', default_factory=dict)
 
     def _all_reactions(self, server):
         return ChainMap(*self.custom_reactions[server].values())

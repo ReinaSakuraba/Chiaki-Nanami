@@ -8,7 +8,7 @@ from discord.ext import commands
 
 from .utils import time
 from .utils.colours import user_color
-from .utils.database import Database
+from .utils.jsonf import JSONFile
 
 
 class AFKConfig(enum.IntEnum):
@@ -24,8 +24,8 @@ _default_afk_config = {
 class AFK:
     def __init__(self, bot):
         self.bot = bot
-        self.afks = Database("afk.json")
-        self.afk_configs = Database('afk-config.json', default_factory=_default_afk_config.copy)
+        self.afks = JSONFile("afk.json")
+        self.afk_configs = JSONFile('afk-config.json', default_factory=_default_afk_config.copy)
         self.user_message_queue = defaultdict(deque)
 
     async def _get_afk_embed(self, member):

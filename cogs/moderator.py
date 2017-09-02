@@ -16,7 +16,7 @@ from operator import attrgetter, contains, itemgetter
 from .utils import errors, formats, time
 from .utils.context_managers import redirect_exception, temp_attr
 from .utils.converter import in_, union
-from .utils.database import Database
+from .utils.jsonf import JSONFile
 from .utils.misc import emoji_url, ordinal
 from .utils.paginator import ListPaginator, EmbedFieldPages
 
@@ -136,14 +136,14 @@ class Moderator:
         self.current_slowonlys = {}
 
         # Databases / Configs
-        self.raids = Database(_mod_file('raids.json'))
+        self.raids = JSONFile(_mod_file('raids.json'))
 
-        self.slowmodes = Database(_mod_file('slowmode.json'))
-        self.slowusers = Database(_mod_file('slow-users.json'))
+        self.slowmodes = JSONFile(_mod_file('slowmode.json'))
+        self.slowusers = JSONFile(_mod_file('slow-users.json'))
         # because namedtuples serialize a namedtuple as a list in JSON
         self.slowmodes.update(zip(self.slowmodes, map(SlowmodeEntry._make, self.slowmodes.values())))
 
-        self.slow_immune = Database(_mod_file('slow-immune-roles.json'), default_factory=list)
+        self.slow_immune = JSONFile(_mod_file('slow-immune-roles.json'), default_factory=list)
         self.slowmode_bucket = {}
         self.slowuser_bucket = {}
 

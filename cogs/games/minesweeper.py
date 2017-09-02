@@ -490,7 +490,7 @@ class Minesweeper:
     def __init__(self, bot):
         self.bot = bot
         self.manager_bucket = {level: SessionManager() for level in Level}
-        # self.leaderboard = Database('minesweeperlb.json')
+        # self.leaderboard = JSONFile('minesweeperlb.json')
 
     async def _do_minesweeper(self, ctx, level, board, *, record_time=True):
         manager = self.manager_bucket[level]

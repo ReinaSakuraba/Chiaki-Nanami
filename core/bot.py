@@ -19,7 +19,7 @@ from . import context
 from .formatter import ChiakiFormatter
 
 from cogs.utils import errors
-from cogs.utils.database import Database
+from cogs.utils.jsonf import JSONFile
 from cogs.utils.misc import file_handler
 from cogs.utils.scheduler import DatabaseScheduler
 from cogs.utils.time import duration_units
@@ -92,7 +92,7 @@ class Chiaki(commands.Bot):
 
         self.message_counter = 0
         self.command_counter = collections.Counter()
-        self.custom_prefixes = Database('customprefixes.json')
+        self.custom_prefixes = JSONFile('customprefixes.json')
         self.databases = [self.custom_prefixes, ]
         self.cog_aliases = {}
 
@@ -133,7 +133,7 @@ class Chiaki(commands.Bot):
         members = inspect.getmembers(cog)
         for name, member in members:
             # add any databases
-            if isinstance(member, Database):
+            if isinstance(member, JSONFile):
                 self.add_database(member)
 
         # cog aliases
@@ -155,7 +155,7 @@ class Chiaki(commands.Bot):
         members = inspect.getmembers(cog)
         for name, member in members:
             # remove any databases
-            if isinstance(member, Database):
+            if isinstance(member, JSONFile):
                 self.remove_database(member)
 
         # remove cog aliases

@@ -11,7 +11,7 @@ from more_itertools import always_iterable
 from .utils import errors
 from .utils.context_managers import redirect_exception
 from .utils.converter import BotCommand, BotCogConverter
-from .utils.database import Database
+from .utils.jsonf import JSONFile
 from .utils.misc import emoji_url, unique
 from .utils.paginator import ListPaginator, TitleBasedPages
 
@@ -128,8 +128,8 @@ ALL_MODULES_KEY = 'All Modules'
 
 class Permissions:
     def __init__(self):
-        self.permissions = Database('permissions.json', default_factory=command_perm_default.copy)
-        self.other_permissions = Database('permissions2.json', default_factory=list)
+        self.permissions = JSONFile('permissions.json', default_factory=command_perm_default.copy)
+        self.other_permissions = JSONFile('permissions2.json', default_factory=list)
 
     def __global_check(self, ctx):
         user_id = ctx.author.id
