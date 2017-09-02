@@ -1,4 +1,5 @@
 import asyncio
+import asyncqlio
 import contextlib
 import discord
 import heapq
@@ -22,6 +23,34 @@ ANIMALS = [
     '\N{RABBIT}',
     '\N{PIG}'
 ]
+
+
+_Table = asyncqlio.table_base()
+class Racehorse(_Table, table_name='racehorses'):
+    user_id = asyncqlio.Column(asyncqlio.BigInt, primary_key=True)
+    # For custom horses we're gonna support custom emojis here.
+    # Custom emojis are in the format <:name:id>
+    # The name has a maximum length of 32 characters, while the ID is at
+    # most 21 digits long. Add that to the 2 colons and 2 angle brackets
+    # for a total 57 characters. But we'll go with 64 just to play it safe.
+    emoji = asyncqlio.Column(asyncqlio.String(64))
+
+
+async def _get_race_horse(session, member_id):
+    query = session.select.from_(Racehorse).where(Racehorse.user_id == member_id)
+    horse = await query.first()
+    return horse.emoji if horse else None
+
+
+class RacehorseEmoji(commands.Converter):
+    _converter = converter.union(discord.Emoji, str)
+
+    async def convert(self, ctx, arg):
+        emoji = await self._converter.convert(ctx, arg)
+        if isinstance(emoji, str) and len(emoji) != 1:
+            raise commands.BadArgument(f'{emoji} is not a valid emoji ;-;')
+
+        return str(emoji)
 
 
 class Racer:
@@ -62,7 +91,7 @@ class Racer:
 
 
 class RacingSession:
-    MINIMUM_REQUIRED_MEMBERS = 2
+    MINIMUM_REQUIRED_MEMBERS = 1
     # fields can only go up to 25
     MAXIMUM_REQUIRED_MEMBERS = 25
 
@@ -76,22 +105,22 @@ class RacingSession:
                       )
         self._closed = asyncio.Event()
 
-    def add_member(self, m):
-        horse = self.ctx.horses.get(m.id)
-        self.players.append(Racer(m, horse))
+    async def add_member(self, member):
+        horse = await _get_race_horse(self.ctx.session, member.id)
+        self.players.append(Racer(member, horse))
 
-    async def add_member_checked(self, member):
+    async def add_member(self, member):
         if self.is_closed():
             return await self.ctx.send('You were a little late to the party!')
         if self.already_joined(member):
             return await self.ctx.send("You're already in the race!")
 
-        self.add_member(member)
+        await self.add_member(member)
 
         if len(self.players) >= self.MAXIMUM_REQUIRED_MEMBERS:
             self._closed.set()
 
-        return await self.ctx.send(f"Okay, {member.mention}. Good luck!")
+        await self.ctx.send(f"Okay, {member.mention}. Good luck!")
 
     def already_joined(self, user):
         return any(r.user == user for r in self.players)
@@ -180,7 +209,7 @@ class Racing:
     def __init__(self, bot):
         self.bot = bot
         self.manager = SessionManager()
-        self.horses = jsonf.JSONFile('gameconfigs/race-horses.json')
+        self._md = self.bot.db.bind_tables(Racehorse)
 
     @commands.group(invoke_without_command=True)
     async def race(self, ctx):
@@ -192,9 +221,8 @@ class Racing:
         if session is not None:
             return await session.add_member_checked(ctx.author)
 
-        ctx.horses = self.horses
         with self.manager.temp_session(ctx.channel, RacingSession(ctx)) as inst:
-            inst.add_member(ctx.author)
+            await inst.add_member(ctx.author)
             await ctx.send(f'Race has started! Type {ctx.prefix}{ctx.invoked_with} to join!')
 
             with contextlib.suppress(asyncio.TimeoutError):
@@ -202,6 +230,7 @@ class Racing:
 
             if not inst.has_enough_members():
                 return await ctx.send("Can't start race. Not enough people :(")
+
             await asyncio.sleep(random.uniform(0.25, 0.75))
             await inst.run()
 
@@ -218,33 +247,37 @@ class Racing:
         await ctx.send("Ok onii-chan... I've closed it now. I'll get on to starting the race...")
 
     @race.command(name='horse')
-    async def race_horse(self, ctx, horse: converter.union(discord.Emoji, str)=None):
+    async def race_horse(self, ctx, horse: RacehorseEmoji=None):
         """Sets your horse for the race.
 
         Custom emojis are allowed. But they have to be in a server that I'm in.
         """
-        if horse is None:
-            print(self, ctx, horse)
-            horse = self.horses.get(ctx.author.id, None)
-            message = (f'{horse} will be racing on your behalf, I think.'
-                       if horse else
+        query = ctx.session.select.from_(Racehorse).where(Racehorse.user_id == ctx.author.id)
+        selection = await query.first()
+
+        if not horse:
+            message = (f'{selection.emoji} will be racing on your behalf, I think.'
+                       if selection else
                        "You don't have a horse. I'll give you one when you race though!")
             return await ctx.send(message)
-        if isinstance(horse, str) and len(horse) != 1:
-            return await ctx.send(f"{horse} isn't a valid emoji to use, sorry... ;-;")
 
-        self.horses[ctx.author.id] = str(horse)
+        selection = selection or Racehorse(member_id=ctx.author.id)
+        selection.emoji = horse
+        await ctx.session.add(selection)
+
         await ctx.send(f'Ok, you can now use {horse}')
 
     @race.command(name='nohorse')
     async def race_nohorse(self, ctx):
         """Removes your custom race."""
-        try:
-            del self.horses[ctx.author.id]
-        except KeyError:
-            await ctx.send('You never had a horse...')
-        else:
-            await ctx.send("Okai, I'll give you a horse when I can.")
+        # Gonna do two queries for the sake of user experience/dialogue here
+        query = ctx.session.select.from_(Racehorse).where(Racehorse.user_id == ctx.author.id)
+        horse = await query.first()
+        if not horse:
+            return await ctx.send('You never had a horse...')
+
+        await ctx.session.remove(horse)
+        await ctx.send("Okai, I'll give you a horse when I can.")
 
 
 def setup(bot):
