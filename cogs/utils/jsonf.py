@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import collections
 import itertools
 import json
 import os
@@ -11,7 +12,7 @@ os.makedirs(JSONS_PATH, exist_ok=True)
 
 
 # Shamelessly copied from Danny because he's Danny and he's cool.
-class JSONFile:
+class JSONFile(collections.MutableMapping):
     """The "database" object. Internally based on ``json``.
 
     Basically a wrapper for persistent data, whenever I don't want to use a DB,
@@ -30,18 +31,20 @@ class JSONFile:
         else:
             self.load_from_file()
 
-    def __contains__(self, key):
-        return self._transform_key(key) in self._db
-
     def __getitem__(self, key):
         return self._db[self._transform_key(key)]
 
+    def __setitem__(self, key, value):
+        self._db[self._transform_key(key)] = value
+
+    def __delitem__(self, key):
+        del self._db[self._transform_key(key)]
+
+    def __iter__(self):
+        return iter(self._db)
+
     def __len__(self):
         return len(self._db)
-
-    @property
-    def db(self):
-        return self._db
 
     def load_from_file(self):
         with contextlib.suppress(FileNotFoundError), open(self._name, 'r') as f:
@@ -74,9 +77,6 @@ class JSONFile:
         await self.save()
 
     async def update(self, mapping, **kwargs):
-        if hasattr(mapping, 'items'):
-            mapping = mapping.items()
-        to_update = ((self._transform_key(k), v) for k, v in itertools.chain(mapping, kwargs.items()))
-        self._db.update(to_update)
+        super().update(mapping, **kwargs)
         await self.save()
 
