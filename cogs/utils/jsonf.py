@@ -1,107 +1,69 @@
 import asyncio
 import contextlib
-import gzip
 import json
-import logging
 import os
 import uuid
 
-from .misc import file_handler
-from .transformdict import IDAbleDict
 
-DATA_PATH = 'data/'
-DB_PATH = 'databases/'
+JSONS_PATH = 'jsonfiles'
+os.makedirs(JSONS_PATH, exists_ok=True)
 
-log = logging.getLogger(f"chiaki-{__name__}")
-log.addHandler(file_handler('databases'))
 
-def _load_data_func(file_type, **kwargs):
-    def load_data(name, object_hook=None):
-        try:
-            with file_type(name, **kwargs) as f:
-                return json.load(f, object_hook=object_hook)
-        except (FileNotFoundError, json.decoder.JSONDecodeError) as e:
-            return {}
-    return load_data
+# Shamelessly copied from Danny because he's Danny and he's cool.
+class JSONFile:
+    """The "database" object. Internally based on ``json``.
 
-_load_json = _load_data_func(open, encoding='utf-8')
-_load_gzip = _load_data_func(gzip.GzipFile)
-del _load_data_func
-
-@contextlib.contextmanager
-def atomic_temp_file(name, file_type=open, **kwargs):
-    # For Pythonic-ness
-    check_dir(os.path.dirname(name))
-    tmp_name = f'{name}-{uuid.uuid4()}.tmp'
-    with file_type(tmp_name, **kwargs) as f:
-        yield f
-    os.replace(tmp_name, name)
-
-class JSONFile(IDAbleDict):
-    """Database for any persistent data.
-
-    This is basically a wrapper for the defaultdict object, that transforms any key
-    with an 'id' attribute with the actual id casted as a string.
+    Basically a wrapper for persistent data, whenever I don't want to use a DB,
+    usually because it will get queried a ton (which is always pleasant).
     """
+    _transform_key = str
 
-    # json sucks.
-    # My idea was to put the actual discord objects (such as the actual server)
-    # But that's not possible with json.
-    # Only other way is to use str or hash, which is just a waste of
-    # perfect Python dict capabilities
-    # And pickle's out of the question due to security issues.
-    # json sucks.
-    def __init__(self, name, default_factory=None, *, path=DB_PATH, mapping=(), **kwargs):
-        super().__init__(default_factory, mapping)
+    def __init__(self, name, **options):
+        self._name = name
+        self._db = {}
 
-        self.name = os.path.join(path, name)
-        self.loop = kwargs.pop('loop', None) or asyncio.get_event_loop()
-        self._dumper, self._ext, self._loader = ((self._gzip_dump, '.gz', _load_gzip)
-                                                 if kwargs.get('use_gzip', False) else
-                                                 (self._json_dump, '.json', _load_json))
-
-        # Pay no attention to this copyness
-        self.object_hook = kwargs.pop('object_hook', None)
-        self.encoder = kwargs.pop('encoder', None)
-        self.lock = asyncio.Lock()
-
-        if kwargs.get('load_later', False):
-            self.loop.create_task(self.load_later())
+        self._loop = options.pop('loop', asyncio.get_event_loop())
+        self._lock = asyncio.Lock()
+        if options.pop('load_later', False):
+            self._loop.create_task(self.load())
         else:
-            self.update(self._loader(self.file_name, self.object_hook))
+            self.load_from_file()
 
-    def __repr__(self):
-        return ("JSONFile(name='{0.name}', default_factory={1}, "
-                "object_hook={0.object_hook}, encoder={0.encoder})"
-                ).format(self, getattr(self.default_factory, "__name__", None))
+    def __contains__(self, key):
+        return self._transform_key(key) in self._db
 
-    def _json_dump(self):
-        with atomic_temp_file(self.file_name, encoding='utf-8', mode='w') as f:
-            json.dump(self, f, indent=4, sort_keys=True, separators=(',', ' : '), cls=self.encoder)
+    def __getitem__(self, key):
+        return self._db[self._transform_key(key)]
 
-    def _gzip_dump(self):
-        with atomic_temp_file(self.file_name, gzip.GzipFile, mode='wb') as out:
-            out.write(json.dumps(self).encode('utf-8') + b'\n')
+    def __len__(self):
+        return len(self._db)
 
-    async def dump(self):
-        with await self.lock:
-            await self.loop.run_in_executor(None, self._dumper)
-        log.info(f"database {self.name} successfully dumped")
+    def load_from_file(self):
+        with contextlib.suppress(FileNotFoundError), open(self.name, 'r') as f:
+            self._db.update(json.load(f))
 
-    async def load_later(self):
-        with await self.lock:
-            await self.loop.run_in_executor(None, self._loader, self.file_name, self.object_hook)
-            log.info(f"database {self.name} successfully loaded later")
+    async def load(self):
+        async with self._lock:
+            await self._loop.run_in_executor(None, self.load_from_file)
 
-    @property
-    def file_name(self):
-        return self.name + (self._ext * (not self.name.endswith(self._ext)))
+    def _dump(self):
+        temp = f'{JSONS_PATH}/{self.name}-{uuid.uuid4()}.tmp'
+        with open(temp, 'w', encoding='utf-8') as tmp:
+            json.dump(self._db.copy(), tmp, ensure_ascii=True, separators=(',', ':'))
 
-def check_dir(dir_):
-    os.makedirs(dir_, exist_ok=True)
+        # atomically move the file
+        os.replace(temp, self.name)
 
-def check_data_dir(dir_):
-    os.makedirs(DATA_PATH + dir_, exist_ok=True)
+    async def save(self):
+        async with self._lock:
+            await self._loop.run_in_executor(None, self._dump)
 
-def check_database_dir(dir_):
-    os.makedirs(DB_PATH + dir_, exist_ok=True)
+    async def put(self, key, value, *args):
+        """Edits a config entry."""
+        self._db[self._transform_key(key)] = value
+        await self.save()
+
+    async def remove(self, key):
+        """Removes a config entry."""
+        del self._db[self._transform_key(key)]
+        await self.save()
