@@ -6,10 +6,8 @@ import discord
 import functools
 import heapq
 import itertools
-import json
-import os
 
-from collections import Counter, defaultdict, deque, namedtuple
+from collections import Counter, deque, namedtuple
 from discord.ext import commands
 from operator import attrgetter, contains, itemgetter
 
@@ -111,13 +109,6 @@ _warn_punishments = ['mute', 'kick', 'softban', 'tempban', 'ban',]
 _is_valid_punishment = frozenset(_warn_punishments).__contains__
 
 
-SlowmodeEntry = namedtuple('SlowmodeEntry', 'duration no_immune')
-SlowmodeEntry.__new__.__defaults__ = (False, )
-
-
-_member_key = 's{0.guild.id};m{0.id}'.format
-
-
 # TODO:
 # - implement anti-raid protocol
 # - implement antispam
@@ -127,57 +118,45 @@ class Moderator:
         self.bot = bot
         self._md = self.bot.db.bind_tables(_Table)
 
-        # Current statuses
-        self.current_slowmodes = defaultdict(dict)
-        self.current_slowonlys = {}
-
-        # Databases / Configs
-        self.raids = JSONFile('raids.json')
-
-        self.slowmodes = JSONFile('slowmode.json')
-        self.slowusers = JSONFile('slow-users.json')
-        # because namedtuples serialize a namedtuple as a list in JSON
-        coro = self.slowmodes.update((k, SlowmodeEntry(*v)) for k, v in self.slowmodes.items())
-        self.bot.loop.create_task(coro)
+        self.slowmodes = JSONFile('slowmodes.json')
+        self.slowmode_bucket = {}
 
         self.slow_immune = JSONFile('slow-immune-roles.json')
-        self.slowmode_bucket = {}
-        self.slowuser_bucket = {}
 
     # ---------------- Slowmode ------------------
 
     def _is_slowmode_immune(self, member):
-        immune_roles = self.slow_immune.get(member.guild, [])
+        immune_roles = self.slow_immune.get(member.guild.id, [])
         return any(r.id in immune_roles for r in member.roles)
 
-    @staticmethod
-    async def _delete_if_rate_limited(bucket, key, duration, message):      
-        time = bucket.get(key)
-        if time is None or (message.created_at - time).total_seconds() >= duration:
-            bucket[key] = message.created_at
-        else:
-            await message.delete()
-
     async def check_slowmode(self, message):
-        channel = message.channel
-        config = self.slowmodes.get(channel)
-        if config is None:
+        if not message.guild:
             return
+
+        guild_id = message.guild.id
+        if guild_id not in self.slowmodes:
+            return
+
+        slowmodes = self.slowmodes[guild_id]
 
         author = message.author
-        if not config.no_immune and self._is_slowmode_immune(author):
-            return
+        is_immune = self._is_slowmode_immune(author)
+        for thing in (message.channel, author):
+            key = str(thing.id)
+            if key not in slowmodes:
+                continue
 
-        bucket = self.slowmode_bucket.setdefault(channel, {})
-        await self._delete_if_rate_limited(bucket, author, config.duration, message)
+            config = slowmodes[key]
+            if not config['no_immune'] and is_immune:
+                continue
 
-    async def check_slowuser(self, message):
-        key = f's{message.guild.id};m{message.author.id}'
-        duration = self.slowusers.get(key)
-        if duration is None:
-            return
-
-        await self._delete_if_rate_limited(self.slowuser_bucket, key, duration, message)
+            bucket = self.slowmode_bucket.setdefault(thing.id, {})
+            time = bucket.get(author.id)
+            if time is None or (message.created_at - time).total_seconds() >= config['duration']:
+                bucket[author.id] = message.created_at
+            else:
+                await message.delete()
+                break
 
     @commands.group(invoke_without_command=True, usage=['15', '99999 @Mee6#4876'])
     @commands.has_permissions(manage_messages=True)
@@ -190,28 +169,27 @@ class Moderator:
         Those with a slowmode-immune role will not be affected.
         If you want to put them in slowmode too, use `{prefix}slowmode noimmune`
         """
+        if member is None:
+            member = ctx.channel
+        elif self._is_slowmode_immune(member):
+            message = (f"{member} is immune from slowmode due to having a "
+                        "slowmode-immune role. Consider either removing the "
+                       f"role from them, using `{ctx.prefix}slowmode no-immune`, "
+                        "or giving them a harsher punishment.")
+            return await ctx.send(message)
 
-        if member is not None:
-            if self._is_slowmode_immune(member):
-                message = (f"{member} is immune from slowmode due to having a "
-                            "slowmode-immune role. Consider either removing the "
-                           f"role from them, using `{ctx.prefix}slowmode no-immune`, "
-                            "or giving them a harsher punishment.")
-                return await ctx.send(message)
+        config = self.slowmodes.get(ctx.guild.id, {})
+        slowmode = config.setdefault(str(member.id), {'no_immune': False})
+        if slowmode['no_immune']:
+            return await ctx.send(f'{member.mention} is already in **no-immune** slowmode. '
+                                   'You need to turn it off first.')
 
-            self.slowusers[_member_key(member)] = duration
-            await ctx.send(f'{member.mention} is now in slowmode! They must wait {time.duration_units(duration)} '
-                            'between each message they send.')
-        else:
-            channel = ctx.channel
-            current_slowmode = self.slowmodes.get(channel)
-            if current_slowmode and current_slowmode.no_immune:
-                return await ctx.send(f'{channel.mention} is already in **no-immune** slowmode. '
-                                       'You need to turn it off first.')
+        slowmode['duration'] = duration
+        await self.slowmodes.put(ctx.guild.id, config)
 
-            self.slowmodes[ctx.channel] = SlowmodeEntry(duration, False)
-            await ctx.send(f'{channel.mention} is now in slowmode! '
-                           f'Everyone must wait {time.duration_units(duration)} between each message they send.')
+        await ctx.send(f'{member.mention} is now in slowmode! '
+                       f'They must wait {time.duration_units(duration)} '
+                        'between each message they send.')
 
     @slowmode.command(name='noimmune', aliases=['n-i'], usage=['10', '1000000000 @b1nzy#1337'])
     @commands.has_permissions(manage_messages=True)
@@ -222,45 +200,40 @@ class Moderator:
         even those with a slowmode-immune role, which means everyone's messages
         will be deleted if they are within the duration given.
         """
-        if duration <= 0:
-            return await ctx.send(f"I can't put this in slowmode for {duration} seconds. "
-                                   "Do you want me to go back in time or something?")
         if member is None:
-            member, pronoun = ctx.channel, 'Everyone'
-            self.slowmodes[member] =  SlowmodeEntry(duration, True)
+            member, pronoun = ctx.channel, 'They'
         else:
-            pronoun = 'They'
-            self.slowusers[_member_key(member)] = duration
+            pronoun = 'Everyone'
+
+        config = self.slowmodes.get(ctx.guild.id, {})
+        slowmode = config.setdefault(str(member.id), {'no_immune': True})
+        slowmode['duration'] = duration
+        await self.slowmodes.put(ctx.guild, config)
 
         await ctx.send(f'{member.mention} is now in **no-immune** slowmode! '
-                       f'**{pronoun}** must wait {duration} after each message they send.')
+                       f'{pronoun} must wait {time.duration_units(duration)} '
+                       'after each message they send.')
 
     @slowmode.command(name='off', usage=['', '277045400375001091'])
     async def slowmode_off(self, ctx, *, member: discord.Member=None):
         """Turns off slowmode for either a member or channel."""
-        if member is None:
-            member = ctx.channel
-            del self.slowmodes[member]
-            self.slowmode_bucket.pop(member, None)
+        member = member or ctx.channel
+        config = self.slowmodes.get(ctx.guild.id, {})
+        try:
+            del config[str(member.id)]
+        except KeyError:
+            return await ctx.send(f'{member.mention} was never in slowmode... \N{NEUTRAL FACE}')
         else:
-            key = _member_key(member)
-            del self.slowusers[key]
-            self.slowuser_bucket.pop(key, None)
-        await ctx.send(f'{member.mention} is no longer in slowmode... \N{SMILING FACE WITH OPEN MOUTH AND COLD SWEAT}')
+            await self.slowmodes.put(ctx.guild.id, config)
+            self.slowmode_bucket.pop(member.id, None)
+            await ctx.send(f'{member.mention} is no longer in slowmode... '
+                           '\N{SMILING FACE WITH OPEN MOUTH AND COLD SWEAT}')
 
     @commands.command(usage=['', '277045400375001091'])
     @commands.has_permissions(manage_messages=True)
     async def slowoff(self, ctx, *, member: discord.Member=None):
         """Alias for `{prefix}slowmode off`"""
         await ctx.invoke(self.slowmode_off, member=member)
-
-    @slowmode_off.error
-    @slowoff.error
-    async def slowmode_off_error(self, ctx, error):
-        cause = error.__cause__
-        if isinstance(cause, KeyError):
-            arg = ctx.kwargs['member'] or ctx.channel
-            await ctx.send(f'{arg.mention} was never in slowmode... \N{NEUTRAL FACE}')
 
     @slowmode.group(name='immune')
     async def slowmode_immune(self, ctx):
@@ -272,7 +245,7 @@ class Moderator:
         if ctx.invoked_subcommand is not self.slowmode_immune:
             return
 
-        immune = self.slow_immune[ctx.guild]
+        immune = self.slow_immune.get(ctx.guild.id, [])
         getter = functools.partial(discord.utils.get, ctx.guild.roles)
         roles = (getter(id=id) for id in immune)
 
@@ -288,36 +261,42 @@ class Moderator:
     @commands.has_permissions(manage_guild=True)
     async def slowmode_add_immune(self, ctx, *, role: discord.Role):
         """Makes a role  immune from slowmode."""
-        immune = self.slow_immune[ctx.guild]
-        id = role.id
-        if id in immune:
+        immune = self.slow_immune.get(ctx.guild.id, [])
+        if role.id in immune:
             await ctx.send(f'**{role}** is already immune from slowmode...')
-        else:
-            immune.append(id)
-            await ctx.send(f'**{role}** is now immune from slowmode!')
+
+        immune.append(role.id)
+        await self.slow_immune.put(ctx.guild.id, immune)
+        await ctx.send(f'**{role}** is now immune from slowmode!')
 
     @slowmode_immune.command(name='remove', usage='My Not-So-Cool Immune Role')
     @commands.has_permissions(manage_guild=True)
     async def slowmode_remove_immune(self, ctx, *, role: discord.Role):
         """Makes a role no longer immune from slowmode."""
-        self.slow_immune[ctx.guild].remove(role.id)
-        await ctx.send(f'{role} is now no longer immune from slowmode')
+        immune = self.slow_immune.get(ctx.guild.id, [])
 
-    @slowmode_remove_immune.error
-    async def sm_remove_immune_error(self, ctx, error):
-        if isinstance(error.__cause__, ValueError):
-            await ctx.send(f'{ctx.kwargs["roles"]} was never immune from slowmode...')
+        try:
+            immune.remove(role.id)
+        except ValueError:
+            return await ctx.send(f'{role} was never immune from slowmode...')
+
+        if immune:
+            await self.slow_immune.put(ctx.guild.id, immune)
+        else:
+            await self.slow_immune.remove(ctx.guild.id)
+
+        await ctx.send(f'{role} is now no longer immune from slowmode')
 
     @slowmode_immune.command(name='reset')
     @commands.has_permissions(manage_guild=True)
     async def slowmode_reset_immune(self, ctx):
         """Removes all slowmode-immune roles."""
-        immune = self.slow_immune[ctx.guild]
-        if not immune:
-            return await ctx.send('What are you doing? There are no slowmode-immune roles to clear!')
-
-        immune.clear()
-        await ctx.send('Done, there are no more slowmode-immune roles.')
+        try:
+            await self.slow_immune.remove(ctx.guild.id)
+        except KeyError:
+            await ctx.send('What are you doing? There are no slowmode-immune roles to clear!')
+        else:
+            await ctx.send('Done, there are no more slowmode-immune roles.')
 
     # ----------------------- End slowmode ---------------------
 
@@ -847,9 +826,6 @@ class Moderator:
 
     async def on_message(self, message):
         await self.check_slowmode(message)
-        # Might throw an exception if the message was already deleted.
-        with contextlib.suppress(discord.NotFound):
-            await self.check_slowuser(message)
 
     async def on_guild_channel_create(self, channel):
         server = channel.guild
