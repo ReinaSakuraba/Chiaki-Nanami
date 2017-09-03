@@ -151,7 +151,6 @@ class Meta:
 
     def __init__(self, bot):
         self.bot = bot
-        self.cmd_history = collections.defaultdict(default_last_n())
         self.session = aiohttp.ClientSession()
         self.process = psutil.Process()
 
@@ -676,23 +675,6 @@ class Meta:
                    .set_footer(text=f"ID: {user.id}")
                    )
         await ctx.send(embed=av_embed)
-
-    @commands.command(name='cmdranks')
-    async def command_ranks(self, ctx, n=10):
-        """Shows the most common commands"""
-        if not 3 <= n <= 50:
-            raise InvalidUserArgument("I can only show the top 3 to the top 50 commands... sorry...")
-
-        fmt = f'`{ctx.prefix}' + '{0}` = {1}'
-        format_map = starmap(fmt.format, self.bot.command_leaderboard.most_common(n))
-        embed = (discord.Embed(description='\n'.join(format_map), colour=self.bot.colour)
-                .set_author(name=f'Top {n} used commands')
-                )
-        await ctx.send(embed=embed)
-
-    async def on_command(self, ctx):
-        self.cmd_history[ctx.author].append(ctx.message.content)
-        self.bot.command_leaderboard[str(ctx.command)] += 1
 
     # @commands.command(disabled=True, usage=['pow', 'os.system'], aliases=['pyh'])
     async def pyhelp(self, ctx, thing):
