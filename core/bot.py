@@ -124,7 +124,6 @@ class Chiaki(commands.Bot):
         await self.db.connect()
 
     async def close(self):
-        await self.dump_databases()
         await self.db.close()
         await super().close()
 
