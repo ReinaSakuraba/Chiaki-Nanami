@@ -55,12 +55,13 @@ class JSONFile(collections.MutableMapping):
             await self._loop.run_in_executor(None, self.load_from_file)
 
     def _dump(self):
-        temp = f'{JSONS_PATH}/{self._name}-{uuid.uuid4()}.tmp'
+        name = f'{JSONS_PATH}/{self._name}'
+        temp = f'{name}-{uuid.uuid4()}.tmp'
         with open(temp, 'w', encoding='utf-8') as tmp:
             json.dump(self._db.copy(), tmp, ensure_ascii=True, separators=(',', ':'))
 
         # atomically move the file
-        os.replace(temp, self._name)
+        os.replace(temp, name)
 
     async def save(self):
         async with self._lock:
