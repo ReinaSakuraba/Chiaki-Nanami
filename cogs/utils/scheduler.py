@@ -245,26 +245,17 @@ class QueueScheduler(BaseScheduler):
 import asyncqlio
 import json
 
+from . import dbtypes
+
 _Table = asyncqlio.table_base()
 
 
-class JSON(asyncqlio.ColumnType):
-    """Helper type because asyncqlio doesn't support JSONs at the moment."""
-    def sql(self):
-        return 'JSONB'
-
-class AutoIncrementInteger(asyncqlio.ColumnType):
-    """Helper type because asyncqlio doesn't support auto-increment ints at the moment."""
-    def sql(self):
-        return 'SERIAL'
-
-
 class _Schedule(_Table, table_name='schedule'):
-    id = asyncqlio.Column(AutoIncrementInteger, primary_key=True, autoincrement=True)
+    id = asyncqlio.Column(dbtypes.AutoIncrementInteger, primary_key=True, autoincrement=True)
     expires = asyncqlio.Column(asyncqlio.Timestamp, index=True)
     event = asyncqlio.Column(asyncqlio.String)
     created = asyncqlio.Column(asyncqlio.Timestamp)
-    args_kwargs = asyncqlio.Column(JSON, default="'{}'::jsonb")
+    args_kwargs = asyncqlio.Column(dbtypes.JSON, default="'{}'::jsonb")
 
 
 class DatabaseScheduler(BaseScheduler):

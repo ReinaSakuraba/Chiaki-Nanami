@@ -11,7 +11,7 @@ from collections import Counter, deque, namedtuple
 from discord.ext import commands
 from operator import attrgetter, contains, itemgetter
 
-from .utils import errors, formats, time
+from .utils import dbtypes, errors, formats, time
 from .utils.context_managers import redirect_exception, temp_attr
 from .utils.converter import in_, union
 from .utils.jsonf import JSONFile
@@ -19,24 +19,10 @@ from .utils.misc import emoji_url, ordinal
 from .utils.paginator import ListPaginator, EmbedFieldPages
 
 
-class Interval(asyncqlio.ColumnType):
-    def sql(self):
-        return 'INTERVAL'
-
-    def validate_set(self, row, value):
-        return isinstance(value, datetime.timedelta)
-
-
-class AutoIncrementInteger(asyncqlio.ColumnType):
-    """Helper type because asyncqlio doesn't support auto-increment ints at the moment."""
-    def sql(self):
-        return 'SERIAL'
-
-
 _Table = asyncqlio.table_base()
 
 class Warn(_Table, table_name='warn_entries'):
-    id = asyncqlio.Column(AutoIncrementInteger, primary_key=True)
+    id = asyncqlio.Column(dbtypes.AutoIncrementInteger, primary_key=True)
 
     guild_id = asyncqlio.Column(asyncqlio.BigInt)
     user_id = asyncqlio.Column(asyncqlio.BigInt)
@@ -46,7 +32,7 @@ class Warn(_Table, table_name='warn_entries'):
 
 class WarnTimeout(_Table, table_name='warn_timeouts'):
     guild_id = asyncqlio.Column(asyncqlio.BigInt, primary_key=True)
-    timeout = asyncqlio.Column(Interval)
+    timeout = asyncqlio.Column(dbtypes.Interval)
 
 class WarnPunishment(_Table, table_name='warn_punishments'):
     guild_id = asyncqlio.Column(asyncqlio.BigInt, primary_key=True)
