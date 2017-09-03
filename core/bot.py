@@ -71,7 +71,7 @@ del _make_permissions
 MAX_FORMATTER_WIDTH = 90
 
 def _callable_prefix(bot, message):
-    prefixes = bot.custom_prefixes.get(message.guild, bot.default_prefix)
+    prefixes = bot.custom_prefixes.get(message.guild.id, bot.default_prefix)
     return commands.when_mentioned_or(*prefixes)(bot, message)
 
 _chiaki_formatter = ChiakiFormatter(width=MAX_FORMATTER_WIDTH, show_check_failure=True)
@@ -93,7 +93,6 @@ class Chiaki(commands.Bot):
         self.message_counter = 0
         self.command_counter = collections.Counter()
         self.custom_prefixes = JSONFile('customprefixes.json')
-        self.databases = [self.custom_prefixes, ]
         self.cog_aliases = {}
 
         self.reset_requested = False
@@ -131,10 +130,6 @@ class Chiaki(commands.Bot):
 
     def add_cog(self, cog):
         members = inspect.getmembers(cog)
-        for name, member in members:
-            # add any databases
-            if isinstance(member, JSONFile):
-                self.add_database(member)
 
         # cog aliases
         for alias in getattr(cog, '__aliases__', ()):
@@ -152,12 +147,6 @@ class Chiaki(commands.Bot):
             return
         super().remove_cog(cog_name)
 
-        members = inspect.getmembers(cog)
-        for name, member in members:
-            # remove any databases
-            if isinstance(member, JSONFile):
-                self.remove_database(member)
-
         # remove cog aliases
         self.cog_aliases = {alias: real for alias, real in self.cog_aliases.items() if real is not cog}
 
@@ -169,19 +158,6 @@ class Chiaki(commands.Bot):
             yield
         finally:
             self.remove_listener(func)
-
-    def add_database(self, db):
-        self.databases.append(db)
-        log.info(f"database {db.name} successfully added")
-
-    def remove_database(self, db):
-        if db in self.databases:
-            self.loop.create_task(db.dump())
-            self.databases.remove(db)
-        log.info(f"database {db.name} successfully removed")
-
-    async def dump_databases(self):
-        await asyncio.gather(*(db.dump() for db in self.databases))
 
     async def change_game(self):
         await self.wait_until_ready()
