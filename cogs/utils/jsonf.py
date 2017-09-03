@@ -7,7 +7,7 @@ import os
 import uuid
 
 
-JSONS_PATH = 'jsonfiles'
+JSONS_PATH = 'jsonfiles/'
 os.makedirs(JSONS_PATH, exist_ok=True)
 
 
@@ -21,7 +21,7 @@ class JSONFile(collections.MutableMapping):
     _transform_key = str
 
     def __init__(self, name, **options):
-        self._name = name
+        self._name = f'{JSONS_PATH}{name}'
         self._db = {}
 
         self._loop = options.pop('loop', asyncio.get_event_loop())
@@ -55,13 +55,12 @@ class JSONFile(collections.MutableMapping):
             await self._loop.run_in_executor(None, self.load_from_file)
 
     def _dump(self):
-        name = f'{JSONS_PATH}/{self._name}'
-        temp = f'{name}-{uuid.uuid4()}.tmp'
+        temp = f'{self._name}-{uuid.uuid4()}.tmp'
         with open(temp, 'w', encoding='utf-8') as tmp:
             json.dump(self._db.copy(), tmp, ensure_ascii=True, separators=(',', ':'))
 
         # atomically move the file
-        os.replace(temp, name)
+        os.replace(temp, self._name)
 
     async def save(self):
         async with self._lock:
