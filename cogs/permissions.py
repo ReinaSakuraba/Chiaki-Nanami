@@ -9,7 +9,7 @@ from operator import attrgetter
 from .utils import cache, search
 from .utils.converter import BotCommand, BotCogConverter
 from .utils.dbtypes import AutoIncrementInteger
-from .utils.misc import unique
+from .utils.misc import emoji_url, unique
 
 
 ALL_MODULES_KEY = '*'
@@ -111,9 +111,9 @@ ENTITY_EXPLANATION = """
 
 
 _value_embed_mappings = {
-    True: (0x00FF00, 'enabled'),
-    False: (0xFF0000, 'disabled'),
-    None: (0xFFFF00, 'reset'),
+    True: (0x00FF00, 'enabled', emoji_url('\N{WHITE HEAVY CHECK MARK}')),
+    False: (0xFF0000, 'disabled', emoji_url('\N{NO ENTRY SIGN}')),
+    None: (0x7289da, 'reset', emoji_url('\U0001f504')),
 }
 
 
@@ -254,10 +254,10 @@ class Permissions:
             assert self._get_permissions.invalidate(None, None, ctx.guild.id), \
                   "Something bad happened while invalidating the cache"
 
-        colour, action = _value_embed_mappings[whitelist]
+        colour, action, icon = _value_embed_mappings[whitelist]
 
         embed = (discord.Embed(colour=colour)
-                 .set_author(name=f'{type_} {action}!')
+                 .set_author(name=f'{type_} {action}!', icon_url=icon)
                  )
 
         if name != ALL_MODULES_KEY:
