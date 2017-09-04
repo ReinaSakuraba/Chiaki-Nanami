@@ -127,11 +127,43 @@ class MemberSearch(commands.MemberConverter, Search):
             return result[0]
         return await self.search(ctx, argument, result, thing='member')
 
+
+class TextChannelSearch(commands.TextChannelConverter, Search):
+    async def convert(self, ctx, argument):
+        bot = ctx.bot
+
+        match = self._get_id_match(argument) or re.match(r'<#([0-9]+)>$', argument)
+        result = None
+        guild = ctx.guild
+
+        if match is not None:
+            return await super().convert(ctx, argument)
+        else:
+            # not a mention
+            lowered = argument.lower()
+
+            def check(c):
+                return isinstance(c, discord.TextChannel) and c.name.lower() == lowered
+
+            if guild:
+                result = list(filter(check, guild.text_channels))
+            else:
+                result = list(filter(check, bot.get_all_channels()))
+
+        if not result:
+            raise commands.BadArgument(f'Channel "{argument}" not found')
+        elif len(result) == 1:
+            return result[0]
+        return await self.search(ctx, argument, result, thing='member')
+
+
 # A mapping for the discord.py class and it's corresponding searcher.
 _type_search_maps = {
     discord.Role: RoleSearch,
     discord.Member: MemberSearch,
+    discord.TextChannel: TextChannelSearch
 }
+
 
 class union(Search, commands.Converter):
     def __init__(self, *types, **kwargs):
