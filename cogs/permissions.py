@@ -277,9 +277,9 @@ class Permissions:
 
     def _make_command(value, name, *, desc=None):
         desc = desc or name
-        cmd_doc_string = f"{desc.title()} a given command."
-        cog_doc_string = f"{desc.title()} a given cog."
-        all_doc_string = f"{desc.title()} all cogs, and subsequently all commands."
+        cmd_doc_string = f"{desc} a given command."
+        cog_doc_string = f"{desc} a given cog."
+        all_doc_string = f"{desc} all cogs, and subsequently all commands."
 
         @commands.group(name=name)
         async def group(self, ctx):
