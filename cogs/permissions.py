@@ -138,7 +138,6 @@ class Permissions:
 
     async def _set_one_permission(self, session, guild_id, name, entity, whitelist):
         id = entity.id
-        print('selecting one')
         query = (session.select.from_(CommandPermissions)
                                .where((CommandPermissions.guild_id == guild_id)
                                       & (CommandPermissions.name == name)
@@ -147,7 +146,6 @@ class Permissions:
 
         row = await query.first()
 
-        print('selected one')
         if row is None:
             if whitelist is None:
                 raise RuntimeError(f'{name} was neither disabled nor enabled...', name)
@@ -161,7 +159,6 @@ class Permissions:
             # something
             raise RuntimeError(f"Already {whitelist}")
 
-        print("test")
         if whitelist is None:
             await session.remove(row)
             return
@@ -189,7 +186,6 @@ class Permissions:
 
     async def _set_permissions(self, session, guild_id, name, *entities, whitelist):
         if len(entities) == 1:
-            print('setting one')
             await self._set_one_permission(session, guild_id, name, entities[0], whitelist=whitelist)
         else:
             await self._bulk_set_permissions(session, guild_id, name, *entities, whitelist=whitelist)
