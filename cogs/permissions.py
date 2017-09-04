@@ -9,7 +9,7 @@ from operator import attrgetter
 from .utils import cache, search
 from .utils.converter import BotCommand, BotCogConverter
 from .utils.dbtypes import AutoIncrementInteger
-from .utils.misc import emoji_url, unique
+from .utils.misc import emoji_url, truncate, unique
 
 
 ALL_MODULES_KEY = '*'
@@ -269,7 +269,7 @@ class Permissions:
         for k, group in itertools.groupby(sorted_entities, _get_class_name):
             group = list(group)
             name = f'{k}{"s" * (len(group) != 1)}'
-            value = ', '.join(map(str, group))
+            value = truncate(', '.join(map(str, group)), 1024, '...')
 
             embed.add_field(name=name, value=value, inline=False)
 
