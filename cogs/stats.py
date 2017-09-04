@@ -1,18 +1,35 @@
+import aiohttp
 import asyncqlio
 import discord
+import datetime
 import itertools
 import math
 import psutil
+import traceback
 
 from discord.ext import commands
 from more_itertools import ilen, partition
+from operator import attrgetter
 
 from .utils import dbtypes
 from .utils.formats import pluralize
+from .utils.misc import emoji_url
 from .utils.paginator import ListPaginator, EmbedFieldPages
 from .utils.time import human_timedelta
 
+import config
+
+
 _Table = asyncqlio.table_base()
+_ignored_exceptions = (
+    commands.NoPrivateMessage,
+    commands.DisabledCommand,
+    commands.CheckFailure,
+    commands.CommandNotFound,
+    commands.UserInputError,
+    discord.Forbidden
+)
+ERROR_ICON_URL = emoji_url('\N{NO ENTRY SIGN}')
 
 
 class Command(_Table, table_name='commands'):
@@ -27,6 +44,9 @@ class Command(_Table, table_name='commands'):
 
 class Stats:
     def __init__(self, bot):
+        if not hasattr(bot, 'session'):
+            bot.session = aiohttp.ClientSession()
+
         self.bot = bot
         self._md = self.bot.db.bind_tables(_Table)
         self.process = psutil.Process()
@@ -71,7 +91,7 @@ class Stats:
                    LIMIT {n};
                 """
         results = await (await ctx.session.cursor(query, {'n': n})).flatten()
-        await self._show_top_commands(ctx, n, (r.values() for r in results))    
+        await self._show_top_commands(ctx, n, (r.values() for r in results))
 
     @top_commands.group(name='alltimeserver', aliases=['allserver'])
     async def top_commands_alltimeserver(self, ctx, n=10):
@@ -142,10 +162,9 @@ class Stats:
         lines = [(f'`{row.prefix}{row.command}`', f'Executed {human_timedelta(row.used)}')
                  async for row in await query.all()]
         title = pluralize(command=n)
-        pages = EmbedFieldPages(ctx, lines, title=f"{ctx.author}'s last {title}", 
+        pages = EmbedFieldPages(ctx, lines, title=f"{ctx.author}'s last {title}",
                                 inline=False, lines_per_page=5)
         await pages.interact()
-
 
     async def command_stats(self):
         pass
@@ -156,6 +175,63 @@ class Stats:
             return await ctx.send("I don't support shards... yet.")
         # TODO
 
+    @property
+    def webhook(self):
+        return discord.Webhook.from_url(config.webhook_url, adapter=discord.AsyncWebhookAdapter(self.bot.session))
+
+    async def on_command_error(self, ctx, error):
+        error = getattr(error, 'original', error)
+
+        if isinstance(error, _ignored_exceptions):
+            return
+
+        e = (discord.Embed(colour=0xcc3366)
+             .set_author(name=f'Error in command {ctx.command}', icon_url=ERROR_ICON_URL)
+             .add_field(name='Author', value=f'{ctx.author}\n(ID: {ctx.author.id})', inline=False)
+             .add_field(name='Channel', value=f'{ctx.channel}\n(ID: {ctx.channel.id})')
+             )
+
+        if ctx.guild:
+            e.add_field(name='Guild', value=f'{ctx.guild}\n(ID: {ctx.guild.id})')
+
+        exc = ''.join(traceback.format_exception(type(error), error, error.__traceback__, chain=False))
+        e.description = f'```py\n{exc}\n```'
+        e.timestamp = datetime.datetime.utcnow()
+        await self.webhook.send(embed=e)
+
+    @commands.command(name='testerr')
+    @commands.is_owner()
+    async def test_error(self, ctx):
+        NO
+
+    async def send_guild_stats(self, guild, colour, header):
+        bots = sum(m.bot for m in guild.members)
+        total = guild.member_count
+        online = sum(m.status is discord.Status.online for m in guild.members)
+
+        e = (discord.Embed(colour=colour)
+             .set_author(name=f'{header} server.')
+             .add_field(name='Name', value=guild.name)
+             .add_field(name='ID', value=guild.id)
+             .add_field(name='Owner', value=f'{guild.owner} (ID: {guild.owner.id})')
+             .add_field(name='Members', value=str(total))
+             .add_field(name='Bots', value=f'{bots} ({bots/total :.2%})')
+             .add_field(name='Online', value=f'{online} ({online/total :.2%})')
+             )
+
+        if guild.icon:
+            e.set_thumbnail(url=guild.icon_url)
+
+        if guild.me:
+            e.timestamp = guild.me.joined_at
+
+        await self.webhook.send(embed=e)
+
+    async def on_guild_join(self, guild):
+        await self.send_guild_stats(guild, 0x53dda4, 'New')
+
+    async def on_guild_remove(self, guild):
+        await self.send_guild_stats(guild, 0xdd5f53, 'Left')
 
 def setup(bot):
     bot.add_cog(Stats(bot))
