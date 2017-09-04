@@ -1,343 +1,317 @@
+import asyncqlio
 import discord
-import enum
-import functools
 import itertools
 
 from collections import defaultdict, namedtuple
 from discord.ext import commands
-from operator import attrgetter, contains
-from more_itertools import always_iterable
+from operator import attrgetter
 
-from .utils import errors
-from .utils.context_managers import redirect_exception
+from .utils import search
 from .utils.converter import BotCommand, BotCogConverter
-from .utils.jsonf import JSONFile
-from .utils.misc import emoji_url, unique
-from .utils.paginator import ListPaginator, TitleBasedPages
+from .utils.dbtypes import AutoIncrementInteger
+from .utils.misc import unique
 
 
-def first_non_none(iterable, default=None):
-    return next(filter(lambda x: x is not None, iterable), default)
+ALL_MODULES_KEY = '*'
 
 
-class Idable(namedtuple('Idable', 'original id')):
-    def __new__(cls, original):
-        return super().__new__(cls, original, original.id)
+class PermissionDenied(commands.CheckFailure):
+    def __init__(self, message, *args):
 
+        name, obj, *rest = args
+        self.object = obj
+        self.cog, _, self.command = _extract_from_node(name)
 
-_permissions_help = """
-    Sets the permissions for {thing}.
-
-    {thing_cap} can be allowed or blocked on one of 4 levels:
-    server     = Affects this particular server
-    channel    = Affects the channels specified, or the current channel if not specified
-    role       = Affects the roles specified (at least one must be specified)
-    user       = Affects the users specified on *this server only*
-
-    {extra}
-"""
-
-
-def _make_doc(thing, extra=''):
-    return _permissions_help.format(thing=thing, thing_cap=thing.capitalize(), extra=extra)
-_perm_set_command_help = _make_doc('a command', extra=('This will affect aliases as well. If a command group is blocked, '
-                                                      'its subcommands are blocked as well.'))
-
-class Level(enum.Enum):
-    user        = (discord.Member, '({0.guild.id}, {0.author.id})'.format, False, )
-    # higher roles should be prioritised
-    role        = (discord.Role, lambda ctx: (role.id for role in sorted(ctx.author.roles, reverse=True)), False, )
-    channel     = (discord.TextChannel, attrgetter('channel.id'), None, )
-    server      = (discord.Guild, attrgetter('guild.id'), True, )
-
-    def __init__(self, type_, ctx_key, require_ctx):
-        # True: Requires no args
-        # False: Requires args
-        # None: Falls back to ctx if no args are specified
-        self.type = type_
-        self.ctx_key = ctx_key
-        self.require_ctx = require_ctx
+        super().__init__(message, *args)
 
     def __str__(self):
-        return self.name.lower()
+        if self.command:
+            entity = f'Command **{self.command}** is'
+        elif self.cog == ALL_MODULES_KEY:
+            entity = 'All modules are'
+        else:
+            entity = f'Cog **{self.cog}** is'
 
-    async def parse_args(self, ctx, *args):
-        if self.require_ctx and args:
-            raise errors.InvalidUserArgument(f"{self.name} level requires that no arguments are passed.")
-        elif self.require_ctx is False and not args:
-            raise errors.InvalidUserArgument(f'Arguments are required for the {self.name} level.')
-
-        if args:
-            # This wastes memory, but I don't have much of a choice here
-            # because using () produces an async generator, which isn't iterable.
-            args = [await ctx.command.do_conversion(ctx, self.type, arg) for arg in args]
-            return map(Idable, args)
-        # Context objects don't have a "server" attribute, they have a "guild" attribute
-        # The only reason why server is used in the enum is because of convenience for the user
-        # As they'll be more familiar with the term "server" than "guild"
-        attr = 'guild' if self == Level.server else self.name
-        # using a 1-elem tuple is faster than making a 1-elem list O.o
-        return Idable(getattr(ctx, attr)),
-
-    @classmethod
-    async def convert(cls, ctx, arg):
-        with redirect_exception((KeyError, f"Unrecognized level: {arg}")):
-            return cls[arg.lower()]
+        return f'{entity} disabled for the {_get_class_name(self.object).lower()} "{self.object}".'
 
 
-class Action(namedtuple('Action', 'value action emoji colour')):
-    @classmethod
-    def from_arg(cls, arg):
-        mode = arg.lower()
+_command_node = '{0.cog_name}.{0}'.format
+def _extract_from_node(node):
+    return node.partition('.')
 
-        if mode in ('allow', 'unlock', 'enable', ):
-            return cls(value=True,  action='enabled',  emoji='\U0001f513', colour=discord.Colour.green())
-        elif mode in ('none', 'reset', 'null', ):
-            return cls(value=None,  action='reset',    emoji='\U0001f504', colour=discord.Colour.default())
-        elif mode in ('deny', 'lock', 'disable', ):
-            return cls(value=False, action='disabled', emoji='\U0001f512', colour=discord.Colour.red())
-        raise commands.BadArgument(f"Don't know what to do with {arg}.")
 
-    @classmethod
-    async def convert(cls, ctx, arg):
-        return cls.from_arg(arg)
+def _get_class_name(obj):
+    # Thanks discord.py
+    return obj.__class__.__name__.replace('Text', '')
 
-_value_emoji_map = {
-    True: '\N{WHITE HEAVY CHECK MARK}',
-    False: '\N{NO ENTRY}',
-    None: '\N{MEDIUM BLACK CIRCLE}',
-}
 
-class BlockType(enum.Enum):
-    blacklist = (discord.Colour.red(),   '\U000026d4')
-    whitelist = (discord.Colour.green(), '\U00002705')
+_Table = asyncqlio.table_base()
 
-    def __init__(self, colour, emoji):
-        self.colour = colour
-        self.emoji = emoji
 
-    def embed(self, user):
-        return (discord.Embed(colour=self.colour)
-               .set_author(name=f'User {self.name}ed', icon_url=emoji_url(self.emoji))
-               .add_field(name='User', value=str(user))
-               .add_field(name='ID', value=user.id)
-               )
+class CommandPermissions(_Table, table_name='permissions'):
+    id = asyncqlio.Column(AutoIncrementInteger, primary_key=True)
 
-command_perm_default = {i: {} for i in map(str, Level)}
-ALL_MODULES_KEY = 'All Modules'
+    guild_id = asyncqlio.Column(asyncqlio.BigInt, index=True)
+    snowflake = asyncqlio.Column(asyncqlio.BigInt, nullable=True)
 
-class Permissions:
-    def __init__(self):
-        self.permissions = JSONFile('permissions.json', default_factory=command_perm_default.copy)
-        self.other_permissions = JSONFile('permissions2.json', default_factory=list)
+    name = asyncqlio.Column(asyncqlio.String)
+    whitelist = asyncqlio.Column(asyncqlio.Boolean)
 
-    def __global_check(self, ctx):
-        user_id = ctx.author.id
-        if user_id in self.blacklisted_users:
-            return False
 
-        try:
-            self._assert_is_valid_cog(ctx.command)
-        except errors.InvalidUserArgument:
-            return True
+# Some converter utilities I guess
 
-        cmd = ctx.command
-        names = itertools.chain(cmd.walk_parent_names(), (cmd.cog_name, ALL_MODULES_KEY))
-        results = (self._first_non_none_perm(name, ctx) for name in names)
-        return first_non_none(results, True)
+class CommandName(BotCommand):
+    async def convert(self, ctx, arg):
+        command = await super().convert(ctx, arg)
+
+        root = command.root_parent or command
+        if root.name in {'enable', 'disable', 'undo'} or root.cog_name == 'Owner':
+            raise commands.BadArgument("You can't modify this command.")
+
+        return _command_node(command)
+
+
+class CogName(BotCogConverter):
+    async def convert(self, ctx, arg):
+        cog = await super().convert(ctx, arg)
+        name = type(cog).__name__
+
+        if name in {'Permissions', 'Owner'}:
+            raise commands.BadArgument("You can't modify this cog...")
+
+        return name
+
+
+PermissionEntity = search.union(discord.Member, discord.Role, discord.TextChannel)
+
+# End of the converters I guess.
+
+
+class Server(namedtuple('Server', 'server')):
+    """This class is here to make sure that we can have an ID of None
+    while still having the original server object.
+    """
+    __slots__ = ()
 
     @property
-    def blacklisted_users(self):
-        return self.other_permissions[BlockType.blacklist.name]
+    def id(self):
+        return None
 
-    @staticmethod
-    def _is_valid_cog(name):
-        return name not in {'Owner', 'Permissions'}
+    def __str__(self):
+        return str(self.server)
 
-    @staticmethod
-    def _context_attribute(level, ctx):
-        return map(str, always_iterable(level.ctx_key(ctx)))
 
-    @staticmethod
-    def _cog_name(thing):
-        return getattr(thing, 'cog_name', type(thing).__name__)
+ENTITY_EXPLANATION = """
+        Entities can either be a channel, a role, or a server. More than
+        one can be specified, but entities with names that consist of
+        more than one word must be wrapped in quotes. If no entities
+        are specified, then it will {action} {thing} for the entire
+        server.
+    """
 
-    def _assert_is_valid_cog(self, thing):
-        name = self._cog_name(thing)
-        if name in {'Owner', 'Permissions'}:
-            raise errors.InvalidUserArgument(f"I can't modify permissions from the module {name}.")
 
-    def _perm_iterator(self, name, ctx):
-        perms = self.permissions.get(name)
-        if perms is None:
-            yield
+_value_embed_mappings = {
+    True: (0x00FF00, 'enabled'),
+    False: (0xFF0000, 'disabled'),
+    None: (0xFFFF00, 'reset'),
+}
+
+
+class Permissions:
+    def __init__(self, bot):
+        self.bot = bot
+        self._md = self.bot.db.bind_tables(_Table)
+        self.bot.loop.create_task(self._create_permissions())
+
+    async def _create_permissions(self):
+        async with self.bot.db.get_ddl_session() as session:
+            for name, table in self._md.tables.items():
+                await session.create_table(name, *table.columns)
+
+    async def on_command_error(self, ctx, error):
+        if isinstance(error, PermissionDenied):
+            await ctx.send(error)
+        
+        original = getattr(error, 'original', None)
+        if isinstance(original, RuntimeError):
+            await ctx.send(original)
+
+    async def _set_one_permission(self, session, guild_id, name, entity, whitelist):
+        id = entity.id
+        print('selecting one')
+        query = (session.select.from_(CommandPermissions)
+                               .where((CommandPermissions.guild_id == guild_id)
+                                      & (CommandPermissions.name == name)
+                                      & (CommandPermissions.snowflake == id))
+                 )
+
+        row = await query.first()
+
+        print('selected one')
+        if row is None:
+            if whitelist is None:
+                raise RuntimeError(f'{name} was neither disabled nor enabled...', name)
+
+            row = CommandPermissions(
+                guild_id=guild_id,
+                snowflake=id,
+                name=name,
+            )
+        elif row.whitelist == whitelist:
+            # something
+            raise RuntimeError(f"Already {whitelist}")
+
+        print("test")
+        if whitelist is None:
+            await session.remove(row)
             return
 
-        for level in Level:
-            level_perms = perms[str(level)]
-            try:
-                ctx_attr = self._context_attribute(level, ctx)
-            except AttributeError:      # ctx_attr was probably None
-                continue
-            yield first_non_none(map(level_perms.get, ctx_attr))
+        row.whitelist = whitelist
+        await session.add(row)
 
-    def _first_non_none_perm(self, name, ctx):
-        return first_non_none(self._perm_iterator(name, ctx))
-
-    @staticmethod
-    def _perm_result_embed(ctx, level, mode, name, *args, thing):
-        originals = ', '.join(str(arg.original) for arg in args)
-        return (discord.Embed(colour=mode.colour, timestamp=ctx.message.created_at)
-               .set_author(name=f'{thing} {mode.action}!', icon_url=emoji_url(mode.emoji))
-               .add_field(name=thing, value=name)
-               .add_field(name=level.name.title(), value=originals, inline=False)
+    async def _bulk_set_permissions(self, session, guild_id, name, *entities, whitelist):
+        ids = unique(e.id for e in entities)
+        await (session.delete.table(CommandPermissions)
+                             .where((CommandPermissions.guild_id == guild_id)
+                                    & (CommandPermissions.name == name)
+                                    & (CommandPermissions.snowflake.in_(*ids)))
                )
 
-    async def _perm_set(self, ctx, level, mode, name, *args, thing):
-        self.set_perms(level, mode, name, *args)
-        await ctx.send(embed=self._perm_result_embed(ctx, level, mode, name, *args, thing=thing))
+        if whitelist is None:
+            # We don't want it to recreate the permissions when reset.
+            return
 
-    def set_perms(self, level, mode, name, *args):
-        level_perms = self.permissions[name][str(level)]
-        # members require a special key - a tuple of (server_id, member_id)
-        fmt = '({0.original.guild.id}, {0.id})' if level == Level.user else '{0.id}'
-        level_perms.update(zip(map(fmt.format, args), itertools.repeat(mode.value)))
+        columns = ('guild_id', 'snowflake', 'name', 'whitelist'),
+        to_insert = [(guild_id, id, name, whitelist) for id in ids]
+        conn = session.transaction.acquired_connection
 
-    # We could make this function take a union of Commands and cogs.
-    # This would greatly reduce the amount of repetition.
-    # However, because of the case insensitivity of the cog converter,
-    # commands will inevitably clash with cogs of the same name, creating confusion.
-    # This is also why the default help command only takes commands, as opposed to either a command or cog.
-    @commands.command(name='permsetcommand', aliases=['psc'], help=_perm_set_command_help)
+        await conn.copy_records_to_table('permissions', columns=columns, records=to_insert)
 
-    @commands.guild_only()
-    async def perm_set_command(self, ctx, level: Level, mode: Action, command: BotCommand, *args):
-        self._assert_is_valid_cog(command)
-        ids = await level.parse_args(ctx, *args)
-        await self._perm_set(ctx, level, mode, command.qualified_name, *ids, thing='Command')
+    async def _set_permissions(self, session, guild_id, name, *entities, whitelist):
+        if len(entities) == 1:
+            print('setting one')
+            await self._set_one_permission(session, guild_id, name, entities[0], whitelist=whitelist)
+        else:
+            await self._bulk_set_permissions(session, guild_id, name, *entities, whitelist=whitelist)
 
-    @commands.command(name='permsetmodule', aliases=['psm'], help=_make_doc('a module'))
+    async def _get_permissions(self, session, guild_id):
+        query = (session.select.from_(CommandPermissions)
+                        .where(CommandPermissions.guild_id == guild_id)
+                 )
 
-    @commands.guild_only()
-    async def perm_set_module(self, ctx, level: Level, mode: Action, module: BotCogConverter, *args):
-        self._assert_is_valid_cog(module)
-        ids = await level.parse_args(ctx, *args)
-        await self._perm_set(ctx, level, mode, type(module).__name__, *ids, thing='Module')
+        lookup = defaultdict(lambda: (set(), set()))
+        async for row in await query.all():
+            print(row)
+            lookup[row.snowflake][row.whitelist].add(row.name)
 
-    @commands.command(name='permsetall', aliases=['psall'], help=_make_doc('all modules'))
-    @commands.is_owner()
-    @commands.guild_only()
-    async def perm_set_all(self, ctx, level: Level, mode: Action, *args):
-        ids = await level.parse_args(ctx, *args)
-        self.set_perms(level, mode, ALL_MODULES_KEY, *ids)
+        return dict(lookup)
 
-        # First field will be "name='All Modules', value='All Modules'""
-        embed = self._perm_result_embed(ctx, level, mode, ALL_MODULES_KEY, *ids, thing=ALL_MODULES_KEY)
-        embed.remove_field(0)
-        print(embed._fields)
+    async def __global_check(self, ctx):
+        if not ctx.guild:
+            return True
+
+        lookup = await self._get_permissions(ctx.session, ctx.guild.id)
+        if not lookup:
+            # "Fast" path
+            return True
+
+        dummy_server = Server(ctx.guild)
+
+        objects = itertools.chain(
+            [('user', ctx.author)],
+            zip(itertools.repeat('role'), sorted(ctx.author.roles, reverse=True)),
+            [('channel', ctx.channel),
+             ('server', dummy_server)],
+        )
+
+        names = itertools.chain(
+            map(_command_node, ctx.command.walk_parents()),
+            (ctx.command.cog_name, ALL_MODULES_KEY)
+        )
+
+        for (typename, obj), name in itertools.product(objects, names):
+            if obj.id not in lookup:
+                continue
+
+            if name in lookup[obj.id][True]:
+                return True
+
+            elif name in lookup[obj.id][False]:
+                raise PermissionDenied(f'{name} is denied on the {typename} level', name, obj)
+
+        return True
+
+    async def _set_permissions_command(self, ctx, name, *entities, whitelist, type_):
+        entities = entities or (Server(ctx.guild), )
+
+        async with ctx.db.get_session() as session:
+            # To avoid accidentally doing a query while the __global_check
+            # is being processed, we have to do create another session.
+            # I'm not sure if there is anything inherently wrong with this code
+            # though, so if anyone is looking at this code and finds anything
+            # wrong with it, please DM me ASAP.
+            await self._set_permissions(session, ctx.guild.id, name, *entities, whitelist=whitelist)
+
+        colour, action = _value_embed_mappings[whitelist]
+
+        embed = (discord.Embed(colour=colour)
+                 .set_author(name=f'{type_} {action}!')
+                 )
+
+        if name != ALL_MODULES_KEY:
+            cog, _, name = _extract_from_node(name)
+            embed.add_field(name=type_, value=name or cog)
+
+        sorted_entities = sorted(entities, key=_get_class_name)
+
+        for k, group in itertools.groupby(sorted_entities, _get_class_name):
+            group = list(group)
+            name = f'{k}{"s" * (len(group) != 1)}'
+            value = ', '.join(map(str, group))
+
+            embed.add_field(name=name, value=value, inline=False)
+
         await ctx.send(embed=embed)
 
-    async def _modify_command(self, ctx, command, bool_):
-        command.enabled = bool_
-        await ctx.send(f"**{command}** is now {'deins'[bool_::2]}abled!")
+    def _make_command(value, name, *, desc=None):
+        desc = desc or name
+        cmd_doc_string = f"{desc.title()} a given command."
+        cog_doc_string = f"{desc.title()} a given cog."
+        all_doc_string = f"{desc.title()} all cogs, and subsequently all commands."
 
-    @commands.command()
-    @commands.is_owner()
-    async def disable(self, ctx, *, command: BotCommand):
-        """Globally disables a command."""
-        await self._modify_command(ctx, command, False)
+        @commands.group(name=name)
+        async def group(self, ctx):
+            pass
 
-    @commands.command()
-    @commands.is_owner()
-    async def enable(self, ctx, *, command: BotCommand):
-        """Globally enables a command."""
-        await self._modify_command(ctx, command, True)
+        @group.command(name='command', help=cmd_doc_string)
+        async def group_command(self, ctx, command: CommandName, *entities: PermissionEntity):
+            await self._set_permissions_command(ctx, command, *entities,
+                                                whitelist=value, type_='Command')
 
-    async def _modify_blacklist(self, ctx, user, list_attr, *, contains_op, block_type):
-        if await ctx.bot.is_owner(user):
-            raise errors.InvalidUserArgument(f"No. You can't {block_type.name} the Bot Owner")
-        if ctx.bot.user.id == user.id:
-            raise errors.InvalidUserArgument(f"Hey hey, why are you {block_type.name}ing me?")
+        # Providing these helper commands to allow users to "bulk"-disable certain
+        # certain commands. Theoretically I COULD allow for ->enable command_or_module
+        # but that would force me to make the commands case sensitive.
+        @group.command(name='cog', help=cog_doc_string)
+        async def group_cog(self, ctx, cog: CogName, *entities: PermissionEntity):
+            await self._set_permissions_command(ctx, cog, *entities,
+                                                whitelist=value, type_='Cog')
 
-        blacklist = self.blacklisted_users
-        if contains_op(blacklist, user.id):
-            raise errors.InvalidUserArgument(f'**{user}** has already been {block_type.name}ed, I think...')
+        @group.command(name='all', help=all_doc_string)
+        async def group_all(self, ctx, *entities: PermissionEntity):
+            await self._set_permissions_command(ctx, ALL_MODULES_KEY, *entities,
+                                                whitelist=value, type_='All Modules')
 
-        getattr(blacklist, list_attr)(user.id)
-        await ctx.send(embed=block_type.embed(user))
+        # Must return all of these otherwise the subcommands won't get added properly --
+        # they will end up having no instance.
+        return group, group_command, group_cog, group_all
 
-    @commands.command(aliases=['bl'])
-    @commands.is_owner()
-    async def blacklist(self, ctx, *, user: discord.User):
-        """Blacklists a user. This prevents them from ever using the bot, regardless of other permissions."""
-        await self._modify_blacklist(ctx, user, 'append', contains_op=contains,
-                                     block_type=BlockType.blacklist)
+    # The actual commands... yes it's really short.
+    enable, enable_command, enable_cog, enable_all = _make_command(True, 'enable', desc='Enables')
+    disable, disable_command, disable_cog, disable_all = _make_command(False, 'disable', desc='Disables')
+    undo, undo_command, undo_cog, undo_all = _make_command(None, 'undo', desc='Resets the permissions for')
 
-    @commands.command(aliases=['wl'])
-    @commands.is_owner()
-    async def whitelist(self, ctx, *, user: discord.User):
-        """Whitelists a user, removing the from the blacklist.
+    del _make_command
 
-        This doesn't make them immune to any other checks.
-        """
-        await self._modify_blacklist(ctx, user, 'remove', contains_op=lambda a, b: b not in a,
-                                     block_type=BlockType.whitelist)
-
-    @commands.group(name='permshow', aliases=['pshow'])
-    async def perm_show(self, ctx):
-        pass
-
-    def _get_perm(self, name, level, key):
-        permissions = self.permissions.get(name)
-        if permissions is None:
-            return None
-        return permissions[str(level)].get(key)
-
-    async def _perm_show_commands(self, ctx, level, thing, commands):
-        # Level.parse_args is variadic
-        args = (ctx, ) + (thing, ) * (thing is not None)
-        thing, *_ = await level.parse_args(*args)
-        get_perm = functools.partial(self._get_perm, level=level, key=str(thing.id))
-
-        command_permissions = defaultdict(list)
-        for cog_name, commands in itertools.groupby(commands, key=attrgetter('cog_name')):
-            if not self._is_valid_cog(cog_name):
-                continue
-            command_permissions[cog_name].extend(f'{_value_emoji_map[get_perm(cmd)]} {cmd}'
-                                                 for cmd in map(str, commands))
-
-        title = f'Command Permissions on the {level} level for {thing.original}'
-        pages = TitleBasedPages(ctx, command_permissions, title=title, colour=ctx.bot.colour)
-        await pages.interact()
-
-
-    @perm_show.command(name='commands', aliases=['cmds'])
-    async def perm_show_commands(self, ctx, level: Level, thing=None):
-        """Shows the perms for each command on a given level"""
-        await self._perm_show_commands(ctx, level, thing, ctx.bot.commands)
-
-    @perm_show.command(name='recursivecommands', aliases=['recmds'])
-    async def perm_show_recursive_commands(self, ctx, level: Level, thing=None):
-        """Shows the perms for **all** the commands on a given level. This includes subcommands."""
-        await self._perm_show_commands(ctx, level, thing, unique(ctx.bot.walk_commands()))
-
-    @perm_show.command(name='modules', aliases=['mdls'])
-    async def perm_show_modules(self, ctx, level: Level, thing=None):
-        """Shows the perms for each module on a given level"""
-        unique_cog_names = (type(cog).__name__ for cog in unique(ctx.bot.cogs.values()))
-
-        args = (ctx, ) + (thing, ) * (thing is not None)
-        thing, = await level.parse_args(*args)
-
-        get_perm = functools.partial(self._get_perm, level=level, key=str(thing.id))
-        permissions = (f'{_value_emoji_map[get_perm(name)]} {name}'
-                       for name in unique_cog_names)
-        all_modules = f'{_value_emoji_map[get_perm(ALL_MODULES_KEY)]} **{ALL_MODULES_KEY}**'
-        permissions = itertools.chain((all_modules, ), permissions)
-
-        title = f'Modules Permissions on the {level} level for {thing.original}'
-        pages = ListPaginator(ctx, permissions, title=title, colour=ctx.bot.colour)
-        await pages.interact()
 
 def setup(bot):
-    bot.add_cog(Permissions())
+    bot.add_cog(Permissions(bot))
