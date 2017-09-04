@@ -6,7 +6,7 @@ from collections import defaultdict, namedtuple
 from discord.ext import commands
 from operator import attrgetter
 
-from .utils import search
+from .utils import cache, search
 from .utils.converter import BotCommand, BotCogConverter
 from .utils.dbtypes import AutoIncrementInteger
 from .utils.misc import unique
@@ -131,7 +131,7 @@ class Permissions:
     async def on_command_error(self, ctx, error):
         if isinstance(error, PermissionDenied):
             await ctx.send(error)
-        
+
         original = getattr(error, 'original', None)
         if isinstance(original, RuntimeError):
             await ctx.send(original)
@@ -194,6 +194,7 @@ class Permissions:
         else:
             await self._bulk_set_permissions(session, guild_id, name, *entities, whitelist=whitelist)
 
+    @cache.cache(maxsize=None, make_key=lambda a, kw: a[-1])
     async def _get_permissions(self, session, guild_id):
         query = (session.select.from_(CommandPermissions)
                         .where(CommandPermissions.guild_id == guild_id)
@@ -201,7 +202,6 @@ class Permissions:
 
         lookup = defaultdict(lambda: (set(), set()))
         async for row in await query.all():
-            print(row)
             lookup[row.snowflake][row.whitelist].add(row.name)
 
         return dict(lookup)
@@ -251,6 +251,12 @@ class Permissions:
             # though, so if anyone is looking at this code and finds anything
             # wrong with it, please DM me ASAP.
             await self._set_permissions(session, ctx.guild.id, name, *entities, whitelist=whitelist)
+
+            # If an exception was raised in the code above, the code below won't
+            # run. We need to make sure that we actually commit the change before
+            # invalidating the cache.
+            assert self._get_permissions.invalidate(None, None, ctx.guild.id), \
+                  "Something bad happened while invalidating the cache"
 
         colour, action = _value_embed_mappings[whitelist]
 
