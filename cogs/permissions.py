@@ -134,10 +134,12 @@ If you don't specify a channel, member, or role, it will
 """
 
 
+# TODO: Make this an enum
 _value_embed_mappings = {
     True: (0x00FF00, 'enabled', emoji_url('\N{WHITE HEAVY CHECK MARK}')),
     False: (0xFF0000, 'disabled', emoji_url('\N{NO ENTRY SIGN}')),
     None: (0x7289da, 'reset', emoji_url('\U0001f504')),
+    -1: (0xFF0000, 'deleted', emoji_url('\N{PUT LITTER IN ITS PLACE SYMBOL}')),
 }
 
 
@@ -327,6 +329,28 @@ class Permissions:
 
         return True
 
+    async def _display_embed(self, ctx, name=None, *entities, whitelist, type_):
+        colour, action, icon = _value_embed_mappings[whitelist]
+
+        embed = (discord.Embed(colour=colour)
+                 .set_author(name=f'{type_} {action}!', icon_url=icon)
+                 )
+
+        if name not in {ALL_MODULES_KEY, None}:
+            cog, _, name = _extract_from_node(name)
+            embed.add_field(name=type_, value=name or cog)
+
+        sorted_entities = sorted(entities, key=_get_class_name)
+
+        for k, group in itertools.groupby(sorted_entities, _get_class_name):
+            group = list(group)
+            name = f'{k}{"s" * (len(group) != 1)}'
+            value = truncate(', '.join(map(str, group)), 1024, '...')
+
+            embed.add_field(name=name, value=value, inline=False)
+
+        await ctx.send(embed=embed)
+
     async def _set_permissions_command(self, ctx, name, *entities, whitelist, type_):
         entities = entities or (Server(ctx.guild), )
 
@@ -344,27 +368,8 @@ class Permissions:
             assert self._get_permissions.invalidate(None, None, ctx.guild.id), \
                   "Something bad happened while invalidating the cache"
 
-        # XXX: Should this all be inside the async with block too?
-        colour, action, icon = _value_embed_mappings[whitelist]
+            await self._display_embed(ctx, name, *entities, whitelist=whitelist, type_=type_)
 
-        embed = (discord.Embed(colour=colour)
-                 .set_author(name=f'{type_} {action}!', icon_url=icon)
-                 )
-
-        if name != ALL_MODULES_KEY:
-            cog, _, name = _extract_from_node(name)
-            embed.add_field(name=type_, value=name or cog)
-
-        sorted_entities = sorted(entities, key=_get_class_name)
-
-        for k, group in itertools.groupby(sorted_entities, _get_class_name):
-            group = list(group)
-            name = f'{k}{"s" * (len(group) != 1)}'
-            value = truncate(', '.join(map(str, group)), 1024, '...')
-
-            embed.add_field(name=name, value=value, inline=False)
-
-        await ctx.send(embed=embed)
 
     def _make_command(value, name, *, desc):
         format_entity = functools.partial(ENTITY_EXPLANATION.format, action=name.lower())
@@ -452,8 +457,33 @@ class Permissions:
     disable, disable_command, disable_cog, disable_all = _make_command(False, 'disable', desc='Disables')
     undo, undo_command, undo_cog, undo_all = _make_command(None, 'undo',
                                                            desc='Resets (or undoes) the permissions for')
-
     del _make_command
+
+    @commands.command(name='resetperms', aliases=['clearperms'])
+    @commands.has_permissions(administrator=True)
+    async def reset_perms(self, ctx):
+        """Clears *all* the permissions for commands and cogs.
+
+        This is a very risky action. Once you delete it, it's gone.
+        You'll have to replace them all. Only do this if you *really*
+        messed up.
+
+        If you wish to just delete just one perm, or multiple, use
+        `{prefix}undo` instead.
+
+        """ 
+        async with ctx.db.get_session() as session:
+            # See the block comment in _set_permissions_command to see why
+            # I'm making a new session for this one.
+            await (session.delete.table(CommandPermissions)
+                                 .where(CommandPermissions.guild_id == ctx.guild.id)
+                   )
+
+            assert self._get_permissions.invalidate(None, None, ctx.guild.id), \
+                  "Something bad happened while invalidating the cache"
+
+            await self._display_embed(ctx, None, Server(ctx.guild),
+                                      whitelist=-1, type_='All permissions')
 
 
 def setup(bot):
