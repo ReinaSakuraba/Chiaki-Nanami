@@ -34,7 +34,8 @@ class PermissionDenied(_PermissionFormattingMixin, commands.CheckFailure):
         super().__init__(message, *args)
 
     def __str__(self):
-        return f'{self._get_header()} disabled for the {_get_class_name(self.object).lower()} "{self.object}".'
+        return (f'{self._get_header()} disabled for the {_get_class_name(self.object).lower()} '
+                f'"{self.object}".')
 
 
 class InvalidPermission(_PermissionFormattingMixin, commands.CommandError):
@@ -177,7 +178,7 @@ class Permissions:
         if isinstance(error, (PermissionDenied, InvalidPermission)):
             await ctx.send(error)
         elif isinstance(error, commands.MissingPermissions):
-            missing = [perm.replace('_', ' ').replace('guild', 'server').title() 
+            missing = [perm.replace('_', ' ').replace('guild', 'server').title()
                        for perm in error.missing_perms]
 
             message = (f"You need the {formats.human_join(missing)} permission, because "
@@ -197,7 +198,8 @@ class Permissions:
 
         if row is None:
             if whitelist is None:
-                raise InvalidPermission(f'{name} was neither disabled nor enabled...', name, whitelist)
+                raise InvalidPermission(f'{name} was neither disabled nor enabled...',
+                                        name, whitelist)
 
             row = CommandPermissions(
                 guild_id=guild_id,
@@ -249,10 +251,8 @@ class Permissions:
         # Because of the bulk-updating method above, we can't exactly run a
         # check to see if any of the rows already exist on the table, as that
         # would just be another wasted query.
-        if len(entities) == 1:
-            await self._set_one_permission(session, guild_id, name, entities[0], whitelist=whitelist)
-        else:
-            await self._bulk_set_permissions(session, guild_id, name, *entities, whitelist=whitelist)
+        method = self._set_one_permission if len(entities) == 1 else self._bulk_set_permissions
+        await method(session, guild_id, name, *entities, whitelist=whitelist)
 
     @cache.cache(maxsize=None, make_key=lambda a, kw: a[-1])
     async def _get_permissions(self, session, guild_id):
@@ -366,10 +366,9 @@ class Permissions:
             # run. We need to make sure that we actually commit the change before
             # invalidating the cache.
             assert self._get_permissions.invalidate(None, None, ctx.guild.id), \
-                  "Something bad happened while invalidating the cache"
+                "Something bad happened while invalidating the cache"
 
             await self._display_embed(ctx, name, *entities, whitelist=whitelist, type_=type_)
-
 
     def _make_command(value, name, *, desc):
         format_entity = functools.partial(ENTITY_EXPLANATION.format, action=name.lower())
@@ -422,7 +421,8 @@ class Permissions:
                            )
                 return await ctx.send(message)
 
-            subs = '\n'.join(map(f'`{ctx.prefix}{{0}}` - {{0.short_doc}}'.format, ctx.command.commands))
+            subs = '\n'.join(map(f'`{ctx.prefix}{{0}}` - {{0.short_doc}}'.format,
+                                 ctx.command.commands))
             message = ("\N{THINKING FACE} I don't even know what you want to "
                        f"{ctx.command}... here are the commands again... \n{subs}"
                        )
@@ -454,10 +454,11 @@ class Permissions:
 
     # The actual commands... yes it's really short.
     enable, enable_command, enable_cog, enable_all = _make_command(True, 'enable', desc='Enables')
-    disable, disable_command, disable_cog, disable_all = _make_command(False, 'disable', desc='Disables')
-    undo, undo_command, undo_cog, undo_all = _make_command(None, 'undo',
-                                                           desc='Resets (or undoes) the permissions for')
-    del _make_command
+    disable, disable_command, disable_cog, disable_all = _make_command(False, 'disable',
+                                                                       desc='Disables')
+    _undo_desc = 'Resets (or undoes) the permissions for'
+    undo, undo_command, undo_cog, undo_all = _make_command(None, 'undo', desc=_undo_desc)
+    del _make_command, _undo_desc
 
     @commands.command(name='resetperms', aliases=['clearperms'])
     @commands.has_permissions(administrator=True)
@@ -471,7 +472,7 @@ class Permissions:
         If you wish to just delete just one perm, or multiple, use
         `{prefix}undo` instead.
 
-        """ 
+        """
         async with ctx.db.get_session() as session:
             # See the block comment in _set_permissions_command to see why
             # I'm making a new session for this one.
@@ -480,7 +481,7 @@ class Permissions:
                    )
 
             assert self._get_permissions.invalidate(None, None, ctx.guild.id), \
-                  "Something bad happened while invalidating the cache"
+                "Something bad happened while invalidating the cache"
 
             await self._display_embed(ctx, None, Server(ctx.guild),
                                       whitelist=-1, type_='All permissions')
