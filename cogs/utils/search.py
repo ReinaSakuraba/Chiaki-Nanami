@@ -157,11 +157,56 @@ class TextChannelSearch(commands.TextChannelConverter, Search):
         return await self.search(ctx, argument, result, thing='member')
 
 
+class UserSearch(commands.UserConverter, Search):
+    async def convert(self, ctx, argument):
+        match = self._get_id_match(argument) or re.match(r'<@!?([0-9]+)>$', argument)
+        state = ctx._state
+
+        if match is not None:
+            return await super().convert(ctx, argument)
+
+        # check for discriminator if it exists
+        # This should also be an exact match.
+        if len(argument) > 5 and argument[-5] == '#':
+            return await super().convert(ctx, argument)
+
+        lowered = argument.lower()
+        results = [u for u in state._users.values() if u.name.lower() == lowered]
+
+        if not results:
+            raise commands.BadArgument(f'Channel "{argument}" not found')
+        elif len(results) == 1:
+            return results[0]
+        return await self.search(ctx, argument, results, thing='user')
+
+
+class GuildSearch(commands.IDConverter, Search):
+    async def convert(self, ctx, arg):
+        match = self._get_id_match(arg)
+        state = ctx._state
+        if match:
+            guild = ctx.bot.get_guild(int(match.group(1)))
+            if guild:
+                return guild
+
+        lowered = arg.lower()
+        guilds = [g for g in state._guilds.values() if g.name.lower() == lowered]
+
+        if not guilds:
+            raise commands.BadArgument(f'Server "{arg}" not found')
+        elif len(guilds) == 1:
+            return guilds[0]
+        return await self.search(ctx, arg, guilds, thing='server')
+
+
 # A mapping for the discord.py class and it's corresponding searcher.
 _type_search_maps = {
     discord.Role: RoleSearch,
     discord.Member: MemberSearch,
-    discord.TextChannel: TextChannelSearch
+    discord.TextChannel: TextChannelSearch,
+    discord.User: UserSearch,
+    discord.Guild: GuildSearch,
+
 }
 
 
