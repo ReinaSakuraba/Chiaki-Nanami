@@ -15,9 +15,18 @@ from .utils.misc import emoji_url, truncate, unique
 ALL_MODULES_KEY = '*'
 
 
-class PermissionDenied(commands.CheckFailure):
-    def __init__(self, message, *args):
+class _PermissionFormattingMixin:
+    def _get_header(self):
+        if self.command:
+            return f'Command **{self.command}** is'
+        elif self.cog == ALL_MODULES_KEY:
+            return 'All modules are'
+        else:
+            return f'Cog **{self.cog}** is'
 
+
+class PermissionDenied(_PermissionFormattingMixin, commands.CheckFailure):
+    def __init__(self, message, *args):
         name, obj, *rest = args
         self.object = obj
         self.cog, _, self.command = _extract_from_node(name)
@@ -25,17 +34,29 @@ class PermissionDenied(commands.CheckFailure):
         super().__init__(message, *args)
 
     def __str__(self):
-        if self.command:
-            entity = f'Command **{self.command}** is'
-        elif self.cog == ALL_MODULES_KEY:
-            entity = 'All modules are'
-        else:
-            entity = f'Cog **{self.cog}** is'
+        return f'{self._get_header()} disabled for the {_get_class_name(self.object).lower()} "{self.object}".'
 
-        return f'{entity} disabled for the {_get_class_name(self.object).lower()} "{self.object}".'
+
+class InvalidPermission(_PermissionFormattingMixin, commands.CommandError):
+    def __init__(self, message, *args):
+        name, whitelisted, *rest = args
+        self.whitelisted = whitelisted
+        self.cog, _, self.command = _extract_from_node(name)
+
+        super().__init__(message, *args)
+
+    def __str__(self):
+        message = {
+            False: 'disabled',
+            True: 'explicitly enabled',
+            None: 'reset'
+        }[self.whitelisted]
+
+        return f'{self._get_header()} already {message}.'
 
 
 _command_node = '{0.cog_name}.{0}'.format
+
 def _extract_from_node(node):
     return node.partition('.')
 
@@ -129,12 +150,8 @@ class Permissions:
                 await session.create_table(name, *table.columns)
 
     async def on_command_error(self, ctx, error):
-        if isinstance(error, PermissionDenied):
+        if isinstance(error, (PermissionDenied, InvalidPermission)):
             await ctx.send(error)
-
-        original = getattr(error, 'original', None)
-        if isinstance(original, RuntimeError):
-            await ctx.send(original)
 
     async def _set_one_permission(self, session, guild_id, name, entity, whitelist):
         id = entity.id
@@ -148,7 +165,7 @@ class Permissions:
 
         if row is None:
             if whitelist is None:
-                raise RuntimeError(f'{name} was neither disabled nor enabled...', name)
+                raise InvalidPermission(f'{name} was neither disabled nor enabled...', name, whitelist)
 
             row = CommandPermissions(
                 guild_id=guild_id,
@@ -157,7 +174,7 @@ class Permissions:
             )
         elif row.whitelist == whitelist:
             # something
-            raise RuntimeError(f"Already {whitelist}")
+            raise InvalidPermission(f"Already {whitelist}", name, whitelist)
 
         if whitelist is None:
             await session.remove(row)
