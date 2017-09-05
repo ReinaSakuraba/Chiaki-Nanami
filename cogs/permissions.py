@@ -195,7 +195,7 @@ class Permissions:
             # We don't want it to recreate the permissions when reset.
             return
 
-        columns = ('guild_id', 'snowflake', 'name', 'whitelist'),
+        columns = ('guild_id', 'snowflake', 'name', 'whitelist')
         to_insert = [(guild_id, id, name, whitelist) for id in ids]
         conn = session.transaction.acquired_connection
 
