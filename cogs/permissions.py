@@ -1,5 +1,6 @@
 import asyncqlio
 import discord
+import functools
 import itertools
 
 from collections import defaultdict, namedtuple
@@ -123,12 +124,15 @@ class Server(namedtuple('Server', 'server')):
 
 
 ENTITY_EXPLANATION = """
-        Entities can either be a channel, a role, or a server. More than
-        one can be specified, but entities with names that consist of
-        more than one word must be wrapped in quotes. If no entities
-        are specified, then it will {action} {thing} for the entire
-        server.
-    """
+You can {action} {thing} for a channel, member, or role,
+or any combination of the three.
+
+(Keep in mind that names with more that one word must be
+put in quotes.)
+
+If you don't specify a channel, member, or role, it will
+{action} {thing} for this server.
+"""
 
 
 _value_embed_mappings = {
@@ -139,11 +143,24 @@ _value_embed_mappings = {
 
 
 class Permissions:
+    """Used for enabling or disabling commands for a channel, member,
+    role, or even the whole server.
+    """
+
+    # These types of commands are usually extremely complex. The goal
+    # of this was to be as simple as possible. Unfortunately while debugging
+    # the thing I forgot how my own perms were resolved, so I guess I failed
+    # in that regard.
+
     def __init__(self, bot):
         self.bot = bot
         self._md = self.bot.db.bind_tables(_Table)
+        # Unlike other cogs, this has to be created always. See below.
         self.bot.loop.create_task(self._create_permissions())
 
+    # This function is here because if we don't create the table,
+    # the global check will just error out, and prevent any commands
+    # from being run.
     async def _create_permissions(self):
         async with self.bot.db.get_ddl_session() as session:
             for name, table in self._md.tables.items():
@@ -173,11 +190,10 @@ class Permissions:
                 name=name,
             )
         elif row.whitelist == whitelist:
-            # something
             raise InvalidPermission(f"Already {whitelist}", name, whitelist)
 
         if whitelist is None:
-            await session.remove(row)
+            await session.remove(row)  # just delete it and move on
             return
 
         row.whitelist = whitelist
@@ -185,6 +201,19 @@ class Permissions:
 
     async def _bulk_set_permissions(self, session, guild_id, name, *entities, whitelist):
         ids = unique(e.id for e in entities)
+        # This was actually extremely hard to do.
+        #
+        # What we actually need to do was to bulk-insert a bunch of records.
+        # However, there is a chance that someone would've attempted to modify
+        # a row that already exists -- they'd just want to change the whitelist
+        # bool.
+        #
+        # Unfortunately, there is no easy way to do that, because bulk-update
+        # doesn't return the rows that were modified. The only real way to do
+        # this is to delete all the rows, then re-insert them through COPY.
+        # This wreaks havoc on the indexes of the table, causing a major
+        # performance penalty, but most of time you don't be constantly
+        # changing the permissions of a certain entity anyway.
         await (session.delete.table(CommandPermissions)
                              .where((CommandPermissions.guild_id == guild_id)
                                     & (CommandPermissions.name == name)
@@ -192,7 +221,7 @@ class Permissions:
                )
 
         if whitelist is None:
-            # We don't want it to recreate the permissions when reset.
+            # We don't want it to recreate the permissions during a reset.
             return
 
         columns = ('guild_id', 'snowflake', 'name', 'whitelist')
@@ -202,6 +231,9 @@ class Permissions:
         await conn.copy_records_to_table('permissions', columns=columns, records=to_insert)
 
     async def _set_permissions(self, session, guild_id, name, *entities, whitelist):
+        # Because of the bulk-updating method above, we can't exactly run a
+        # check to see if any of the rows already exist on the table, as that
+        # would just be another wasted query.
         if len(entities) == 1:
             await self._set_one_permission(session, guild_id, name, entities[0], whitelist=whitelist)
         else:
@@ -217,12 +249,15 @@ class Permissions:
         async for row in await query.all():
             lookup[row.snowflake][row.whitelist].add(row.name)
 
+        # Converting this to a dict so future retrievals of this via cache
+        # don't accidentally modify this.
         return dict(lookup)
 
     async def __global_check(self, ctx):
-        if not ctx.guild:
+        if not ctx.guild:  # Custom permissions don't really apply in DMs
             return True
 
+        # XXX: Should I have a check for if the table/relation actually exists?
         lookup = await self._get_permissions(ctx.session, ctx.guild.id)
         if not lookup:
             # "Fast" path
@@ -242,11 +277,36 @@ class Permissions:
             (ctx.command.cog_name, ALL_MODULES_KEY)
         )
 
+        # The following code is roughly along the lines of this:
+        # Apply guild-level denies first
+        # then guild-level allows
+        # then channel-level denies
+        # then channel-level allows
+        # ...
+        # all the way down the user level.
+        #
+        # The levels go up the command tree, starting from the root command,
+        # and ending at the actual sub command.
+        #
+        # However, there's one critical difference: we go in reverse order here,
+        # starting from the user level, then ending at the guild level. This gives
+        # the exact same result, because we're really looking for the last perm that
+        # would be applied here. However, by going in reverse this allows for two
+        # things:
+        #
+        # 1. Optimization: By returning early we don't have to evaluate all the
+        #    permissions. This helps a lot as a lot of commands will be thrown at
+        #    the bot.
+        # 2. The ability to stop early and throw an exception indicating which
+        #    command and which level it's disabled on. If we go forwards, we won't
+        #    know the last perm that will be applied, but here we'll able to know
+        #    because we're looking for the first perm.
+        #
         for (typename, obj), name in itertools.product(objects, names):
-            if obj.id not in lookup:
+            if obj.id not in lookup:  # more likely for an id to not be in here.
                 continue
 
-            if name in lookup[obj.id][True]:
+            if name in lookup[obj.id][True]:  # allow overrides deny
                 return True
 
             elif name in lookup[obj.id][False]:
@@ -271,6 +331,7 @@ class Permissions:
             assert self._get_permissions.invalidate(None, None, ctx.guild.id), \
                   "Something bad happened while invalidating the cache"
 
+        # XXX: Should this all be inside the async with block too?
         colour, action, icon = _value_embed_mappings[whitelist]
 
         embed = (discord.Embed(colour=colour)
@@ -292,14 +353,22 @@ class Permissions:
 
         await ctx.send(embed=embed)
 
-    def _make_command(value, name, *, desc=None):
-        desc = desc or name
-        cmd_doc_string = f"{desc} a given command."
-        cog_doc_string = f"{desc} a given cog."
-        all_doc_string = f"{desc} all cogs, and subsequently all commands."
+    def _make_command(value, name, *, desc):
+        format_entity = functools.partial(ENTITY_EXPLANATION.format, action=name.lower())
+
+        cmd_doc_string = f'{desc} a command.\n{format_entity(thing="a command")}'
+        cog_doc_string = f'{desc} a cog.\n{format_entity(thing="a cog")}'
+        all_doc_string = (f'{desc} all cogs, and subsequently all commands.\n'
+                          f'{format_entity(thing="all cogs")}')
 
         @commands.group(name=name)
         async def group(self, ctx):
+            # XXX: I'm not exactly sure whether this should be the same
+            #      as ->enable command, or if should take cogs as well.
+            #      The former might make it easier to parse and disambiguate,
+            #      while the latter might be way simpler for the end user.
+            #      (or harder since there are some commands that have the
+            #       name as cogs.)
             pass
 
         @group.command(name='command', help=cmd_doc_string)
@@ -320,14 +389,15 @@ class Permissions:
             await self._set_permissions_command(ctx, ALL_MODULES_KEY, *entities,
                                                 whitelist=value, type_='All Modules')
 
-        # Must return all of these otherwise the subcommands won't get added properly --
-        # they will end up having no instance.
+        # Must return all of these otherwise the subcommands won't get added
+        # properly -- they will end up having no instance.
         return group, group_command, group_cog, group_all
 
     # The actual commands... yes it's really short.
     enable, enable_command, enable_cog, enable_all = _make_command(True, 'enable', desc='Enables')
     disable, disable_command, disable_cog, disable_all = _make_command(False, 'disable', desc='Disables')
-    undo, undo_command, undo_cog, undo_all = _make_command(None, 'undo', desc='Resets the permissions for')
+    undo, undo_command, undo_cog, undo_all = _make_command(None, 'undo', 
+                                                           desc='Resets (or undoes) the permissions for')
 
     del _make_command
 
