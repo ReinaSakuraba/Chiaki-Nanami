@@ -5,9 +5,8 @@ import itertools
 
 from collections import defaultdict, namedtuple
 from discord.ext import commands
-from operator import attrgetter
 
-from .utils import cache, search
+from .utils import cache, formats, search
 from .utils.converter import BotCommand, BotCogConverter
 from .utils.dbtypes import AutoIncrementInteger
 from .utils.misc import emoji_url, truncate, unique
@@ -151,6 +150,12 @@ class Permissions:
     # of this was to be as simple as possible. Unfortunately while debugging
     # the thing I forgot how my own perms were resolved, so I guess I failed
     # in that regard.
+    #
+    # Most of these commands require Manage Server. while these can potentially
+    # be dangerous, the worst that can happen is that you accidentally lock
+    # yourself out. You can't lock these commands anyway, so nothing really
+    # bad will happen, unlike having *overrides*, which are a million times
+    # more dangerous.
 
     def __init__(self, bot):
         self.bot = bot
@@ -169,6 +174,14 @@ class Permissions:
     async def on_command_error(self, ctx, error):
         if isinstance(error, (PermissionDenied, InvalidPermission)):
             await ctx.send(error)
+        elif isinstance(error, commands.MissingPermissions):
+            missing = [perm.replace('_', ' ').replace('guild', 'server').title() 
+                       for perm in error.missing_perms]
+
+            message = (f"You need the {formats.human_join(missing)} permission, because "
+                       "these types of commands are very advanced, I think.")
+            # TODO: put this in an embed.
+            await ctx.send(message)
 
     async def _set_one_permission(self, session, guild_id, name, entity, whitelist):
         id = entity.id
@@ -362,6 +375,7 @@ class Permissions:
                           f'{format_entity(thing="all cogs")}')
 
         @commands.group(name=name)
+        @commands.has_permissions(manage_guild=True)
         async def group(self, ctx):
             # XXX: I'm not exactly sure whether this should be the same
             #      as ->enable command, or if should take cogs as well.
@@ -369,9 +383,47 @@ class Permissions:
             #      while the latter might be way simpler for the end user.
             #      (or harder since there are some commands that have the
             #       name as cogs.)
-            pass
+            #
+            # Just gonna do some input checking for now.
 
-        @group.command(name='command', help=cmd_doc_string)
+            if ctx.invoked_subcommand:
+                return
+
+            arg = ctx.subcommand_passed
+            if not arg:
+                subs = '\n'.join(map(f'`{ctx.prefix}{{}}`'.format, ctx.command.commands))
+                message = (f"{ctx.command.name.title()} what? You're gonna have "
+                           f"to be a little more specific here... I think. Here "
+                           f"are the commands:\n{subs}"
+                           )
+                return await ctx.send(message)
+
+            # In case someone attempts to do for example, ->enable "random colour"
+            arg = arg.strip('"')
+
+            maybe_command = ctx.bot.get_command(arg)
+            if maybe_command is not None:
+                message = (f'Hm... this looks like a command... I think.\n'
+                           f'Use `{ctx.command} command {arg} ` if '
+                           f"you're planning to {ctx.command} it...?"
+                           )
+                return await ctx.send(message)
+
+            lowered = arg.lower()
+            if any(cog.lower() == lowered for cog in ctx.bot.cogs):
+                message = (f'This looks like a cog... I think.\n'
+                           f'Use `{ctx.command} cog {arg} ` if '
+                           f"you're planning to {ctx.command} it...?"
+                           )
+                return await ctx.send(message)
+
+            subs = '\n'.join(map(f'`{ctx.prefix}{{0}}` - {{0.short_doc}}'.format, ctx.command.commands))
+            message = ("\N{THINKING FACE} I don't even know what you want to "
+                       f"{ctx.command}... here are the commands again... \n{subs}"
+                       )
+            await ctx.send(message)
+
+        @group.command(name='command', help=cmd_doc_string, aliases=['cmd'])
         async def group_command(self, ctx, command: CommandName, *entities: PermissionEntity):
             await self._set_permissions_command(ctx, command, *entities,
                                                 whitelist=value, type_='Command')
@@ -379,7 +431,9 @@ class Permissions:
         # Providing these helper commands to allow users to "bulk"-disable certain
         # certain commands. Theoretically I COULD allow for ->enable command_or_module
         # but that would force me to make the commands case sensitive.
-        @group.command(name='cog', help=cog_doc_string)
+        #
+        # Not sure whether that would be good or bad for the end user.
+        @group.command(name='cog', help=cog_doc_string, aliases=['module'])
         async def group_cog(self, ctx, cog: CogName, *entities: PermissionEntity):
             await self._set_permissions_command(ctx, cog, *entities,
                                                 whitelist=value, type_='Cog')
@@ -396,7 +450,7 @@ class Permissions:
     # The actual commands... yes it's really short.
     enable, enable_command, enable_cog, enable_all = _make_command(True, 'enable', desc='Enables')
     disable, disable_command, disable_cog, disable_all = _make_command(False, 'disable', desc='Disables')
-    undo, undo_command, undo_cog, undo_all = _make_command(None, 'undo', 
+    undo, undo_command, undo_cog, undo_all = _make_command(None, 'undo',
                                                            desc='Resets (or undoes) the permissions for')
 
     del _make_command
