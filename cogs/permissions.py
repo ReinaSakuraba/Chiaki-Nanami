@@ -1,3 +1,4 @@
+import asyncpg
 import asyncqlio
 import discord
 import functools
@@ -5,6 +6,7 @@ import itertools
 
 from collections import defaultdict, namedtuple
 from discord.ext import commands
+from more_itertools import one, partition
 
 from .utils import cache, formats, search
 from .utils.converter import BotCommand, BotCogConverter
@@ -79,6 +81,12 @@ class CommandPermissions(_Table, table_name='permissions'):
     name = asyncqlio.Column(asyncqlio.String)
     whitelist = asyncqlio.Column(asyncqlio.Boolean)
 
+class Plonks(_Table):
+    guild_id = asyncqlio.Column(asyncqlio.BigInt, index=True, primary_key=True)
+
+    # this can either be a channel_id or an author_id
+    entity_id = asyncqlio.Column(asyncqlio.BigInt, index=True, primary_key=True)
+
 
 # Some converter utilities I guess
 
@@ -105,6 +113,7 @@ class CogName(BotCogConverter):
 
 
 PermissionEntity = search.union(discord.Member, discord.Role, discord.TextChannel)
+Plonkable = search.union(discord.TextChannel, discord.Member)
 
 # End of the converters I guess.
 
@@ -142,6 +151,11 @@ _value_embed_mappings = {
     None: (0x7289da, 'reset', emoji_url('\U0001f504')),
     -1: (0xFF0000, 'deleted', emoji_url('\N{PUT LITTER IN ITS PLACE SYMBOL}')),
 }
+_plonk_embed_mappings = {
+    True: (0xf44336, 'plonk'),
+    False: (0x4CAF50, 'unplonk'),
+}
+PLONK_ICON = emoji_url('\N{HAMMER}')
 
 
 class Permissions:
@@ -173,6 +187,20 @@ class Permissions:
         async with self.bot.db.get_ddl_session() as session:
             for name, table in self._md.tables.items():
                 await session.create_table(name, *table.columns)
+
+    async def __global_check_once(self, ctx):
+        if not ctx.guild:
+            return True
+
+        if await ctx.bot.is_owner(ctx.author):
+            return True
+
+        query = (ctx.session.select.from_(Plonks)
+                            .where((Plonks.guild_id == ctx.guild.id)
+                                   & Plonks.entity_id.in_(ctx.channel.id, ctx.author.id))
+                )
+        row = await query.first()
+        return row is not None
 
     async def on_command_error(self, ctx, error):
         if isinstance(error, (PermissionDenied, InvalidPermission)):
@@ -354,21 +382,21 @@ class Permissions:
     async def _set_permissions_command(self, ctx, name, *entities, whitelist, type_):
         entities = entities or (Server(ctx.guild), )
 
-        async with ctx.db.get_session() as session:
-            # To avoid accidentally doing a query while the __global_check
-            # is being processed, we have to do create another session.
-            # I'm not sure if there is anything inherently wrong with this code
-            # though, so if anyone is looking at this code and finds anything
-            # wrong with it, please DM me ASAP.
-            await self._set_permissions(session, ctx.guild.id, name, *entities, whitelist=whitelist)
+        # async with ctx.db.get_session() as session:
+        # To avoid accidentally doing a query while the __global_check
+        # is being processed, we have to do create another session.
+        # I'm not sure if there is anything inherently wrong with this code
+        # though, so if anyone is looking at this code and finds anything
+        # wrong with it, please DM me ASAP.
+        await self._set_permissions(ctx.session, ctx.guild.id, name, *entities, whitelist=whitelist)
 
-            # If an exception was raised in the code above, the code below won't
-            # run. We need to make sure that we actually commit the change before
-            # invalidating the cache.
-            assert self._get_permissions.invalidate(None, None, ctx.guild.id), \
-                "Something bad happened while invalidating the cache"
+        # If an exception was raised in the code above, the code below won't
+        # run. We need to make sure that we actually commit the change before
+        # invalidating the cache.
+        assert self._get_permissions.invalidate(None, None, ctx.guild.id), \
+            "Something bad happened while invalidating the cache"
 
-            await self._display_embed(ctx, name, *entities, whitelist=whitelist, type_=type_)
+        await self._display_embed(ctx, name, *entities, whitelist=whitelist, type_=type_)
 
     def _make_command(value, name, *, desc):
         format_entity = functools.partial(ENTITY_EXPLANATION.format, action=name.lower())
@@ -473,18 +501,82 @@ class Permissions:
         `{prefix}undo` instead.
 
         """
-        async with ctx.db.get_session() as session:
-            # See the block comment in _set_permissions_command to see why
-            # I'm making a new session for this one.
-            await (session.delete.table(CommandPermissions)
+        # See the block comment in _set_permissions_command to see why
+        # I'm making a new session for this one.
+        await (ctx.session.delete.table(CommandPermissions)
                                  .where(CommandPermissions.guild_id == ctx.guild.id)
-                   )
+               )
 
-            assert self._get_permissions.invalidate(None, None, ctx.guild.id), \
-                "Something bad happened while invalidating the cache"
+        assert self._get_permissions.invalidate(None, None, ctx.guild.id), \
+            "Something bad happened while invalidating the cache"
 
-            await self._display_embed(ctx, None, Server(ctx.guild),
-                                      whitelist=-1, type_='All permissions')
+        await self._display_embed(ctx, None, Server(ctx.guild),
+                                  whitelist=-1, type_='All permissions')
+
+    async def _bulk_ignore_entries(self, ctx, entries):
+        guild_id = ctx.guild.id
+        query = ctx.session.select.from_(Plonks).where(Plonks.guild_id == guild_id)
+
+        current_plonks = {r.entity_id async for r in await query.all()}
+        to_insert = [(guild_id, e.id) for e in entries if e.id not in current_plonks]
+
+        conn = ctx.session.transaction.acquired_connection
+        await conn.copy_records_to_table('plonks', columns=('guild_id', 'entity_id'), records=to_insert)
+
+    async def _display_plonked(self, ctx, entries, plonk):
+        # things = channels, members
+
+        colour, action = _plonk_embed_mappings[plonk]
+        embed = (discord.Embed(colour=colour)
+                 .set_author(name=f'{action.title()} successful!', icon_url=PLONK_ICON)
+                 )
+
+        for thing in map(list, partition(lambda e: isinstance(e, discord.TextChannel), entries)):
+            if not thing:
+                continue
+
+            name = f'{_get_class_name(thing[0])}{"s" * (len(thing) != 1)} {action}ed'
+            value = truncate(', '.join(map(str, thing)), 1024, '...')
+            embed.add_field(name=name, value=value, inline=False)
+
+        await ctx.send(embed=embed)
+
+    @commands.command(aliases=['plonk'])
+    @commands.has_permissions(manage_guild=True)
+    async def ignore(self, ctx, *channels_or_members: Plonkable):
+        """Ignores text channels or members from using the bot.
+
+        If no channel or member is specified, the current channel is ignored.
+        """
+        channels_or_members = channels_or_members or [ctx.channel]
+
+        if len(channels_or_members) == 1:
+            thing = one(channels_or_members)
+            try:
+                await ctx.session.add(Plonks(guild_id=ctx.guild.id, entity_id=thing.id))
+            except asyncpg.UniqueViolationError:
+                await ctx.send(f"I'm already ignoring {thing}...")
+                raise commands.UserInputError
+
+        else:
+            await self._bulk_ignore_entries(ctx, channels_or_members)
+
+        await self._display_plonked(ctx, channels_or_members, plonk=True)
+
+    @commands.command(aliases=['unplonk'])
+    @commands.has_permissions(manage_guild=True)
+    async def unignore(self, ctx, *channels_or_members: Plonkable):
+        """Allows channels or members to use the bot again.
+
+        If no channel or member is specified, it unignores the current channel.
+        """
+        entities = channels_or_members or [ctx.channel]
+        condition = (Plonks.entity_id.in_(*(e.id for e in entities))
+                     if len(entities) == 1 else
+                     Plonks.entity_id == entities[0].id)
+
+        await ctx.session.delete.table(Plonks).where((Plonks.guild_id == ctx.guild.id) & condition)
+        await self._display_plonked(ctx, entities, plonk=False)
 
 
 def setup(bot):
