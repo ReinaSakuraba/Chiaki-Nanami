@@ -156,10 +156,16 @@ class Tags:
         """Removes a tag or alias.
 
         Only the owner of the tag or alias can delete it.
+
+        However, if you have Manage Server perms you can delete
+        a tag *regardless* of whether or not it's yours.
         """
+
+        is_mod = ctx.author.permissions_in(ctx.channel).manage_guild
+
         # idk how wasteful this is. Probably very.
         tag = await self._get_tag(ctx.session, name, ctx.guild.id)
-        if tag.owner_id != ctx.author.id:
+        if tag.owner_id != ctx.author.id and not is_mod:
             return await ctx.send("This tag is not yours.")
 
         await ctx.session.remove(tag)
@@ -210,6 +216,7 @@ class Tags:
 
         await ctx.send(embed=embed)
 
+    # XXX: too much repetition...
     @tag.command(name='list', aliases=['all'])
     async def tag_list(self, ctx):
         """Shows all the tags in the server."""
