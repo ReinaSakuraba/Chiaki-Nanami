@@ -73,11 +73,14 @@ class Tags:
 
         return tag
 
-    async def _resolve_tag(self, session, name, guild_id):
+    async def _get_original_tag(self, session, name, guild_id):
         tag = await self._get_tag(session, name, guild_id)
+        if tag.is_alias:
+            return await self._get_tag(session, tag.content, guild_id)
+        return tag
 
-        # if tag.is_alias:
-        #     return self._resolve_tag(self, session, tag.content, guild_id)
+    async def _resolve_tag(self, session, name, guild_id):
+        tag = await self._get_original_tag(session, name, guild_id)
         return tag.content
 
     @commands.group(invoke_without_command=True)
@@ -118,6 +121,33 @@ class Tags:
         tag.content = new_content
         await ctx.session.merge(tag)
         await ctx.send("Successfully edited the tag!")
+
+    @tag.command(name='alias')
+    async def tag_alias(self, ctx, alias, original):
+        """Creats an alias of a tag.
+
+        You own the alias. However, if the original tag gets deleted,
+        so does your alias.
+
+        You also can't edit the alias.
+        """
+        # Make sure the original tag exists.
+        tag = await self._get_original_tag(ctx.session, original, ctx.guild.id)
+        new_tag = Tag(
+            name=alias.lower(),
+            content=tag.name,
+            is_alias=True,
+            owner_id=ctx.author.id,
+            location_id=ctx.guild.id,
+            created_at=datetime.datetime.utcnow()
+        )
+
+        try:
+            await ctx.session.add(new_tag)
+        except asyncpg.UniqueViolationError as e:
+            raise TagError(f'Alias {alias} already exists...') from e
+        else:
+            await ctx.send(f'Successfully created alias {alias} that points to {original}! ^.^')
 
     @tag.command(name='delete', aliases=['remove'])
     async def tag_delete(self, ctx, *, name):
@@ -182,7 +212,6 @@ class Tags:
     async def tags_from(self, ctx, *, member: discord.Member = None):
         """Alias for `{prefix}tag from/by`."""
         await ctx.invoke(self.tag_by, member=member)
-
 
 
 def setup(bot):
