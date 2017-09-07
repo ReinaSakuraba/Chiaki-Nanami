@@ -6,6 +6,7 @@ import itertools
 
 from discord.ext import commands
 
+from .utils import formats
 from .utils.paginator import ListPaginator
 
 
@@ -79,15 +80,16 @@ class Tags:
             return await self._get_tag(session, tag.content, guild_id)
         return tag
 
-    async def _resolve_tag(self, session, name, guild_id):
-        tag = await self._get_original_tag(session, name, guild_id)
-        return tag.content
-
     @commands.group(invoke_without_command=True)
-    async def tag(self, ctx, *, tag):
+    async def tag(self, ctx, *, name):
         """Retrieves a tag, if one exists."""
-        content = await self._resolve_tag(ctx.session, tag, ctx.guild.id)
-        await ctx.send(content)
+        tag = await self._get_original_tag(ctx.session, name, ctx.guild.id)
+        await ctx.send(tag.content)
+
+        await (ctx.session.update.table(Tag)
+                          .where((Tag.name == name.lower()) & (Tag.location_id == ctx.guild.id))
+                          .set(Tag.uses + 1)
+               )
 
     @tag.command(name='create', aliases=['add'])
     async def tag_create(self, ctx, name, *, content):
@@ -170,6 +172,43 @@ class Tags:
             await ctx.send(f"Tag {name} and all of its aliases have been deleted.")
         else:
             await ctx.send("Alias successfully deleted.")
+
+    async def _get_tag_rank(self, session, tag):
+        query = """SELECT COUNT(*) FROM tags
+                   WHERE location_id = {guild_id}
+                   AND (uses, created_at) >= ({uses}, {created})
+                """
+        # XXX: Not sure if asyncqlio covers tuple comparisons.
+        params = {'guild_id': tag.location_id, 'uses': tag.uses, 'created': tag.created_at}
+
+        result = await session.cursor(query, params)
+        return await result.fetch_row()
+
+    @tag.command(name='info')
+    async def tag_info(self, ctx, *, tag):
+        """Shows the info of a tag or alias."""
+        # XXX: This takes roughly 8-16 ms. Not good, but to make my life
+        #      simpler I'll ignore it for now until the bot gets really big
+        #      and querying the tags starts becoming expensive.
+        tag = await self._get_tag(ctx.session, tag, ctx.guild.id)
+        rank = await self._get_tag_rank(ctx.session, tag)
+
+        user = ctx.bot.get_user(tag.owner_id)
+        creator = user.mention if user else f'Unknown User (ID: {tag.owner_id})'
+        icon_url = user.avatar_url if user else discord.Embed.Empty
+
+        embed = (discord.Embed(colour=ctx.bot.colour, timestamp=tag.created_at)
+                 .set_author(name=tag.name, icon_url=icon_url)
+                 .add_field(name='Created by', value=creator)
+                 .add_field(name='Used', value=f'{formats.pluralize(time=tag.uses)}', inline=False)
+                 .add_field(name='Rank', value=f'#{rank["count"]}', inline=False)
+                 .set_footer(text='Created')
+                 )
+
+        if tag.is_alias:
+            embed.description = f'Original Tag: {tag.content}'
+
+        await ctx.send(embed=embed)
 
     @tag.command(name='list', aliases=['all'])
     async def tag_list(self, ctx):
