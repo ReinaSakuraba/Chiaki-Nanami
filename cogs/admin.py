@@ -553,7 +553,6 @@ class Admin:
     # ------------------------- PREFIX RELATED STUFF -------------------
 
     @commands.group(aliases=['prefixes'], invoke_without_command=True)
-    @commands.has_permissions(manage_guild=True)
     async def prefix(self, ctx):
         """Shows the prefixes that you can use in this server."""
         if ctx.invoked_subcommand is not None:
