@@ -68,7 +68,7 @@ class TagName(commands.clean_content):
         if first_word in root.all_commands:
             raise commands.BadArgument('This tag name starts with a reserved word.')
 
-        return lower if self.lower else converted
+        return lower
 
 
 class Tags:
