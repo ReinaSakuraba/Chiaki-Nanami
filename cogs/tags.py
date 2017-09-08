@@ -53,6 +53,24 @@ class ServerTagPaginator(ListPaginator):
         return embed
 
 
+class TagName(commands.clean_content):
+    async def convert(self, ctx, argument):
+        converted = await super().convert(ctx, argument)
+        lower = converted.lower()
+
+        if len(lower) > 200:
+            raise commands.BadArgument('Too long! It has to be less than 200 characters long.')
+
+        first_word, _, _ = lower.partition(' ')
+
+        # get tag command.
+        root = ctx.bot.get_command('tag')
+        if first_word in root.all_commands:
+            raise commands.BadArgument('This tag name starts with a reserved word.')
+
+        return lower if self.lower else converted
+
+
 class Tags:
     """You're it."""
     def __init__(self, bot):
@@ -66,7 +84,7 @@ class Tags:
 
     async def _get_tag(self, session, name, guild_id):
         query = (session.select.from_(Tag)
-                        .where((Tag.name == name.lower())
+                        .where((Tag.name == name)
                                & (Tag.location_id == guild_id)))
         tag = await query.first()
         if tag is None:
@@ -81,7 +99,7 @@ class Tags:
         return tag
 
     @commands.group(invoke_without_command=True)
-    async def tag(self, ctx, *, name):
+    async def tag(self, ctx, *, name: TagName):
         """Retrieves a tag, if one exists."""
         tag = await self._get_original_tag(ctx.session, name, ctx.guild.id)
         await ctx.send(tag.content)
@@ -92,10 +110,10 @@ class Tags:
                )
 
     @tag.command(name='create', aliases=['add'])
-    async def tag_create(self, ctx, name, *, content):
+    async def tag_create(self, ctx, name: TagName, *, content):
         """Creates a new tag."""
         tag = Tag(
-            name=name.lower(),
+            name=name,
             content=content,
             is_alias=False,
             owner_id=ctx.author.id,
@@ -125,7 +143,7 @@ class Tags:
         await ctx.send("Successfully edited the tag!")
 
     @tag.command(name='alias')
-    async def tag_alias(self, ctx, alias, original):
+    async def tag_alias(self, ctx, alias: TagName, *, original: TagName):
         """Creats an alias of a tag.
 
         You own the alias. However, if the original tag gets deleted,
@@ -152,7 +170,7 @@ class Tags:
             await ctx.send(f'Successfully created alias {alias} that points to {original}! ^.^')
 
     @tag.command(name='delete', aliases=['remove'])
-    async def tag_delete(self, ctx, *, name):
+    async def tag_delete(self, ctx, *, name: TagName):
         """Removes a tag or alias.
 
         Only the owner of the tag or alias can delete it.
@@ -191,7 +209,7 @@ class Tags:
         return await result.fetch_row()
 
     @tag.command(name='info')
-    async def tag_info(self, ctx, *, tag):
+    async def tag_info(self, ctx, *, tag: TagName):
         """Shows the info of a tag or alias."""
         # XXX: This takes roughly 8-16 ms. Not good, but to make my life
         #      simpler I'll ignore it for now until the bot gets really big
