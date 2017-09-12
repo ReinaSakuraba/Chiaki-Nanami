@@ -239,7 +239,7 @@ class ModLog:
         return await query.first()
 
     # Now for the commands.
-    @commands.group(invoke_without_command=True)
+    @commands.command()
     async def case(self, ctx, num: int):
         """Retrives the case with the given number."""
         # I'll find some way to do handle negative number later...
