@@ -11,7 +11,7 @@ from discord.ext import commands
 from more_itertools import ilen, partition
 from operator import attrgetter
 
-from .utils import dbtypes
+from .utils import dbtypes, errors
 from .utils.formats import pluralize
 from .utils.misc import emoji_url
 from .utils.paginator import ListPaginator, EmbedFieldPages
@@ -27,8 +27,10 @@ _ignored_exceptions = (
     commands.CheckFailure,
     commands.CommandNotFound,
     commands.UserInputError,
-    discord.Forbidden
+    discord.Forbidden,
+    errors.ChiakiException,
 )
+
 ERROR_ICON_URL = emoji_url('\N{NO ENTRY SIGN}')
 
 
@@ -232,6 +234,7 @@ class Stats:
 
     async def on_guild_remove(self, guild):
         await self.send_guild_stats(guild, 0xdd5f53, 'Left')
+
 
 def setup(bot):
     bot.add_cog(Stats(bot))

@@ -11,12 +11,12 @@ from discord.ext import commands
 from more_itertools import partition
 from functools import reduce
 
-from .utils import cache, dbtypes
+from .utils import cache, dbtypes, errors
 from .utils.misc import emoji_url, unique
 from .utils.time import duration_units
 
 
-class ModLogError(Exception):
+class ModLogError(errors.ChiakiException):
     pass
 
 
@@ -298,7 +298,7 @@ class ModLog:
         config = await self._get_case_config(ctx.session, ctx.guild.id)
         if config is None:
             message = ("You haven't even enabled case-logging. Set a channel "
-                       "first using `{ctx.clean_prefix}modlog channel`.")
+                       f"first using `{ctx.clean_prefix}modlog channel`.")
             raise ModLogError(message)
 
         return config
