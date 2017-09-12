@@ -7,6 +7,7 @@ import json
 
 from datetime import datetime
 from discord.ext import commands
+from operator import attrgetter
 
 from .utils import cache, dbtypes
 from .utils.misc import emoji_url
@@ -261,6 +262,18 @@ class ModLog:
     @commands.has_permissions(manage_guild=True)
     async def modlog_channel(self, ctx, channel: discord.TextChannel):
         """Sets the channel that will be used for logging moderation actions"""
+        permissions = ctx.me.permissions_in(channel)
+        if not permissions.read_messages:
+            return await ctx.send(f'I need to be able to read messages in {channel.mention} you baka!')
+
+        if not permissions.send_messages:
+            return await ctx.send(f'I need to be able to send messages in {channel.mention}. '
+                                  'How else will I be able to log?!')
+
+        if not permissions.embed_links:
+            return await ctx.send('I need the Embed Links permissions in order to make '
+                                  f'{channel.mention} the mod-log channel...')
+
         config = await self._get_case_config(ctx.session, ctx.guild.id)
         config = config or ModLogConfig(guild_id=ctx.guild.id)
         config.channel_id = channel.id
