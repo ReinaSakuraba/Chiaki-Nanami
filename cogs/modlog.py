@@ -4,13 +4,15 @@ import collections
 import discord
 import enum
 import json
+import operator
 
 from datetime import datetime
 from discord.ext import commands
-from operator import attrgetter
+from more_itertools import partition
+from functools import reduce
 
 from .utils import cache, dbtypes
-from .utils.misc import emoji_url
+from .utils.misc import emoji_url, unique
 from .utils.time import duration_units
 
 
@@ -58,17 +60,28 @@ _mod_actions = {
     'massban' : ModAction('massbanned', '\N{NO ENTRY}', 1),
 }
 
+
+class EnumConverter(enum.IntFlag):
+    """Mixin used for converting enums"""
+    @classmethod
+    async def convert(cls, ctx, arg):
+        try:
+            return cls[arg.lower()]
+        except KeyError:
+            raise commands.BadArgument(f'{arg} is not a valid {cls.__name__}')
+
+
+ActionFlag = enum.IntFlag('ActionFlag', list(_mod_actions), type=EnumConverter)
+_default_flags = (2 ** len(_mod_actions) - 1) & ~ActionFlag.hackban
+
+
 for k, v in list(_mod_actions.items()):
     _mod_actions[f'auto-{k}'] = v._replace(repr=f'auto-{v.repr}')
 
 MASSBAN_THUMBNAIL = emoji_url('\N{NO ENTRY}')
 
 
-ActionFlag = enum.IntFlag('ActionFlag', list(_mod_actions))
-_default_flags = (2 ** len(_mod_actions) - 1) & ~ActionFlag.hackban
-
-
-class ModLogConfig(_Table, table_name='case_config'):
+class ModLogConfig(_Table, table_name='modlog_config'):
     guild_id = asyncqlio.Column(asyncqlio.BigInt, primary_key=True)
     channel_id = asyncqlio.Column(asyncqlio.BigInt)
     enabled = asyncqlio.Column(asyncqlio.Boolean, default=True)
@@ -280,6 +293,61 @@ class ModLog:
 
         await ctx.session.add(config)
         await ctx.send('ok')
+
+    async def _check_config(self, ctx):
+        config = await self._get_case_config(ctx.session, ctx.guild.id)
+        if config is None:
+            message = ("You haven't even enabled case-logging. Set a channel "
+                       "first using `{ctx.clean_prefix}modlog channel`.")
+            raise ModLogError(message)
+
+        return config
+
+    @commands.group(name='modactions', aliases=['modacts'], invoke_without_command=True)
+    @commands.has_permissions(manage_guild=True)
+    async def mod_actions(self, ctx):
+        """Shows all the action that can be logged."""
+        config = await self._check_config(ctx)
+
+        flags = ', '.join(f.name for f in ActionFlag)
+        enabled_flags = ', '.join(f.name for f in ActionFlag if config.events & f)
+
+        embed = (discord.Embed(colour=ctx.bot.colour)
+                 .add_field(name='List of valid Mod Actions', value=flags)
+                 .add_field(name='Actions that will be logged', value=enabled_flags)
+                 )
+        await ctx.send(embed=embed)
+
+    async def _set_actions(self, ctx, op, flags, *, colour):
+        flags = unique(flags)
+
+        config = await self._check_config(ctx)
+        reduced = reduce(operator.or_, flags)
+        config.events = op(config.events, reduced)
+
+        await ctx.session.add(config)
+
+        enabled_flags = ', '.join(f.name for f in ActionFlag if config.events & f)
+
+        embed = (discord.Embed(colour=colour, description=', '.join(f.name for f in flags))
+                 .set_author(name=f'Successfully {ctx.command.name}d the following actions')
+                 .add_field(name='The following mod actions will now be logged',
+                            value=enabled_flags, inline=False)
+                 )
+
+        await ctx.send(embed=embed)
+
+    @mod_actions.command(name='enable')
+    @commands.has_permissions(manage_guild=True)
+    async def macts_enable(self, ctx, *actions: ActionFlag):
+        """Enables case creation for all the given mod-actions."""
+        await self._set_actions(ctx, operator.or_, actions, colour=0x4CAF50)
+
+    @mod_actions.command(name='disable')
+    @commands.has_permissions(manage_guild=True)
+    async def macts_disable(self, ctx, *actions: ActionFlag):
+        """Disables case creation for all the given mod-actions."""
+        await self._set_actions(ctx, lambda ev, f: ev & ~f, actions, colour=0xF44336)
 
     @commands.command()
     @commands.has_permissions(manage_guild=True)
