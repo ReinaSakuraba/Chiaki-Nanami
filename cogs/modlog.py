@@ -220,7 +220,28 @@ class ModLog:
             conn = session.transaction.acquired_connection
             await conn.copy_records_to_table('modlog_targets', columns=columns, records=to_insert)
 
-    async def on_command_completion(self, ctx):
+    def _add_to_cache(self, name, guild_id, member_id, *, seconds=1):
+        args = (name, guild_id, member_id)
+        self._cache.add(args)
+
+        async def delete_value():
+            await asyncio.sleep(seconds)
+            self._cache.discard(args)
+
+        self.bot.loop.create_task(delete_value())
+
+    async def on_command(self, ctx):
+        # We only want to put the result on the cache iff the command succeeded parsing
+        # It's ok if the command fails, we'll just handle it in on_command_error
+        name = ctx.command.qualified_name
+        if name not in _mod_actions:
+            return
+
+        targets = (m for m in ctx.args if isinstance(m, discord.Member))
+        for member in targets:
+            self._add_to_cache(name, ctx.guild.id, member.id)
+
+    async def __after_invoke(self, ctx):
         name = ctx.command.qualified_name
         if name not in _mod_actions:
             return
