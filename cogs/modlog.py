@@ -230,7 +230,8 @@ class ModLog:
 
         self.bot.loop.create_task(delete_value())
 
-    async def on_command(self, ctx):
+    # These invokers are used for the Moderator cog.
+    async def mod_before_invoke(self, ctx):
         # We only want to put the result on the cache iff the command succeeded parsing
         # It's ok if the command fails, we'll just handle it in on_command_error
         name = ctx.command.qualified_name
@@ -241,9 +242,12 @@ class ModLog:
         for member in targets:
             self._add_to_cache(name, ctx.guild.id, member.id)
 
-    async def __after_invoke(self, ctx):
+    async def mod_after_invoke(self, ctx):
         name = ctx.command.qualified_name
         if name not in _mod_actions:
+            return
+
+        if ctx.command_failed:
             return
 
         targets = [m for m in ctx.args if isinstance(m, discord.Member)]
@@ -256,16 +260,13 @@ class ModLog:
         reason = ctx.kwargs.get('reason') or ctx.args[2]
 
         try:
-            # Connection will be closed by the time this event is called,
-            # so we can't use ctx.session.
-            async with ctx.db.get_session() as session:
-                args = (session, name, ctx.guild, ctx.author, targets, reason, extra)
-                entry_id = await self._send_case(*args, auto=auto)
-                if entry_id:
-                    await self._insert_case(*args, entry_id)
-
+            args = (ctx.session, name, ctx.guild, ctx.author, targets, reason, extra)
+            entry_id = await self._send_case(*args, auto=auto)
         except ModLogError as e:
             await ctx.send(f'{ctx.author.mention}, {e}')
+        else:
+            if entry_id:
+                await self._insert_case(*args, entry_id)
 
     async def _poll_audit_log(self, guild, user, *, action):
         if (action, guild.id, user.id) in self._cache:
