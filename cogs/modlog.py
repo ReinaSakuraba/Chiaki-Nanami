@@ -41,7 +41,23 @@ class Case(_Table, table_name='modlog'):
 
 class CaseTarget(_Table, table_name='modlog_targets'):
     id = asyncqlio.Column(dbtypes.AutoIncrementInteger, primary_key=True)
-    entry_id = asyncqlio.Column(dbtypes.AutoIncrementInteger)
+
+    # This does not work at the moment, I'll make an issue about this in
+    # asyncqlio later.
+    # This is the intended query:
+    #
+    # CREATE TABLE IF NOT EXISTS modlog_targets(
+    #     id SERIAL NOT NULL,
+    #     entry_id INTEGER NOT NULL REFERENCES modlog (id),
+    #     user_id BIGINT NOT NULL,
+    #     PRIMARY KEY (id)
+    # )
+    #
+    # But the third line in asyncqlio is messed up:
+    #     entry_id INTEGER NOT NULL REFERENCES entry_id (modlog_targets),
+    #
+    # this is obviously wrong.
+    entry_id = asyncqlio.Column(asyncqlio.Integer, foreign_key=asyncqlio.ForeignKey(Case.id))
     user_id = asyncqlio.Column(asyncqlio.BigInt)
 
 
