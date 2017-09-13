@@ -856,6 +856,10 @@ class Moderator:
     #      of a manual unban?
 
     # -------- Custom Events (used in schedulers) -----------
+    async def _wait_for_cache(self, name, guild_id, member_id):
+        mod_log = self.bot.get_cog('ModLog')
+        if mod_log:
+            await mod_log.wait_for_cache(name, guild_id, member_id)
 
     async def on_mute_complete(self, timer):
         server_id, member_id, mute_role_id = timer.args
@@ -878,6 +882,7 @@ class Moderator:
 
     async def on_tempban_complete(self, timer):
         guild_id, user_id = timer.args
+        await self._wait_for_cache('tempban', guild_id, user_id)
         guild = self.bot.get_guild(guild_id)
         if guild is None:
             # rip

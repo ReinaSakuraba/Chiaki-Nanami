@@ -126,6 +126,7 @@ class ModLog:
         self.bot = bot
         self._md = bot.db.bind_tables(_Table)
         self._cache_cleaner = asyncio.ensure_future(self._clean_cache())
+        self._cache_locks = collections.defaultdict(asyncio.Event)
         self._cache = set()
 
     def __unload(self):
@@ -225,15 +226,27 @@ class ModLog:
             conn = session.transaction.acquired_connection
             await conn.copy_records_to_table('modlog_targets', columns=columns, records=to_insert)
 
-    def _add_to_cache(self, name, guild_id, member_id, *, seconds=1):
+    def _add_to_cache(self, name, guild_id, member_id, *, seconds=2):
         args = (name, guild_id, member_id)
         self._cache.add(args)
+        self._cache_locks[name, guild_id, member_id].set()
 
         async def delete_value():
             await asyncio.sleep(seconds)
             self._cache.discard(args)
+            self._cache_locks.pop((name, guild_id, member_id), None)
 
         self.bot.loop.create_task(delete_value())
+
+    # Invoked by the mod-cog, this is used to wait for the cache during
+    # tempban and mute completion.
+    def wait_for_cache(self, name, guild_id, member_id):
+        return self._cache_locks[name, guild_id, member_id].wait()
+
+    async def on_tempban_complete(self, timer):
+        # We need to prevent unbanning from accidentally triggering the manual
+        # unban from being logged.
+        self._add_to_cache('tempban', *timer.args)
 
     # These invokers are used for the Moderator cog.
     async def mod_before_invoke(self, ctx):
@@ -249,11 +262,13 @@ class ModLog:
 
     async def mod_after_invoke(self, ctx):
         name = ctx.command.qualified_name
+        print(name)
         if name not in _mod_actions:
             return
 
         if ctx.command_failed:
             return
+        print('logging...')
 
         targets = [m for m in ctx.args if isinstance(m, discord.Member)]
         # Will be set by warn in the event of auto-punishment
@@ -292,6 +307,8 @@ class ModLog:
 
     async def _poll_ban(self, guild, user, *, action):
         if ('softban', guild.id, user.id) in self._cache:
+            return
+        if ('tempban', guild.id, user.id) in self._cache:
             return
         await self._poll_audit_log(guild, user, action=action)
 
