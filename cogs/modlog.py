@@ -339,10 +339,24 @@ class ModLog:
 
         await ctx.send(embed=embed)
 
-    @commands.group()
+    async def _check_config(self, ctx):
+        config = await self._get_case_config(ctx.session, ctx.guild.id)
+        if config is None:
+            message = ("You haven't even enabled case-logging. Set a channel "
+                       f"first using `{ctx.clean_prefix}modlog channel`.")
+            raise ModLogError(message)
+
+        return config
+
+    @commands.group(invoke_without_command=True)
     @commands.has_permissions(manage_guild=True)
-    async def modlog(self, ctx):
-        pass
+    async def modlog(self, ctx, enable: bool):
+        """Sets whether or not I should log moderation actions at all."""
+        # TODO: Should probably give the current mod-log config.
+        config = await self._check_config(ctx)
+        config.enabled = enable
+        await ctx.session.add(config)
+        await ctx.send('okay')
 
     @modlog.command(name='channel')
     @commands.has_permissions(manage_guild=True)
@@ -366,15 +380,6 @@ class ModLog:
 
         await ctx.session.add(config)
         await ctx.send('ok')
-
-    async def _check_config(self, ctx):
-        config = await self._get_case_config(ctx.session, ctx.guild.id)
-        if config is None:
-            message = ("You haven't even enabled case-logging. Set a channel "
-                       f"first using `{ctx.clean_prefix}modlog channel`.")
-            raise ModLogError(message)
-
-        return config
 
     @commands.group(name='modactions', aliases=['modacts'], invoke_without_command=True)
     @commands.has_permissions(manage_guild=True)
