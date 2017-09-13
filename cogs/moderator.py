@@ -112,7 +112,6 @@ class Moderator:
     async def call_mod_log_invoke(self, invoke, ctx):
         mod_log = ctx.bot.get_cog('ModLog')
         if mod_log:
-            print('calling', invoke)
             await getattr(mod_log, f'mod_{invoke}')(ctx)
 
     __before_invoke = functools.partialmethod(call_mod_log_invoke, 'before_invoke')

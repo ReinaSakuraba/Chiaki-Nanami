@@ -262,13 +262,11 @@ class ModLog:
 
     async def mod_after_invoke(self, ctx):
         name = ctx.command.qualified_name
-        print(name)
         if name not in _mod_actions:
             return
 
         if ctx.command_failed:
             return
-        print('logging...')
 
         targets = [m for m in ctx.args if isinstance(m, discord.Member)]
         # Will be set by warn in the event of auto-punishment
@@ -428,7 +426,7 @@ class ModLog:
     @commands.group(name='modactions', aliases=['modacts'], invoke_without_command=True)
     @commands.has_permissions(manage_guild=True)
     async def mod_actions(self, ctx):
-        """Shows all the action that can be logged."""
+        """Shows all the actions that can be logged."""
         config = await self._check_config(ctx)
 
         flags = ', '.join(f.name for f in ActionFlag)
