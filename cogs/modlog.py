@@ -65,15 +65,16 @@ ModAction = collections.namedtuple('ModAction', 'repr emoji colour')
 
 
 _mod_actions = {
-    'warn'    : ModAction('warned', '\N{WARNING SIGN}', 0xFFAA00),
-    'mute'    : ModAction('muted', '\N{SPEAKER WITH CANCELLATION STROKE}', 0),
-    'kick'    : ModAction('kicked', '\N{WOMANS BOOTS}', 0xFF0000),
-    'softban' : ModAction('soft banned', '\N{BIOHAZARD SIGN}', 0xF08000),
-    'tempban' : ModAction('temporarily banned', '\N{ALARM CLOCK}', 0xA00000),
-    'ban'     : ModAction('banned', '\N{HAMMER}', 0x800000),
-    'unban'   : ModAction('unbanned', '\N{DOVE OF PEACE}', 0x00FF00),
-    'hackban' : ModAction('prematurely banned', '\N{NO ENTRY}', 1),
-    'massban' : ModAction('massbanned', '\N{NO ENTRY}', 1),
+    'warn'    : ModAction('warned', '\N{WARNING SIGN}', 0xFFC107),
+    'mute'    : ModAction('muted', '\N{SPEAKER WITH CANCELLATION STROKE}', 0x424242),
+    'kick'    : ModAction('kicked', '\N{WOMANS BOOTS}', 0xFF9800),
+    # XXX: These bans are all red. This won't be good for color-blind people.
+    'softban' : ModAction('soft banned', '\N{BIOHAZARD SIGN}', 0xFF5722),
+    'tempban' : ModAction('temporarily banned', '\N{ALARM CLOCK}', 0xf44336),
+    'ban'     : ModAction('banned', '\N{HAMMER}', 0xd50000),
+    'unban'   : ModAction('unbanned', '\N{DOVE OF PEACE}', 0x43A047),
+    'hackban' : ModAction('prematurely banned', '\N{NO ENTRY}', 0x212121),
+    'massban' : ModAction('massbanned', '\N{NO ENTRY}', 0xb71c1c),
 }
 
 
