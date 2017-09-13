@@ -1,6 +1,7 @@
 import asyncio
 import asyncqlio
 import collections
+import contextlib
 import discord
 import enum
 import json
@@ -8,7 +9,6 @@ import operator
 
 from datetime import datetime
 from discord.ext import commands
-from more_itertools import partition
 from functools import reduce
 
 from .utils import cache, dbtypes, errors
@@ -126,6 +126,7 @@ class ModLog:
         self.bot = bot
         self._md = bot.db.bind_tables(_Table)
         self._cache_cleaner = asyncio.ensure_future(self._clean_cache())
+        self._cache = set()
 
     def __unload(self):
         self._cache_cleaner.cancel()
@@ -245,6 +246,39 @@ class ModLog:
         except ModLogError as e:
             await ctx.send(f'{ctx.author.mention}, {e}')
 
+    async def _poll_audit_log(self, guild, user, *, action):
+        if (action, guild.id, user.id) in self._cache:
+            # Assume it was invoked by a command (only commands will put this in the cache).
+            return
+
+        # poll the audit log for some nice shit
+        # XXX: This doesn't catch softbans.
+        audit_action = discord.AuditLogAction[action]
+        entry = await guild.audit_logs(action=audit_action, limit=1).get(target=user)
+
+        with contextlib.suppress(ModLogError):
+            async with self.bot.db.get_session() as session:
+                args = (session, action, guild, entry.user, [entry.target], entry.reason)
+                entry_id = await self._send_case(*args)
+                if entry_id:
+                    await self._insert_case(*args, entry_id)
+
+    async def _poll_ban(self, guild, user, *, action):
+        if ('softban', guild.id, user.id) in self._cache:
+            return
+        await self._poll_audit_log(guild, user, action=action)
+
+    async def on_member_ban(self, guild, user):
+        await self._poll_ban(guild, user, action='ban')
+
+    async def on_member_unban(self, guild, user):
+        await self._poll_ban(guild, user, action='unban')
+
+    async def on_member_remove(self, member):
+        await self._poll_audit_log(member.guild, member, action='kick')
+
+    # ------------------- something ------------------
+
     async def _get_case(self, session, guild_id, num):
         query = (session.select.from_(Case)
                         .where(Case.guild_id == guild_id)
@@ -254,7 +288,8 @@ class ModLog:
                  )
         return await query.first()
 
-    # Now for the commands.
+    # ----------------- Now for the commands. ----------------------
+
     @commands.command()
     async def case(self, ctx, num: int):
         """Retrives the case with the given number."""
