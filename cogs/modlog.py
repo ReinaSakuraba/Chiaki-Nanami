@@ -143,6 +143,14 @@ class ModLog:
                  )
         return await query.first()
 
+    async def _get_number_of_cases(self, session, guild_id):
+        query = "SELECT COUNT(*) FROM modlog WHERE guild_id={guild_id};"
+        params = {'guild_id': guild_id}
+        result = await session.cursor(query, params)
+        row = await result.fetch_row()
+
+        return row['count']
+
     async def _send_case(self, session, action, server, mod, targets, reason, extra=None, auto=False):
         config = await self._get_case_config(session, server.id)
         if not (config and config.enabled):
@@ -162,13 +170,10 @@ class ModLog:
             action = f'auto-{action}'
 
         # Get the case number, this is why the guild_id is indexed.
-        query = "SELECT COUNT(*) FROM modlog WHERE guild_id={guild_id};"
-        params = {'guild_id': server.id}
-        result = await session.cursor(query, params)
-        row = await result.fetch_row()
+        count = await self._get_number_of_cases(session, server.id)
 
         # Send the case like normal
-        embed = self._create_embed(row['count'] + 1, action, mod, targets, reason, extra)
+        embed = self._create_embed(count + 1, action, mod, targets, reason, extra)
 
         try:
             message = await channel.send(embed=embed)
@@ -348,15 +353,37 @@ class ModLog:
 
         return config
 
+    async def _show_config(self, ctx, config):
+        count = await self._get_number_of_cases(ctx.session, ctx.guild.id)
+        will, colour = ('will', 0x4CAF50) if config.enabled else ("won't", 0xF44336)
+        flags = ', '.join(f.name for f in ActionFlag if config.events & f)
+
+        embed = (discord.Embed(colour=colour, description=f'I have made {count} cases so far!')
+                 .set_author(name=f'In {ctx.guild}, I {will} be logging mod actions.')
+                 .add_field(name='Logging Channel', value=f'<#{config.channel_id}>')
+                 .add_field(name='Actions that will be logged', value=flags, inline=False)
+                 )
+        await ctx.send(embed=embed)
+
     @commands.group(invoke_without_command=True)
     @commands.has_permissions(manage_guild=True)
-    async def modlog(self, ctx, enable: bool):
-        """Sets whether or not I should log moderation actions at all."""
-        # TODO: Should probably give the current mod-log config.
+    async def modlog(self, ctx, enable: bool = None):
+        """Sets whether or not I should log moderation actions at all.
+
+        If no arguments are given, I'll show the basic configuration info.
+        """
+
         config = await self._check_config(ctx)
+        if enable is None:
+            return await self._show_config(ctx, config)
+
         config.enabled = enable
         await ctx.session.add(config)
-        await ctx.send('okay')
+
+        message = ("Yay! What are the mods gonna do today? ^o^"
+                   if enable else
+                   "Ok... back to the corner I go... :c")
+        await ctx.send(message)
 
     @modlog.command(name='channel')
     @commands.has_permissions(manage_guild=True)
