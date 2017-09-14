@@ -122,6 +122,32 @@ async def _get_message(channel, message_id):
 
     return msg
 
+@cache.cache(maxsize=None, make_key=lambda a, kw: a[-1])
+async def _get_number_of_cases(session, guild_id):
+    query = "SELECT COUNT(*) FROM modlog WHERE guild_id={guild_id};"
+    params = {'guild_id': guild_id}
+    result = await session.cursor(query, params)
+    row = await result.fetch_row()
+
+    return row['count']
+
+
+class CaseNumber(commands.Converter):
+    async def convert(self, ctx, arg):
+        try:
+            num = int(arg)
+        except ValueError:
+            raise commands.BadArgument("This has to be an actual number... -.-")
+
+        if num < 0:
+            num += await _get_number_of_cases(ctx.session, ctx.guild.id) + 1
+            if num < 0:
+                # Consider it out of bounds, because accessing a negative
+                # index is out of bounds anyway.
+                raise commands.BadArgument("I think you're travelling a little "
+                                           "too far in the past there...")
+        return num
+
 
 class ModLog:
     def __init__(self, bot):
@@ -146,14 +172,6 @@ class ModLog:
                  )
         return await query.first()
 
-    async def _get_number_of_cases(self, session, guild_id):
-        query = "SELECT COUNT(*) FROM modlog WHERE guild_id={guild_id};"
-        params = {'guild_id': guild_id}
-        result = await session.cursor(query, params)
-        row = await result.fetch_row()
-
-        return row['count']
-
     async def _send_case(self, session, config, action, server, mod, targets, reason,
                          extra=None, auto=False):
         if not (config and config.enabled and config.channel_id):
@@ -173,7 +191,7 @@ class ModLog:
             action = f'auto-{action}'
 
         # Get the case number, this is why the guild_id is indexed.
-        count = await self._get_number_of_cases(session, server.id)
+        count = await _get_number_of_cases(session, server.id)
 
         # Send the case like normal
         embed = self._create_embed(count + 1, action, mod, targets, reason, extra)
@@ -220,6 +238,10 @@ class ModLog:
                 )
 
     async def _insert_case(self, session, action, server, mod, targets, reason, extra, entry_id):
+        # Because we've successfully added a new case by this point,
+        # the number of cases is no longer accurate.
+        _get_number_of_cases.invalidate(None, server.id)
+
         if len(targets) == 1:
             await session.add(CaseTarget(entry_id=entry_id, user_id=targets[0].id))
         else:
@@ -377,9 +399,17 @@ class ModLog:
     # ----------------- Now for the commands. ----------------------
 
     @commands.command()
-    async def case(self, ctx, num: int):
-        """Retrives the case with the given number."""
-        # I'll find some way to do handle negative number later...
+    async def case(self, ctx, num: CaseNumber = None):
+        """Retrieves the case with the given number.
+
+        If no number is given, it shows the latest case.
+
+        Negative numbers are allowed. They count starting from
+        the most recent case. e.g. -1 will show the newest case,
+        and -10 will show the 10th newest case.
+        """
+        num = num or await _get_number_of_cases(ctx.session, ctx.guild.id)
+
         result = await self._get_case(ctx.session, ctx.guild.id, num)
         if result is None:
             return await ctx.send(f'Case #{num} is not a valid case.')
@@ -413,7 +443,7 @@ class ModLog:
         return config
 
     async def _show_config(self, ctx, config):
-        count = await self._get_number_of_cases(ctx.session, ctx.guild.id)
+        count = await _get_number_of_cases(ctx.session, ctx.guild.id)
         will, colour = ('will', 0x4CAF50) if config.enabled else ("won't", 0xF44336)
         flags = ', '.join(f.name for f in ActionFlag if config.events & f)
 
@@ -540,9 +570,19 @@ class ModLog:
         await ctx.session.add(config)
         await ctx.send('\N{OK HAND SIGN}')
 
+    # XXX: This command takes *way* too long.
     @commands.command()
     @commands.has_permissions(manage_guild=True)
-    async def reason(self, ctx, num: int, *, reason):
+    async def reason(self, ctx, num: CaseNumber, *, reason):
+        """Sets the reason for a particular case.
+
+        You must own this case in order to edit the reason.
+
+        Negative numbers are allowed. They count starting from
+        the most recent case. e.g. -1 will show the newest case,
+        and -10 will show the 10th newest case.
+        """
+
         case = await self._get_case(ctx.session, ctx.guild.id, num)
         if case is None:
             return await ctx.send(f"Case #{num} doesn't exist.")
