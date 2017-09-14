@@ -470,7 +470,11 @@ class ModLog:
     @commands.group(name='modactions', aliases=['modacts'], invoke_without_command=True)
     @commands.has_permissions(manage_guild=True)
     async def mod_actions(self, ctx):
-        """Shows all the actions that can be logged."""
+        """Shows all the actions that can be logged.
+
+        For this command to work, you have to make sure that you've
+        set a channel for logging cases first.
+        """
         config = await self._check_config(ctx)
 
         flags = ', '.join(f.name for f in ActionFlag)
@@ -504,13 +508,21 @@ class ModLog:
     @mod_actions.command(name='enable')
     @commands.has_permissions(manage_guild=True)
     async def macts_enable(self, ctx, *actions: ActionFlag):
-        """Enables case creation for all the given mod-actions."""
+        """Enables case creation for all the given mod-actions.
+
+        For this command to work, you have to make sure that you've
+        set a channel for logging cases first.
+        """
         await self._set_actions(ctx, operator.or_, actions, colour=0x4CAF50)
 
     @mod_actions.command(name='disable')
     @commands.has_permissions(manage_guild=True)
     async def macts_disable(self, ctx, *actions: ActionFlag):
-        """Disables case creation for all the given mod-actions."""
+        """Disables case creation for all the given mod-actions.
+
+        For this command to work, you have to make sure that you've
+        set a channel for logging cases first.
+        """
         await self._set_actions(ctx, lambda ev, f: ev & ~f, actions, colour=0xF44336)
 
     @commands.command()
