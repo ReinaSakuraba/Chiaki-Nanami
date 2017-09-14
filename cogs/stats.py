@@ -148,8 +148,8 @@ class Stats:
                         )
         await ctx.send(embed=chiaki_embed)
 
-    @commands.command(name='commandhistory', aliases=['cmdhistory'])
-    async def command_history(self, ctx, n=5):
+    @commands.command()
+    async def history(self, ctx, n=5):
         """Shows the last n commands you've used."""
         n = min(n, 50)
 
