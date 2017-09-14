@@ -100,9 +100,10 @@ MASSBAN_THUMBNAIL = emoji_url('\N{NO ENTRY}')
 
 class ModLogConfig(_Table, table_name='modlog_config'):
     guild_id = asyncqlio.Column(asyncqlio.BigInt, primary_key=True)
-    channel_id = asyncqlio.Column(asyncqlio.BigInt)
+    channel_id = asyncqlio.Column(asyncqlio.BigInt, default=0)
     enabled = asyncqlio.Column(asyncqlio.Boolean, default=True)
-    log_auto = asyncqlio.Column(asyncqlio.SmallInt, default=True)
+    log_auto = asyncqlio.Column(asyncqlio.Boolean, default=True)
+    dm_user = asyncqlio.Column(asyncqlio.Boolean, default=True)
     events = asyncqlio.Column(asyncqlio.Integer, default=_default_flags)
 
 
@@ -153,9 +154,9 @@ class ModLog:
 
         return row['count']
 
-    async def _send_case(self, session, action, server, mod, targets, reason, extra=None, auto=False):
-        config = await self._get_case_config(session, server.id)
-        if not (config and config.enabled):
+    async def _send_case(self, session, config, action, server, mod, targets, reason,
+                         extra=None, auto=False):
+        if not (config and config.enabled and config.channel_id):
             return None
 
         if not config.events & ActionFlag[action]:
@@ -227,6 +228,36 @@ class ModLog:
             conn = session.transaction.acquired_connection
             await conn.copy_records_to_table('modlog_targets', columns=columns, records=to_insert)
 
+    async def _notify_user(self, config, action, server, user, targets, reason, 
+                           extra=None, auto=False):
+        if action == 'massban':
+            # XXX: Should I DM users who were massbanned?
+            return
+
+        if config and not config.dm_user:
+            return
+
+        # Should always be true because we're not DMing users in a massban.
+        assert len(targets) == 1, f'too many targets for {action}'
+
+        mod_action = _mod_actions[action]
+        action_applied = f'You were {mod_action.repr}'
+        if extra:
+            # TODO: Get the warn number.
+            action_applied += ' for {duration_units(extra)}'
+
+        # Will probably refactor this later.
+        embed = (discord.Embed(colour=mod_action.colour, timestamp=datetime.utcnow())
+                 .set_author(name=f'{action_applied}!', icon_url=emoji_url(mod_action.emoji))
+                 .add_field(name='In', value=str(server), inline=False)
+                 .add_field(name='By', value=str(user), inline=False)
+                 .add_field(name='Reason', value=reason, inline=False)
+                 )
+
+        for target in targets:
+            with contextlib.suppress(discord.HTTPException):
+                await target.send(embed=embed)
+
     def _add_to_cache(self, name, guild_id, member_id, *, seconds=2):
         args = (name, guild_id, member_id)
         self._cache.add(args)
@@ -278,13 +309,24 @@ class ModLog:
         # rather than a keyword-only consume rest one.
         reason = ctx.kwargs.get('reason') or ctx.args[2]
 
+        # We have get the config outside the two functions because we use it twice.
+        config = await self._get_case_config(ctx.session, ctx.guild.id)
+        args = [ctx.session, config, name, ctx.guild, ctx.author, targets, reason, extra]
+
+        # XXX: I'm not sure if I should DM the user before or *after* the
+        #      action has been applied. I currently have it done after, because
+        #      the target should only be DMed if the command was executed
+        #      successfully, and we can't check if it worked before we do
+        #      the thing.
+        await self._notify_user(*args[1:])
+
         try:
-            args = (ctx.session, name, ctx.guild, ctx.author, targets, reason, extra)
             entry_id = await self._send_case(*args, auto=auto)
         except ModLogError as e:
             await ctx.send(f'{ctx.author.mention}, {e}')
         else:
             if entry_id:
+                del args[1]  # remove the config from the args because we don't need it.
                 await self._insert_case(*args, entry_id)
 
     async def _poll_audit_log(self, guild, user, *, action):
@@ -299,7 +341,8 @@ class ModLog:
 
         with contextlib.suppress(ModLogError):
             async with self.bot.db.get_session() as session:
-                args = (session, action, guild, entry.user, [entry.target], entry.reason)
+                config = await self._get_case_config(session, guild.id)
+                args = (session, config, action, guild, entry.user, [entry.target], entry.reason)
                 entry_id = await self._send_case(*args)
                 if entry_id:
                     await self._insert_case(*args, entry_id)
@@ -362,7 +405,7 @@ class ModLog:
 
     async def _check_config(self, ctx):
         config = await self._get_case_config(ctx.session, ctx.guild.id)
-        if config is None:
+        if not (config and config.channel_id):
             message = ("You haven't even enabled case-logging. Set a channel "
                        f"first using `{ctx.clean_prefix}modlog channel`.")
             raise ModLogError(message)
@@ -469,6 +512,21 @@ class ModLog:
     async def macts_disable(self, ctx, *actions: ActionFlag):
         """Disables case creation for all the given mod-actions."""
         await self._set_actions(ctx, lambda ev, f: ev & ~f, actions, colour=0xF44336)
+
+    @commands.command()
+    @commands.has_permissions(manage_guild=True)
+    async def moddm(self, ctx, dm_user: bool):
+        """Sets whether or not I should DM the user
+        when a mod-action is applied on them.
+
+        (e.g. getting warned, kicked, muted, etc.)
+        """
+        config = await self._get_case_config(ctx.session, ctx.guild.id)
+        config = config or ModLogConfig(guild_id=ctx.guild.id)
+        config.dm_user = dm_user
+
+        await ctx.session.add(config)
+        await ctx.send('\N{OK HAND SIGN}')
 
     @commands.command()
     @commands.has_permissions(manage_guild=True)
