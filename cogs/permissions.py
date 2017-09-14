@@ -300,6 +300,15 @@ class Permissions:
         if not ctx.guild:  # Custom permissions don't really apply in DMs
             return True
 
+        # This check has to be here. Because if we used ctx.reinvoke
+        # in the global on_command_error, the command will fail because
+        # of a race. Since on_command_error is dispatched rather than
+        # awaited, there's a chance that the session will attempt to
+        # do two operations at once, which is wrong.
+
+        if await ctx.bot.is_owner(ctx.author):
+            return True
+
         # XXX: Should I have a check for if the table/relation actually exists?
         lookup = await self._get_permissions(ctx.session, ctx.guild.id)
         if not lookup:
