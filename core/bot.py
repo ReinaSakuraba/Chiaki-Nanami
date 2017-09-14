@@ -220,8 +220,12 @@ class Chiaki(commands.Bot):
 
     async def on_command_error(self, ctx, error):
         if isinstance(error, commands.CheckFailure) and await self.is_owner(ctx.author):
+            # Let the old session continue whatever it was doing. We'll just make
+            # a new session for this.
+            ctx._old_session = ctx.session
             try:
-                await ctx.reinvoke()
+                async with ctx.db.get_session() as ctx.session:
+                    await ctx.reinvoke()
             except Exception as exc:
                 await ctx.command.dispatch_error(ctx, exc)
             return
