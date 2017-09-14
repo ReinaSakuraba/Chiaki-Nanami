@@ -160,7 +160,6 @@ class Stats:
                             .limit(n)
                  )
 
-        rows = [(row.command, row.used) async for row in await query.all()]
         lines = [(f'`{row.prefix}{row.command}`', f'Executed {human_timedelta(row.used)}')
                  async for row in await query.all()]
         title = pluralize(command=n)
