@@ -205,7 +205,9 @@ class Permissions:
     async def on_command_error(self, ctx, error):
         if isinstance(error, (PermissionDenied, InvalidPermission)):
             await ctx.send(error)
-        elif isinstance(error, commands.MissingPermissions):
+
+    async def __error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
             missing = [perm.replace('_', ' ').replace('guild', 'server').title()
                        for perm in error.missing_perms]
 
@@ -391,19 +393,8 @@ class Permissions:
     async def _set_permissions_command(self, ctx, name, *entities, whitelist, type_):
         entities = entities or (Server(ctx.guild), )
 
-        # async with ctx.db.get_session() as session:
-        # To avoid accidentally doing a query while the __global_check
-        # is being processed, we have to do create another session.
-        # I'm not sure if there is anything inherently wrong with this code
-        # though, so if anyone is looking at this code and finds anything
-        # wrong with it, please DM me ASAP.
         await self._set_permissions(ctx.session, ctx.guild.id, name, *entities, whitelist=whitelist)
-
-        # If an exception was raised in the code above, the code below won't
-        # run. We need to make sure that we actually commit the change before
-        # invalidating the cache.
-        assert self._get_permissions.invalidate(None, None, ctx.guild.id), \
-            "Something bad happened while invalidating the cache"
+        self._get_permissions.invalidate(None, None, ctx.guild.id)
 
         await self._display_embed(ctx, name, *entities, whitelist=whitelist, type_=type_)
 
@@ -516,8 +507,7 @@ class Permissions:
                                  .where(CommandPermissions.guild_id == ctx.guild.id)
                )
 
-        assert self._get_permissions.invalidate(None, None, ctx.guild.id), \
-            "Something bad happened while invalidating the cache"
+        self._get_permissions.invalidate(None, None, ctx.guild.id)
 
         await self._display_embed(ctx, None, Server(ctx.guild),
                                   whitelist=-1, type_='All permissions')
