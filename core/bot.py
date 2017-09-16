@@ -98,9 +98,9 @@ class Chiaki(commands.Bot):
         self.reset_requested = False
 
         self.db = asyncqlio.DatabaseInterface(config.postgresql)
+        self.loop.run_until_complete(self._connect_to_db())
         self.db_scheduler = DatabaseScheduler(self.db, timefunc=datetime.utcnow)
         self.db_scheduler.add_callback(self._dispatch_from_scheduler)
-        self.loop.create_task(self._connect_to_db())
 
         for ext in config.extensions:
             # Errors should never pass silently, if there's a bug in an extension,
