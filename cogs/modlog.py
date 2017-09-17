@@ -32,7 +32,6 @@ class Case(_Table, table_name='modlog'):
     action = asyncqlio.Column(asyncqlio.String(16))
     mod_id = asyncqlio.Column(asyncqlio.BigInt)
     reason = asyncqlio.Column(asyncqlio.String(1024))
-    created_at = asyncqlio.Column(asyncqlio.Timestamp)
 
     # Can either be the duration, in the case of a mute or tempban,
     # or the role, in the case of a special role.
@@ -210,15 +209,14 @@ class ModLog:
             action=action,
             mod_id=mod.id,
             reason=reason,
-
-            created_at=message.created_at,
             extra=json.dumps({'args': [extra]})
 
         ))
 
         return row.id
 
-    def _create_embed(self, number, action, mod, targets, reason, extra):
+    def _create_embed(self, number, action, mod, targets, reason, extra, time=None):
+        time = time or datetime.utcnow()
         action = _mod_actions[action]
 
         avatar_url = targets[0].avatar_url if len(targets) == 1 else MASSBAN_THUMBNAIL
@@ -228,7 +226,7 @@ class ModLog:
         action_field = f'{action.repr.title()}{duration_string} by {mod}'
         reason = reason or 'No reason. Please enter one.'
 
-        return (discord.Embed(color=action.colour, timestamp=datetime.utcnow())
+        return (discord.Embed(color=action.colour, timestamp=time)
                 .set_author(name=f"Case #{number}", icon_url=emoji_url(action.emoji))
                 .set_thumbnail(url=avatar_url)
                 .add_field(name=f'User{"s" * (len(targets) != 1)}', value=', '.join(map(str, targets)))
@@ -429,6 +427,7 @@ class ModLog:
             targets,
             result.reason,
             extra,
+            discord.utils.snowflake_time(result.message_id),
         )
 
         await ctx.send(embed=embed)
