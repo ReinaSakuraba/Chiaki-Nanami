@@ -461,7 +461,7 @@ class ModLog:
         pages = EmbedFieldPages(
             ctx, entries,
             title=f'Cases for {member}',
-            description='{member} has {len(entries)} cases',
+            description=f'{member} has {len(entries)} cases',
             colour=member.colour,
             inline=False
         )
