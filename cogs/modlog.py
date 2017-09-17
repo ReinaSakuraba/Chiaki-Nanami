@@ -12,7 +12,8 @@ from discord.ext import commands
 from functools import reduce
 
 from .utils import cache, dbtypes, errors
-from .utils.misc import emoji_url, unique
+from .utils.misc import emoji_url, truncate, unique
+from .utils.paginator import EmbedFieldPages
 from .utils.time import duration_units
 
 
@@ -380,9 +381,10 @@ class ModLog:
 
     # ----------------- Now for the commands. ----------------------
 
-    @commands.command()
+    @commands.group(invoke_without_command=True)
     async def case(self, ctx, num: CaseNumber = None):
-        """Retrieves the case with the given number.
+        """Group for all case searching commands. If given a number,
+        it retrieves the case with the given number.
 
         If no number is given, it shows the latest case.
 
@@ -415,6 +417,56 @@ class ModLog:
         )
 
         await ctx.send(embed=embed)
+
+    @case.command(name='user', aliases=['member'])
+    async def case_user(self, ctx, *, member: discord.Member):
+        """Retrives all the cases for a specific member.
+
+        Only members who are in the server can be searched.
+        """
+
+        # Major credit to Cute#0313 for helping me with the query for this. <3
+        query = """SELECT message_id, action, mod_id, reason
+                   FROM modlog, modlog_targets
+                   WHERE modlog.id = modlog_targets.entry_id
+                   AND guild_id = {guild_id}
+                   AND user_id = {user_id}
+                   ORDER BY modlog.id
+                """
+
+        params = {'guild_id': ctx.guild.id, 'user_id': member.id}
+        results = await ctx.session.cursor(query, params)
+
+        get_time = discord.utils.snowflake_time
+        get_user = ctx.bot.get_user
+
+        entries = []
+        async for row in results:
+            action = _mod_actions[row['action']]
+            name = f'{action.emoji} {action.repr.title()}'
+            formatted = (
+                f"**On:** {get_time(row['message_id']) :%x %X}\n"
+                # Gotta use triple-quotes to keep the syntax happy.
+                f"""**Moderator:** {get_user(row['mod_id']) or f'<Unknown ID: {row["mod_id"]}'}\n"""
+                f"**Reason:** {truncate(row['reason'], 512, '...')}\n"
+                "-------------------"
+            )
+
+            entries.append((name, formatted))
+
+        if not entries:
+            yay = f'{member} has a clean record! Give them a medal or a cookie or something! ^.^'
+            return await ctx.send(yay)
+
+        pages = EmbedFieldPages(
+            ctx, entries,
+            title=f'Cases for {member}',
+            description='{member} has {len(entries)} cases',
+            colour=member.colour,
+            inline=False
+        )
+
+        await pages.interact()
 
     async def _check_config(self, ctx):
         config = await self._get_case_config(ctx.session, ctx.guild.id)
