@@ -10,7 +10,6 @@ from more_itertools import one, partition
 
 from .utils import cache, formats, search
 from .utils.converter import BotCommand, BotCogConverter
-from .utils.dbtypes import AutoIncrementInteger
 from .utils.misc import emoji_url, truncate, unique
 from .utils.paginator import ListPaginator
 
@@ -74,7 +73,7 @@ _Table = asyncqlio.table_base()
 
 
 class CommandPermissions(_Table, table_name='permissions'):
-    id = asyncqlio.Column(AutoIncrementInteger, primary_key=True)
+    id = asyncqlio.Column(asyncqlio.Serial, primary_key=True)
 
     guild_id = asyncqlio.Column(asyncqlio.BigInt, index=True)
     snowflake = asyncqlio.Column(asyncqlio.BigInt, nullable=True)

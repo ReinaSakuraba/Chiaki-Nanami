@@ -22,7 +22,7 @@ from .utils.paginator import ListPaginator, EmbedFieldPages
 _Table = asyncqlio.table_base()
 
 class Warn(_Table, table_name='warn_entries'):
-    id = asyncqlio.Column(dbtypes.AutoIncrementInteger, primary_key=True)
+    id = asyncqlio.Column(asyncqlio.Serial, primary_key=True)
 
     guild_id = asyncqlio.Column(asyncqlio.BigInt)
     user_id = asyncqlio.Column(asyncqlio.BigInt)

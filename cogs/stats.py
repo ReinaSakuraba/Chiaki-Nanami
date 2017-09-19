@@ -9,9 +9,8 @@ import traceback
 
 from discord.ext import commands
 from more_itertools import ilen, partition
-from operator import attrgetter
 
-from .utils import dbtypes, errors
+from .utils import errors
 from .utils.formats import pluralize
 from .utils.misc import emoji_url
 from .utils.paginator import ListPaginator, EmbedFieldPages
@@ -35,7 +34,7 @@ ERROR_ICON_URL = emoji_url('\N{NO ENTRY SIGN}')
 
 
 class Command(_Table, table_name='commands'):
-    id = asyncqlio.Column(dbtypes.AutoIncrementInteger, primary_key=True)
+    id = asyncqlio.Column(asyncqlio.Serial, primary_key=True)
     guild_id = asyncqlio.Column(asyncqlio.BigInt, index=True)
     channel_id = asyncqlio.Column(asyncqlio.BigInt)
     author_id = asyncqlio.Column(asyncqlio.BigInt, index=True)

@@ -11,7 +11,7 @@ from datetime import datetime
 from discord.ext import commands
 from functools import reduce
 
-from .utils import cache, dbtypes, errors
+from .utils import cache, errors
 from .utils.misc import emoji_url, truncate, unique
 from .utils.paginator import EmbedFieldPages
 from .utils.time import duration_units
@@ -25,7 +25,7 @@ _Table = asyncqlio.table_base()
 
 
 class Case(_Table, table_name='modlog'):
-    id = asyncqlio.Column(dbtypes.AutoIncrementInteger, primary_key=True)
+    id = asyncqlio.Column(asyncqlio.Serial, primary_key=True)
     channel_id = asyncqlio.Column(asyncqlio.BigInt, index=True)
     message_id = asyncqlio.Column(asyncqlio.BigInt, index=True)
 
@@ -40,7 +40,7 @@ class Case(_Table, table_name='modlog'):
 
 
 class CaseTarget(_Table, table_name='modlog_targets'):
-    id = asyncqlio.Column(dbtypes.AutoIncrementInteger, primary_key=True)
+    id = asyncqlio.Column(asyncqlio.Serial, primary_key=True)
     entry_id = asyncqlio.Column(asyncqlio.Integer, foreign_key=asyncqlio.ForeignKey(Case.id))
     user_id = asyncqlio.Column(asyncqlio.BigInt)
 

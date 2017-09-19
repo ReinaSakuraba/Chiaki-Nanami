@@ -251,7 +251,7 @@ _Table = asyncqlio.table_base()
 
 
 class _Schedule(_Table, table_name='schedule'):
-    id = asyncqlio.Column(dbtypes.AutoIncrementInteger, primary_key=True, autoincrement=True)
+    id = asyncqlio.Column(asyncqlio.Serial, primary_key=True)
     expires = asyncqlio.Column(asyncqlio.Timestamp, index=True)
     event = asyncqlio.Column(asyncqlio.String)
     created = asyncqlio.Column(asyncqlio.Timestamp)

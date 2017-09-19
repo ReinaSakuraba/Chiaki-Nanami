@@ -9,12 +9,6 @@ class JSON(asyncqlio.ColumnType):
         return 'JSONB'
 
 
-class AutoIncrementInteger(asyncqlio.ColumnType):
-    """Helper type because asyncqlio doesn't support auto-increment ints at the moment."""
-    def sql(self):
-        return 'SERIAL'
-
-
 class Interval(asyncqlio.ColumnType):
     def sql(self):
         return 'INTERVAL'
