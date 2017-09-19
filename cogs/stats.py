@@ -36,11 +36,16 @@ ERROR_ICON_URL = emoji_url('\N{NO ENTRY SIGN}')
 class Command(_Table, table_name='commands'):
     id = asyncqlio.Column(asyncqlio.Serial, primary_key=True)
     guild_id = asyncqlio.Column(asyncqlio.BigInt, index=True)
+    commands_guild_id_idx = asyncqlio.Index(guild_id)
+
     channel_id = asyncqlio.Column(asyncqlio.BigInt)
     author_id = asyncqlio.Column(asyncqlio.BigInt, index=True)
+    commands_author_id_idx = asyncqlio.Index(author_id)
+
     used = asyncqlio.Column(asyncqlio.Timestamp)
     prefix = asyncqlio.Column(asyncqlio.String)
     command = asyncqlio.Column(asyncqlio.String, index=True)
+    commands_command_idx = asyncqlio.Index(command)
 
 
 class Stats:

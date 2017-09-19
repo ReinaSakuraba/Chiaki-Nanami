@@ -252,7 +252,9 @@ _Table = asyncqlio.table_base()
 
 class _Schedule(_Table, table_name='schedule'):
     id = asyncqlio.Column(asyncqlio.Serial, primary_key=True)
-    expires = asyncqlio.Column(asyncqlio.Timestamp, index=True)
+    expires = asyncqlio.Column(asyncqlio.Timestamp)
+    schedule_expires_idx = asyncqlio.Index(expires)
+
     event = asyncqlio.Column(asyncqlio.String)
     created = asyncqlio.Column(asyncqlio.Timestamp)
     args_kwargs = asyncqlio.Column(dbtypes.JSON, default="'{}'::jsonb")

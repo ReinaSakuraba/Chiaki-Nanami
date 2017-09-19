@@ -76,6 +76,7 @@ class CommandPermissions(_Table, table_name='permissions'):
     id = asyncqlio.Column(asyncqlio.Serial, primary_key=True)
 
     guild_id = asyncqlio.Column(asyncqlio.BigInt, index=True)
+    permissions_guild_id_idx = asyncqlio.Index(guild_id)
     snowflake = asyncqlio.Column(asyncqlio.BigInt, nullable=True)
 
     name = asyncqlio.Column(asyncqlio.String)

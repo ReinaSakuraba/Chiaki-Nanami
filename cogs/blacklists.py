@@ -32,7 +32,7 @@ class Blacklisted(commands.CheckFailure):
 
 
 class Blacklist(_Table):
-    snowflake = asyncqlio.Column(asyncqlio.BigInt, index=True, primary_key=True)
+    snowflake = asyncqlio.Column(asyncqlio.BigInt, primary_key=True)
     blacklisted_at = asyncqlio.Column(asyncqlio.Timestamp)
     reason = asyncqlio.Column(asyncqlio.String(2000), default='')
 

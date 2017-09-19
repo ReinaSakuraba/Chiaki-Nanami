@@ -26,10 +26,12 @@ _Table = asyncqlio.table_base()
 
 class Case(_Table, table_name='modlog'):
     id = asyncqlio.Column(asyncqlio.Serial, primary_key=True)
-    channel_id = asyncqlio.Column(asyncqlio.BigInt, index=True)
-    message_id = asyncqlio.Column(asyncqlio.BigInt, index=True)
+    channel_id = asyncqlio.Column(asyncqlio.BigInt)
+    message_id = asyncqlio.Column(asyncqlio.BigInt)
 
-    guild_id = asyncqlio.Column(asyncqlio.BigInt, index=True)
+    guild_id = asyncqlio.Column(asyncqlio.BigInt)
+    modlog_guild_id_idx = asyncqlio.Index(guild_id)
+
     action = asyncqlio.Column(asyncqlio.String(16))
     mod_id = asyncqlio.Column(asyncqlio.BigInt)
     reason = asyncqlio.Column(asyncqlio.String(1024))
