@@ -12,6 +12,7 @@ from .utils import cache, formats, search
 from .utils.converter import BotCommand, BotCogConverter
 from .utils.dbtypes import AutoIncrementInteger
 from .utils.misc import emoji_url, truncate, unique
+from .utils.paginator import ListPaginator
 
 
 ALL_MODULES_KEY = '*'
@@ -130,6 +131,15 @@ class Server(namedtuple('Server', 'server')):
 
     def __str__(self):
         return str(self.server)
+
+
+class _DummyEntry(namedtuple('_DummyEntry', 'id')):
+    """This class ensures we have a mentionable object for ->ignores"""
+    __slots__ = ()
+
+    @property
+    def mention(self):
+        return f'<Not Found: {self.id}>'
 
 
 ENTITY_EXPLANATION = """
@@ -576,6 +586,25 @@ class Permissions:
 
         await ctx.session.delete.table(Plonks).where((Plonks.guild_id == ctx.guild.id) & condition)
         await self._display_plonked(ctx, entities, plonk=False)
+
+    @commands.command(aliases=['plonks'])
+    @commands.has_permissions(manage_guild=True)
+    async def ignores(self, ctx):
+        """Tells you what channels or members are currently ignored in this server."""
+        query = ctx.session.select.from_(Plonks).where(Plonks.guild_id == ctx.guild.id)
+        get_ch, get_m = ctx.guild.get_channel, ctx.guild.get_member
+        entries = [
+            (get_ch(e.entity_id) or get_m(e.entity_id) or _DummyEntry(e.entity_id)).mention
+            async for e in await query.all()
+        ]
+        entries.sort()
+
+        if not entries:
+            return await ctx.send("I'm not ignoring anything here...")
+
+        pages = ListPaginator(ctx, entries, colour=ctx.bot.colour,
+                              title=f"Currently ignoring...", lines_per_page=20)
+        await pages.interact()
 
 
 def setup(bot):
