@@ -85,6 +85,13 @@ def _calculate_compatibilty(user1, user2):
 
 #--------------- End ship stuffs ---------------------
 
+PRE_PING_REMARKS = [
+    # 'Pinging b1nzy',
+    'hacking the mainframe...',
+    'We are being rate-limited.',
+    'Pong?',
+]
+
 TEN_SEC_REACTION = '\N{BLACK SQUARE FOR STOP}'
 
 
@@ -165,11 +172,24 @@ class OtherStuffs:
     @commands.command()
     async def ping(self, ctx):
         """Your average ping command."""
+        # Set the embed for the pre-ping
+        clock = random.randint(0x1F550, 0x1F567)  # pick a random clock
+        embed = discord.Embed(colour=0xFFC107)
+        embed.set_author(name=random.choice(PRE_PING_REMARKS), icon_url=emoji_url(chr(clock)))
+
+        # Do the classic ping
         start = time.perf_counter()     # fuck time.monotonic()
-        message = await ctx.send('Poing...')
+        message = await ctx.send(embed=embed)
         end = time.perf_counter()       # fuck time.monotonic()
         ms = (end - start) * 1000
-        await message.edit(content=f'Poing! ({ms :.3f} ms)')
+
+        # Edit the embed to show the actual ping
+        embed.colour = 0x4CAF50
+        embed.set_author(name='Poing!', icon_url=emoji_url('\U0001f3d3'))
+        embed.add_field(name='Latency', value=f'{ctx.bot.latency * 1000 :.0f} ms')
+        embed.add_field(name='Classic', value=f'{ms :.0f} ms', inline=False)
+
+        await message.edit(embed=embed)
 
     @commands.command()
     async def slap(self, ctx, target: discord.Member=None):
