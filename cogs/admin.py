@@ -20,12 +20,13 @@ _Table = asyncqlio.table_base()
 
 
 class SelfRoles(_Table):
+    id = asyncqlio.Column(asyncqlio.Serial, primary_key=True)
     guild_id = asyncqlio.Column(asyncqlio.BigInt)
-    role_id = asyncqlio.Column(asyncqlio.BigInt, primary_key=True, unique=True)
+    role_id = asyncqlio.Column(asyncqlio.BigInt, unique=True)
 
 class AutoRoles(_Table):
     guild_id = asyncqlio.Column(asyncqlio.BigInt, primary_key=True)
-    role_id = asyncqlio.Column(asyncqlio.BigInt, primary_key=True)
+    role_id = asyncqlio.Column(asyncqlio.BigInt)
 
 class ServerMessage(_Table, table_name='server_messages'):
     guild_id = asyncqlio.Column(asyncqlio.BigInt, primary_key=True)
@@ -181,7 +182,7 @@ class Admin:
         A self-assignable role is one that you can assign to yourself
         using `{prefix}iam` or `{prefix}selfrole`
         """
-        await ctx.session.remove(SelfRoles(guild_id=ctx.guild.id, role_id=role.id))
+        await ctx.session.delete.table(SelfRoles).where(SelfRoles.role_id == role.id)
         await ctx.send(f"**{role}** is no longer a self-assignable role!")
 
     @commands.command(name='listselfrole', aliases=['lsar'])
