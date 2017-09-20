@@ -1,7 +1,9 @@
 import asyncio
+import collections
 import colorsys
 import contextlib
 import discord
+import functools
 import random
 import secrets
 import string
@@ -84,11 +86,29 @@ _diepio_tanks = [
 ]
 
 SMASHERS = ("Auto Smasher", "Landmine", "Smasher", "Spike",)
-BALL_ANSWERS = (
-    "Yes", "No", "Maybe so", "Definitely", "I think so",
-    "Probably", "I don't think so", "Probably not",
-    "I don't know", "I have no idea",
-    )
+
+# 8-Ball
+_8BallAnswer = collections.namedtuple('_8BallAnswer', 'answer colour')
+_no = functools.partial(_8BallAnswer, colour=0xf44336)
+_yes = functools.partial(_8BallAnswer, colour=0x8BC34A)
+_maybe = functools.partial(_8BallAnswer, colour=0xFFEB3B)
+_idk = functools.partial(_8BallAnswer, colour=0)
+
+BALL_ANSWERS = [
+    _yes("Yes"),
+    _no("No"),
+    _maybe("Maybe so"),
+    _yes("Definitely"),
+    _yes("I think so"),
+    _maybe("Probably"),
+    _no("I don't think so"),
+    _8BallAnswer("Probably not", colour=0xFF9800),
+    _idk("I don't know"),
+    _idk("I have no idea"),
+]
+
+_8default = _8BallAnswer('...\N{THINKING FACE}', 0x009688)
+
 
 _default_letters = string.ascii_letters + string.digits
 def _password(length, alphabet=_default_letters):
@@ -133,24 +153,25 @@ class RNG:
         if not question.endswith('?'):
             return await ctx.send(f"{ctx.author.mention}, that's not a question, I think.")
 
-        eight_ball_field_name = '\N{BILLIARDS} 8-ball'
-        eight_ball_embed = (discord.Embed(colour=random.randint(0, 0xFFFFFF))
-                           .add_field(name='\N{BLACK QUESTION MARK ORNAMENT} Question', value=question)
-                           .add_field(name=eight_ball_field_name, value='\u200b', inline=False)
-                           )
-        msg = await ctx.send(content=ctx.author.mention, embed=eight_ball_embed)
-        async with ctx.typing():
-            for answer in ('...\N{THINKING FACE}', random.choice(BALL_ANSWERS)):
-                await asyncio.sleep(random.uniform(0.75, 1.25) * 2)
-                await msg.edit(embed=eight_ball_embed.set_field_at(-1, name=eight_ball_field_name, value=answer, inline=False))
+        colour = discord.Colour(random.randint(0, 0xFFFFFF))
 
-        # TODO: Embeds
-        # question_fmt = f"{ctx.author.mention}\n\N{BLACK QUESTION MARK ORNAMENT}: **{question}**"
-        # msg = await ctx.send(question_fmt)
-        # async with ctx.typing():
-        #     for answer in ('...\N{THINKING FACE}', random.choice(BALL_ANSWERS)):
-        #         await asyncio.sleep(random.uniform(0.75, 1.25) * 2)
-        #         await msg.edit(content=f"{question_fmt}\n\N{BILLIARDS}: {answer}")
+        eight_ball_field_name = '\N{BILLIARDS} 8-ball'
+        embed = (discord.Embed(colour=colour)
+                 .add_field(name='\N{BLACK QUESTION MARK ORNAMENT} Question', value=question)
+                 .add_field(name=eight_ball_field_name, value='\u200b', inline=False)
+                 )
+
+        msg = await ctx.send(content=ctx.author.mention, embed=embed)
+
+        new_colour = discord.Colour.from_rgb(*(round(c * 0.7) for c in colour.to_rgb()))
+        default = _8default._replace(colour=new_colour)
+
+        async with ctx.typing():
+            for answer in (default, random.choice(BALL_ANSWERS)):
+                await asyncio.sleep(random.uniform(0.75, 1.25) * 2)
+                embed.colour = answer.colour
+                embed.set_field_at(-1, name=eight_ball_field_name, value=answer.answer, inline=False)
+                await msg.edit(embed=embed)
 
     @commands.command(usage='Nadeko Salt PvPCraft mee6 "Chiaki Nanami"')
     async def choose(self, ctx, *choices: commands.clean_content):
