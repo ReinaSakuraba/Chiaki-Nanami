@@ -26,7 +26,10 @@ class AFK:
         self.user_message_queues = defaultdict(deque)
 
     async def _get_afk_embed(self, member):
-        message = self.afks[member.id]
+        message = self.afks.get(member.id)
+        if message is None:
+            return None
+
         avatar = member.avatar_url
         colour = await user_color(member)
         title = f"{member.display_name} is AFK"
@@ -112,7 +115,8 @@ class AFK:
 
         for user in message.mentions:
             afk_embed = await self._get_afk_embed(user)
-            await message.channel.send(embed=afk_embed)
+            if afk_embed:
+                await message.channel.send(embed=afk_embed)
 
     async def on_message(self, message):
         await self.check_user_message(message)
