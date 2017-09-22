@@ -2,8 +2,8 @@ import asyncio
 import contextlib
 import discord
 import functools
-import inspect
 import itertools
+import logging
 import random
 
 from collections import OrderedDict
@@ -11,6 +11,9 @@ from discord.ext import commands
 
 from .context_managers import temp_message
 from .misc import maybe_awaitable
+
+
+_log = logging.getLogger(__name__)
 
 
 class DelimPaginator(commands.Paginator):
@@ -51,15 +54,12 @@ class DelimPaginator(commands.Paginator):
 
 #--------------------- Embed-related things ---------------------
 
-class StopPagination(Exception):
-    pass
-
-
 def page(emoji):
     def decorator(func):
         func.__reaction_emoji__ = emoji
         return func
     return decorator
+
 
 _extra_remarks = [
     'Does nothing',
@@ -72,29 +72,40 @@ _extra_remarks = [
     'Hug Chiaki',
     ]
 
+
 class BaseReactionPaginator:
+    """Base class for all embed paginators.
+
+    Subclasses must implement the default method with an emoji.
+    Usage is something like this:
+
+    class Paginator(BaseReactionPaginator):
+        @page('\N{HEAVY BLACK HEART}')
+        def default(self):
+            return discord.Embed(description='hi myst \N{HEAVY BLACK HEART}')
+
+        @page('\N{THINKING FACE}')
+        def think(self):
+            return discord.Embed(description='\N{THINKING FACE}')
+    """
+
     def __init__(self, context):
         self.context = context
-        self.message = None
-        self.reactions_done = asyncio.Event()
+        self._paginating = True
+        self._message = None
         self._current = None
-        self._extra = set()
+        # in case a custom destination was specified, this is meant to be internal
+        self._destination = None
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         cls._reaction_map = OrderedDict()
+        # We can't use inspect.getmembers because it returns the members in
+        # lexographical order, rather than definition order.
         for name, member in itertools.chain.from_iterable(b.__dict__.items() for b in cls.__mro__):
             if name.startswith('_'):
                 continue
-            # When looking at the member through the class-dict, any partialmethods
-            # are not considered callable by default. They only reveal themselves when you actually
-            # get the attribute of the member through the class (eg Foo.bar),
-            # or using inspect.getmembers(Foo)
-            #
-            # The reason why we can't use inspect.getmembers is because it
-            # returns the members out of order, regardless of how it's defined in the class.
-            # Metaclasses with __prepare__ returning an OrderedDict is not a solution,
-            # because somehow inspect.getmembers disregards that as well.
+            # Support for using functools.partialmethod as a means of simplifying pages.
             if not (callable(member) or isinstance(member, functools.partialmethod)):
                 continue
             # Let sub-classes override the current methods.
@@ -103,8 +114,9 @@ class BaseReactionPaginator:
 
             emoji = getattr(member, '__reaction_emoji__', None)
             if emoji:
-                print(name)
                 cls._reaction_map[emoji] = name
+                _log.debug('Initializing emoji %s for method %s in class %s',
+                           hex(ord(emoji)), member.__qualname__, cls.__name__)
 
         # We need to move stop to the end (assuming it exists).
         # Otherwise it will show up somewhere in the middle
@@ -116,46 +128,38 @@ class BaseReactionPaginator:
         return len(self._reaction_map)
 
     def default(self):
+        """The first page that will be shown.
+
+        Subclasses must implement this.
+        """
         raise NotImplementedError
 
     @page('\N{BLACK SQUARE FOR STOP}')
     def stop(self):
         """Stops the interactive pagination"""
-        raise StopPagination
+        self._paginating = False
 
     def _check_reaction(self, reaction, user):
-        return (reaction.message.id == self.message.id
+        return (reaction.message.id == self._message.id
                 and user.id == self.context.author.id
                 and reaction.emoji in self._reaction_map
-               )
-
-    async def _set_message(self, destination, message):
-        self._current = starting_embed = await maybe_awaitable(self.default)
-        if message is None:
-            self.message = await destination.send(embed=starting_embed)
-        else:
-            self.message = message
-            await self.message.edit(embed=starting_embed)
-            await message.clear_reactions()
+                )
 
     async def add_buttons(self):
         for emoji in self._reaction_map:
-            await self.message.add_reaction(emoji)
+            await self._message.add_reaction(emoji)
 
     async def on_only_one_page(self):
         # Override this if you need custom behaviour if there's only one page
-        # If you would like stop pagination, simply raise StopPagination
-        await self.message.add_reaction(self.stop.__reaction_emoji__)
+        # If you would like stop pagination, simply call stop()
+        await self._message.add_reaction(self.stop.__reaction_emoji__)
 
-    async def interact(self, destination=None, *, message=None, timeout=120, delete_after=True):
-        """Creates an interactive session"""
+    async def interact(self, destination=None, *, timeout=120, delete_after=True):
+        """Creates an interactive session."""
         ctx = self.context
-        if destination is None:
-            destination = ctx
-
-        await self._set_message(destination, message)
-        print(self.message)
-        message = self.message
+        self._destination = destination = destination or ctx
+        self._current = starting_embed = await maybe_awaitable(self.default)
+        self._message = message = await destination.send(embed=starting_embed)
 
         def _put_reactions():
             # We need at least the stop button for killing the pagination
@@ -174,38 +178,44 @@ class BaseReactionPaginator:
                 except asyncio.TimeoutError:
                     break
                 else:
-                    attr = self._reaction_map[react.emoji]
                     try:
-                        next_ = await maybe_awaitable(getattr(self, attr))
-                    except StopPagination:
-                        break
+                        attr = self._reaction_map[react.emoji]
+                    except KeyError:
+                        # Because subclasses *can* override the check we need to check
+                        # that the check given is valid, ie that the check will return
+                        # True if and only if the emoji is in the reaction map.
+                        raise RuntimeError(f"{react.emoji} has no method attached to it, check "
+                                           f"the {self._check_reaction.__qualname__} method")
+
+                    try:
+                        # For list paginators this will raise IndexError.
+                        # I could just have this return None.
+                        next_embed = await maybe_awaitable(getattr(self, attr))
                     except IndexError:
                         continue
 
-                    if isinstance(next_, BaseReactionPaginator):
-                        if not future.done():
-                            future.cancel()
+                    if not self._paginating:
+                        break
 
-                        with contextlib.suppress(StopPagination):
-                            await next_.interact(destination, message=self.message,
-                                                 timeout=timeout, delete_after=False)
-
-                        # restore the old embed before we delegated
-                        await self.message.edit(embed=self._current)
-                        # since upon stopping, the reactions would be cleared.
-                        future = _put_reactions()
-                    else:
-                        self._current = next_
+                    self._current = next_embed
+                    with contextlib.suppress(discord.HTTPException):
+                        # Manage Messages permissions is required to remove
+                        # other people's reactions. Sometimes the bot doesn't
+                        # have that for some reason. We must factor that in.
                         await message.remove_reaction(react.emoji, user)
-                        await message.edit(embed=next_)
+
+                    try:
+                        await message.edit(embed=next_embed)
+                    except discord.NotFound:  # Message was deleted by someone else (somehow).
+                        break
         finally:
+            if not future.done():
+                future.cancel()
+
             if delete_after:
                 await message.delete()
             else:
                 await message.clear_reactions()
-
-    async def wait_until_ready(self):
-        await self.reactions_done.wait()
 
     @property
     def reaction_help(self):
@@ -231,11 +241,12 @@ class ListPaginator(BaseReactionPaginator):
     def _create_embed(self, idx, page):
         # Override this if you want paginated embeds
         # but you want to handle the pagination differently
+        # Note that page is a list of entries (it's sliced)
 
         # XXX: Should this respect the embed description limit (2048 chars)?
         return (discord.Embed(title=self.title, colour=self.colour, description='\n'.join(page))
-               .set_footer(text=f'Page: {idx + 1} / {len(self)} ({len(self.entries)} entries)')
-               )
+                .set_footer(text=f'Page: {idx + 1} / {len(self)} ({len(self.entries)} entries)')
+                )
 
     def __getitem__(self, idx):
         if idx < 0:
@@ -336,18 +347,17 @@ class ListPaginator(BaseReactionPaginator):
             if not (small and emoji in fast_forwards):
                 await self.message.add_reaction(emoji)
 
-    async def interact(self, destination=None, *, message=None, timeout=120, delete_after=True):
+    async def interact(self, destination=None, *, timeout=120, delete_after=True):
         bot = self.context.bot
         with bot.temp_listener(self.on_reaction_remove):
-            await super().interact(destination, message=message, timeout=timeout, delete_after=delete_after)
+            await super().interact(destination, timeout=timeout, delete_after=delete_after)
 
     async def on_reaction_remove(self, reaction, user):
         self._extra.discard(reaction.emoji)
 
 
-
 class TitleBasedPages(ListPaginator):
-    """Similar to EmbedPages, but takes a dict of title-content pages
+    """Similar to ListPaginator, but takes a dict of title-content pages
 
     As a result, the content can easily exceed the limit of 2000 chars.
     Please use responsibly.
@@ -376,9 +386,9 @@ class TitleBasedPages(ListPaginator):
 
 
 class EmbedFieldPages(ListPaginator):
-    """Similat to EmbedPages, but uses the fields instead of the description"""
+    """Similar to ListPaginator, but uses the fields instead of the description"""
     def __init__(self, context, entries, *,
-                description=discord.Embed.Empty, inline=True, **kwargs):
+                 description=discord.Embed.Empty, inline=True, **kwargs):
         super().__init__(context, entries, **kwargs)
 
         self.description = description
