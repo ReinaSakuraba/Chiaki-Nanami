@@ -87,6 +87,10 @@ class BaseReactionPaginator:
         @page('\N{THINKING FACE}')
         def think(self):
             return discord.Embed(description='\N{THINKING FACE}')
+
+    A page should either return a discord.Embed, or None if to indicate the 
+    page was invalid somehow. e.g. The page number given was out of bounds,
+    or there were side effects associated with it.
     """
 
     def __init__(self, context):
@@ -172,7 +176,7 @@ class BaseReactionPaginator:
             future = _put_reactions()
             wait_for_reaction = functools.partial(ctx.bot.wait_for, 'reaction_add',
                                                   check=self._check_reaction, timeout=timeout)
-            while True:
+            while self._paginating:
                 try:
                     react, user = await wait_for_reaction()
                 except asyncio.TimeoutError:
@@ -187,15 +191,9 @@ class BaseReactionPaginator:
                         raise RuntimeError(f"{react.emoji} has no method attached to it, check "
                                            f"the {self._check_reaction.__qualname__} method")
 
-                    try:
-                        # For list paginators this will raise IndexError.
-                        # I could just have this return None.
-                        next_embed = await maybe_awaitable(getattr(self, attr))
-                    except IndexError:
+                    next_embed = await maybe_awaitable(getattr(self, attr))
+                    if next_embed is None:
                         continue
-
-                    if not self._paginating:
-                        break
 
                     self._current = next_embed
                     with contextlib.suppress(discord.HTTPException):
@@ -294,9 +292,9 @@ class ListPaginator(BaseReactionPaginator):
         Unlike __getitem__, this function does bounds checking and raises
         IndexError if the index is out of bounds.
         """
-        if not 0 <= index < len(self):
-            raise IndexError("page index out of range")
-        return self[index]
+        if 0 <= index < len(self):
+            return self[index]
+        return None
 
     @page('\N{INPUT SYMBOL FOR NUMBERS}')
     async def numbered(self):
@@ -311,17 +309,16 @@ class ListPaginator(BaseReactionPaginator):
                 try:
                     result = await ctx.bot.wait_for('message', check=check, timeout=60)
                 except asyncio.TimeoutError:
-                    return self[self._index]
+                    return None
 
                 try:
                     result = int(result.content)
                 except ValueError:
                     continue
 
-                try:
-                    return self.page_at(result - 1)
-                except IndexError:
-                    continue
+                embed = self.page_at(result - 1)
+                if embed:
+                    return embed
 
     @page('\N{INFORMATION SOURCE}')
     def help_page(self):
