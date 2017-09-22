@@ -362,7 +362,7 @@ class MinesweeperSession:
             if not new_colour:
                 embed.set_author(name='Minesweeper stopped.')
 
-        await self._game_screen.message.edit(embed=embed)
+        await self._game_screen._message.edit(embed=embed)
 
     async def _loop(self):
         start = time.perf_counter()
@@ -415,7 +415,7 @@ class MinesweeperSession:
     async def run(self):
         self._interaction = asyncio.ensure_future(self._game_screen.interact(timeout=None, delete_after=False))
         self._runner = asyncio.ensure_future(self.run_loop())
-        await self._game_screen.wait_until_ready()
+        # await self._game_screen.wait_until_ready()
         try:
             return await self._runner
         finally:
