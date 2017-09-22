@@ -63,7 +63,11 @@ async def _role_creator(role):
     if delta.days >= 90:
         return None
 
-    entry = await role.guild.audit_logs(action=discord.AuditLogAction.role_create).get(target=role)
+    try:
+        entry = await role.guild.audit_logs(action=discord.AuditLogAction.role_create).get(target=role)
+    except discord.Forbidden:
+        return "None: couldn't view the \naudit log"
+
     # Just in case.
     if entry is None:
         return entry
