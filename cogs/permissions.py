@@ -218,6 +218,9 @@ class Permissions:
 
     async def __error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
+            if await ctx.bot.is_owner(ctx.author):
+                return
+
             missing = [perm.replace('_', ' ').replace('guild', 'server').title()
                        for perm in error.missing_perms]
 
