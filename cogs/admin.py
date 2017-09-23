@@ -10,7 +10,7 @@ from discord.ext import commands
 from functools import partial
 from itertools import starmap
 
-from .utils import errors, prompt, search, time
+from .utils import errors, search, time
 from .utils.context_managers import redirect_exception, temp_attr, temp_message
 from .utils.formats import multi_replace
 from .utils.misc import nice_time, ordinal, str_join
@@ -69,21 +69,6 @@ class LowerRoleSearch(search.RoleSearch, LowerRole):
     pass
 
 
-async def _warn(warning, ctx):
-    warning += "\n\n(Type `yes` or `no`)"
-
-    def check(m):
-        return m.content.lower() in {'yes', 'no', 'y', 'n'}
-
-    try:
-        answer = await prompt.prompt(warning, ctx, timeout=30, check=check)
-    except asyncio.TimeoutError:
-        raise commands.BadArgument("You took too long. Aborting.")
-    else:
-        if answer.content.lower() not in {'yes', 'y'}:
-            raise commands.BadArgument("Aborted.")
-
-
 async def _check_role(ctx, role, thing):
     if role.managed:
         raise commands.BadArgument("This is an integration role, I can't assign this to anyone!")
@@ -99,7 +84,13 @@ async def _check_role(ctx, role, thing):
         message = ("This role has the Administrator permission. "
                    "It's very dangerous and can lead to terrible things. "
                    f"Are you sure you wanna make this {thing} role?")
-        await _warn(message, ctx)
+        try:
+            result = await ctx.ask_confirmation(message)
+        except asyncio.TimeoutError:
+            raise commands.BadArgument("Took too long. Aborting...")
+        else:
+            if not result:
+                raise commands.BadArgument("Aborted.")
 
 
 async def _get_self_roles(ctx):
@@ -381,7 +372,7 @@ class Admin:
         return config or ServerMessage(guild_id=guild_id, is_welcome=thing.value)
 
     async def _toggle_config(self, ctx, do_thing, *, thing, text):
-        config = await self._setdefault_server_message_setting(ctx.session, ctx.guild.id, thing)    
+        config = await self._setdefault_server_message_setting(ctx.session, ctx.guild.id, thing)
         config.enabled = do_thing if do_thing is not None else not config.enabled
         await ctx.session.add(config)
 

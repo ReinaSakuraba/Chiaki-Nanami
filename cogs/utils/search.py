@@ -14,7 +14,6 @@ from discord.ext import commands
 from more_itertools import always_iterable
 from string import ascii_lowercase
 
-from . import prompt
 from .context_managers import temp_attr
 from .formats import human_join, pluralize
 from .misc import REGIONAL_INDICATORS
@@ -33,34 +32,6 @@ class Search:
     def _format_choices(emojis, choices):
         return '\n'.join(map('{0} = {1}'.format, emojis, choices))
 
-    async def search(self, ctx, arg, choices, *, thing):
-        num_entries = len(choices)
-        choices = choices[:self.max_choices]
-        num_choices = len(choices)
-        emojis = REGIONAL_INDICATORS[:num_choices]
-        letters = ascii_lowercase[:num_choices]
-        first, *_, last = letters
-
-        description = self._format_choices(emojis, choices)
-        pluralized = pluralize(**{thing: num_entries})
-        field_value = f'Please click one of the reactions below. Or type a letter from {first}-{last}'
-        embed = (discord.Embed(colour=0x00FF00, description=description)
-                .set_author(name=f'{pluralized} have been found for "{arg}"')
-                .add_field(name='Instructions', value=field_value)
-                )
-
-        def message_check(m, s=frozenset(letters)):
-            return m.content.lower() in s
-
-        thing = await prompt.prompt(embed, ctx, emojis, timeout=self.timeout,
-                                    check=message_check, delete_message=self.do_delete)
-
-        if isinstance(thing, discord.Message):
-            index = letters.index(thing.content.lower())
-        else:
-            index = emojis.index(thing[0].emoji)
-        return choices[index]
-
 
 class RoleSearch(commands.IDConverter, Search):
     """Converter that allows for case-insensitive discord.Role conversion."""
@@ -76,13 +47,7 @@ class RoleSearch(commands.IDConverter, Search):
         else:
             predicate = lambda r, arg=argument.lower(): r.name.lower() == arg
 
-        results = list(filter(predicate, guild.roles))
-        if not results:
-            raise commands.BadArgument('Role "{}" not found.'.format(argument))
-        if len(results) == 1:
-            return results[0]
-
-        return await self.search(ctx, argument, results, thing='role')
+        return await ctx.disambiguate(list(filter(predicate, guild.roles)))
 
 
 class MemberSearch(commands.MemberConverter, Search):
@@ -121,11 +86,7 @@ class MemberSearch(commands.MemberConverter, Search):
             # and duplicate results.
             result = _get_from_guilds(bot, 'get_member_named', argument), # See comment in "if guild:"
 
-        if not result:
-            raise commands.BadArgument(f'Member "{argument}" not found')
-        elif len(result) == 1:
-            return result[0]
-        return await self.search(ctx, argument, result, thing='member')
+        return await ctx.disambiguate(result)
 
 
 class TextChannelSearch(commands.TextChannelConverter, Search):
@@ -150,11 +111,7 @@ class TextChannelSearch(commands.TextChannelConverter, Search):
             else:
                 result = list(filter(check, bot.get_all_channels()))
 
-        if not result:
-            raise commands.BadArgument(f'Channel "{argument}" not found')
-        elif len(result) == 1:
-            return result[0]
-        return await self.search(ctx, argument, result, thing='member')
+        return await ctx.disambiguate(result)
 
 
 class UserSearch(commands.UserConverter, Search):
@@ -173,11 +130,7 @@ class UserSearch(commands.UserConverter, Search):
         lowered = argument.lower()
         results = [u for u in state._users.values() if u.name.lower() == lowered]
 
-        if not results:
-            raise commands.BadArgument(f'Channel "{argument}" not found')
-        elif len(results) == 1:
-            return results[0]
-        return await self.search(ctx, argument, results, thing='user')
+        return await ctx.disambiguate(results)
 
 
 class GuildSearch(commands.IDConverter, Search):
@@ -191,12 +144,7 @@ class GuildSearch(commands.IDConverter, Search):
 
         lowered = arg.lower()
         guilds = [g for g in state._guilds.values() if g.name.lower() == lowered]
-
-        if not guilds:
-            raise commands.BadArgument(f'Server "{arg}" not found')
-        elif len(guilds) == 1:
-            return guilds[0]
-        return await self.search(ctx, arg, guilds, thing='server')
+        return await ctx.disambiguate(guilds)
 
 
 # A mapping for the discord.py class and it's corresponding searcher.
@@ -210,6 +158,12 @@ _type_search_maps = {
 }
 
 
+# Function for stubbing out the context's disambiguate method
+# so it doesn't accidentally do the prompt prematurely.
+async def _dummy_disambiguate(matches, *args, **kwargs):
+    return matches
+
+
 class union(Search, commands.Converter):
     def __init__(self, *types, **kwargs):
         # Relying on the fact that Search.__init__ doesn't call super().__init__
@@ -217,35 +171,20 @@ class union(Search, commands.Converter):
         self.kwargs = kwargs
         self.types = types
 
-    @staticmethod
-    def _format_choices(emojis, choices):
-        return '\n'.join(map('{0} = {1} ({1.__class__.__name__})'.format, emojis, choices))
-
-    # stubbing out each converters' search so it doesn't accidentally do the
-    # reaction thing prematurely.
-    async def search(self, ctx, argument, choices, *, thing):
-        return choices
-
     async def convert(self, ctx, argument):
         choices = []
-        for searcher in self.searchers:
-            try:
-                with temp_attr(searcher, 'search', self.search):
-                    entries = await searcher(**self.kwargs).convert(ctx, argument)
-            except commands.BadArgument:
-                continue
-            else:
-                choices.extend(always_iterable(entries))
 
-        if not choices:
-            type_names = (getattr(t, '__name__', t.__class__.__name__) for t in self.types)
-            message = f'"{argument}" is neither a {human_join(type_names, final="nor")}.'
-            raise commands.BadArgument(message)
-        if len(choices) == 1:
-            return choices[0]
-        return await super().search(ctx, argument, choices, thing='entry')
+        with temp_attr(ctx, 'disambiguate', _dummy_disambiguate):
+            for searcher in self.searchers:
+                try:
+                    entries = await searcher(**self.kwargs).convert(ctx, argument)
+                except commands.BadArgument:
+                    continue
+                else:
+                    choices.extend(always_iterable(entries))
+
+        return await ctx.disambiguate(choices, '{0} ({0.__class__.__name__})'.format)
 
     @property
     def searchers(self):
         return list(filter(None, map(_type_search_maps.get, self.types)))
-
