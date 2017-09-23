@@ -229,5 +229,23 @@ class Owner:
                 # prevent rate-limiting.
                 await asyncio.sleep(1)
 
+    @commands.command()
+    async def reacquire(self, ctx):
+        """Test command for releasing and reacquiring the database session."""
+        print('releasing session', ctx.session, 'current state:', ctx.session._state)
+        s = ctx.session
+        await ctx.send('Releasing...')
+        await ctx.release()
+
+        print('sleeping...', 'state of sessiom:', s._state)
+        await asyncio.sleep(10)
+
+        print('reacquiring...')
+        await ctx.acquire()
+
+        print('success!', ctx.session, 'state of new session:', ctx.session)
+        await ctx.send('\N{OK HAND SIGN}')
+
+
 def setup(bot):
     bot.add_cog(Owner(bot))
