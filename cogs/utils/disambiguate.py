@@ -21,7 +21,6 @@ _get_from_guilds = commands.converter._get_from_guilds
 
 class DisambiguateConverter(commands.Converter):
     def __init__(self, *, case_sensitive=False):
-        print('called!')
         super().__init__()
         self.case_sensitive = case_sensitive
 
