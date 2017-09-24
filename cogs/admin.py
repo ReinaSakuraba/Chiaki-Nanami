@@ -2,6 +2,7 @@ import asyncio
 import asyncqlio
 import asyncpg
 import contextlib
+import copy
 import discord
 import enum
 
@@ -114,7 +115,10 @@ class SelfRole(disambiguate.DisambiguateRole):
                        f"Use `{ctx.prefix}asar` to add one.")
             raise commands.BadArgument(message)
 
-        with temp_attr(ctx.guild, 'roles', self_roles):
+        temp_guild = copy.copy(ctx.guild)
+        temp_guild.roles = self_roles
+
+        with temp_attr(ctx, 'guild', temp_guild):
             try:
                 return await super().convert(ctx, arg)
             except commands.BadArgument:
