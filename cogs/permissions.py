@@ -8,7 +8,7 @@ from collections import defaultdict, namedtuple
 from discord.ext import commands
 from more_itertools import one, partition
 
-from .utils import cache, formats, search
+from .utils import cache, formats, disambiguate
 from .utils.converter import BotCommand, BotCogConverter
 from .utils.misc import emoji_url, truncate, unique
 from .utils.paginator import ListPaginator
@@ -113,8 +113,8 @@ class CogName(BotCogConverter):
         return name
 
 
-PermissionEntity = search.union(discord.Member, discord.Role, discord.TextChannel)
-Plonkable = search.union(discord.TextChannel, discord.Member)
+PermissionEntity = disambiguate.union(discord.Member, discord.Role, discord.TextChannel)
+Plonkable = disambiguate.union(discord.TextChannel, discord.Member)
 
 # End of the converters I guess.
 

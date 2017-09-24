@@ -10,7 +10,7 @@ from discord.ext import commands
 from functools import partial
 from itertools import starmap
 
-from .utils import errors, search, time
+from .utils import disambiguate, errors, time
 from .utils.context_managers import redirect_exception, temp_attr, temp_message
 from .utils.formats import multi_replace
 from .utils.misc import nice_time, ordinal, str_join
@@ -65,7 +65,7 @@ class LowerRole(commands.RoleConverter):
         return role
 
 
-class LowerRoleSearch(search.RoleSearch, LowerRole):
+class LowerRoleSearch(disambiguate.DisambiguateRole, LowerRole):
     pass
 
 
@@ -103,7 +103,7 @@ async def _get_self_roles(ctx):
     return [r async for r in roles if r]
 
 
-class SelfRole(search.RoleSearch):
+class SelfRole(disambiguate.DisambiguateRole):
     async def convert(self, ctx, arg):
         if not ctx.guild:
             raise commands.NoPrivateMessage
@@ -121,7 +121,7 @@ class SelfRole(search.RoleSearch):
                 raise commands.BadArgument(f'{arg} is not a self-assignable role...')
 
 
-class AutoRole(search.RoleSearch):
+class AutoRole(disambiguate.DisambiguateRole):
     async def convert(self, ctx, arg):
         if not ctx.guild:
             raise commands.NoPrivateMessage

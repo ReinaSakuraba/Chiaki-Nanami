@@ -18,7 +18,7 @@ from itertools import chain, islice, starmap
 from math import log10
 from operator import attrgetter
 
-from .utils import cache, search
+from .utils import cache, disambiguate
 from .utils.colours import url_color, user_color
 from .utils.context_managers import redirect_exception, temp_message
 from .utils.converter import BotCommand, union
@@ -232,7 +232,7 @@ class Meta:
 
     @info.command(name='user')
     @commands.guild_only()
-    async def info_user(self, ctx, *, member: search.MemberSearch=None):
+    async def info_user(self, ctx, *, member: disambiguate.DisambiguateMember=None):
         """Gets some userful info because why not"""
         if member is None:
             member = ctx.author
@@ -240,19 +240,19 @@ class Meta:
 
     @info.command(name='mee6')
     @commands.guild_only()
-    async def info_mee6(self, ctx, *, member: search.MemberSearch=None):
+    async def info_mee6(self, ctx, *, member: disambiguate.DisambiguateMember=None):
         """Equivalent to `{prefix}rank`"""
         await ctx.invoke(self.rank, member=member)
 
     @commands.command()
     @commands.guild_only()
-    async def userinfo(self, ctx, *, member: search.MemberSearch=None):
+    async def userinfo(self, ctx, *, member: disambiguate.DisambiguateMember=None):
         """Gets some userful info because why not"""
         await ctx.invoke(self.info_user, member=member)
 
     @commands.command()
     @commands.guild_only()
-    async def rank(self, ctx, *, member: search.MemberSearch=None):
+    async def rank(self, ctx, *, member: disambiguate.DisambiguateMember=None):
         """Gets mee6 info... if it exists"""
         if member is None:
             member = ctx.author
@@ -281,7 +281,7 @@ class Meta:
         await ctx.send(embed=mee6_embed)
 
     @info.command(name='role')
-    async def info_role(self, ctx, *, role: search.RoleSearch):
+    async def info_role(self, ctx, *, role: disambiguate.DisambiguateRole):
         """Shows information about a particular role."""
         server = ctx.guild
 
@@ -465,7 +465,7 @@ class Meta:
         return icon
 
     @commands.command()
-    async def roles(self, ctx, member: search.MemberSearch=None):
+    async def roles(self, ctx, member: disambiguate.DisambiguateMember=None):
         """Shows all the roles that a member has. Roles in bold are the ones you have.
 
         If a member isn't provided, it defaults to all the roles in the server.
@@ -561,7 +561,7 @@ class Meta:
 
     @commands.command()
     @commands.guild_only()
-    async def inrole(self, ctx, *, role: search.RoleSearch):
+    async def inrole(self, ctx, *, role: disambiguate.DisambiguateRole):
         """Checks which members have a given role.
         If you have the role, your name will be in **bold**.
 
@@ -572,7 +572,7 @@ class Meta:
 
     @commands.command()
     @commands.guild_only()
-    async def inanyrole(self, ctx, *roles: search.RoleSearch):
+    async def inanyrole(self, ctx, *roles: disambiguate.DisambiguateRole):
         """Checks which members have any of the given role(s).
         If you have the role, your name will be in **bold**.
 
@@ -584,7 +584,7 @@ class Meta:
 
     @commands.command()
     @commands.guild_only()
-    async def inallrole(self, ctx, *roles: search.RoleSearch):
+    async def inallrole(self, ctx, *roles: disambiguate.DisambiguateRole):
         """Checks which members have all of the given role(s).
         If you have the role, your name will be in **bold**.
 
@@ -632,7 +632,7 @@ class Meta:
 
     @commands.command(aliases=['perms'])
     @commands.guild_only()
-    async def permissions(self, ctx, *, member_or_role: search.union(discord.Member, discord.Role)=None):
+    async def permissions(self, ctx, *, member_or_role: disambiguate.union(discord.Member, discord.Role)=None):
         """Shows either a member's Permissions, or a role's Permissions.
 
         ```diff
@@ -647,7 +647,7 @@ class Meta:
 
     @commands.command(aliases=['permsin'])
     @commands.guild_only()
-    async def permissionsin(self, ctx, *, member: search.MemberSearch=None):
+    async def permissionsin(self, ctx, *, member: disambiguate.DisambiguateMember=None):
         """Shows a member's Permissions *in the channel*.
 
         ```diff
@@ -660,7 +660,7 @@ class Meta:
         await self._display_permissions(ctx, member, ctx.channel.permissions_for(member), extra=f'in #{ctx.channel}')
 
     @commands.command(aliases=['av'])
-    async def avatar(self, ctx, *, user: search.MemberSearch=None):
+    async def avatar(self, ctx, *, user: disambiguate.DisambiguateMember=None):
         if user is None:
             user = ctx.author
         avatar_url = user.avatar_url_as(static_format='png')

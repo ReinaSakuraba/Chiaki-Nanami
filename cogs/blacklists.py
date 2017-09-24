@@ -5,7 +5,7 @@ import discord
 
 from discord.ext import commands
 
-from .utils import search
+from .utils import disambiguate
 from .utils.misc import emoji_url, truncate
 
 
@@ -37,7 +37,7 @@ class Blacklist(_Table):
     reason = asyncqlio.Column(asyncqlio.String(2000), default='')
 
 
-_GuildOrUser = search.union(discord.Guild, discord.User)
+_GuildOrUser = disambiguate.union(discord.Guild, discord.User)
 
 
 class Blacklists:
