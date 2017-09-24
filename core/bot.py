@@ -220,11 +220,23 @@ class Chiaki(commands.Bot):
 
     async def on_command_error(self, ctx, error):
         if isinstance(error, commands.CheckFailure) and await self.is_owner(ctx.author):
-            # Let the old session continue whatever it was doing. We'll just make
-            # a new session for this.
-            ctx._old_session = ctx.session
+            # There is actually a race here. When this command is invoked the
+            # first time, it's wrapped in a context manager that automatically
+            # starts and closes a DB session.
+            #
+            # The issue is that this event is dispatched, which means during the
+            # first invoke, it creates a task for this and goes on with its day.
+            # The problem is that it doesn't wait for this event, meaning it might
+            # accidentally close the session before or during this command's
+            # reinvoke.
+            #
+            # This solution is dirty but since I'm only doing it once here
+            # it's fine. Besides it works anyway.
+            while ctx.session:
+                await asyncio.sleep(0)
+
             try:
-                async with ctx.db.get_session() as ctx.session:
+                async with ctx.acquire():
                     await ctx.reinvoke()
             except Exception as exc:
                 await ctx.command.dispatch_error(ctx, exc)
