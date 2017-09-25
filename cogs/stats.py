@@ -16,8 +16,6 @@ from .utils.misc import emoji_url
 from .utils.paginator import ListPaginator, EmbedFieldPages
 from .utils.time import human_timedelta
 
-import config
-
 
 _Table = asyncqlio.table_base()
 _ignored_exceptions = (
@@ -180,10 +178,6 @@ class Stats:
             return await ctx.send("I don't support shards... yet.")
         # TODO
 
-    @property
-    def webhook(self):
-        return discord.Webhook.from_url(config.webhook_url, adapter=discord.AsyncWebhookAdapter(self.bot.session))
-
     async def on_command_error(self, ctx, error):
         error = getattr(error, 'original', error)
 
@@ -202,7 +196,7 @@ class Stats:
         exc = ''.join(traceback.format_exception(type(error), error, error.__traceback__, chain=False))
         e.description = f'```py\n{exc}\n```'
         e.timestamp = datetime.datetime.utcnow()
-        await self.webhook.send(embed=e)
+        await self.bot.webhook.send(embed=e)
 
     @commands.command(name='testerr')
     @commands.is_owner()
@@ -230,7 +224,7 @@ class Stats:
         if guild.me:
             e.timestamp = guild.me.joined_at
 
-        await self.webhook.send(embed=e)
+        await self.bot.webhook.send(embed=e)
 
     async def on_guild_join(self, guild):
         await self.send_guild_stats(guild, 0x53dda4, 'New')

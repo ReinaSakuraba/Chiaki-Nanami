@@ -106,7 +106,8 @@ class Chiaki(commands.Bot):
 
         self.reset_requested = False
 
-        self.db = asyncqlio.DatabaseInterface(config.postgresql)
+        psql = f'postgresql://{config.psql_user}:{config.psql_pass}@{config.psql_host}/{config.psql_db}'
+        self.db = asyncqlio.DatabaseInterface(psql)
         self.loop.run_until_complete(self._connect_to_db())
         self.db_scheduler = DatabaseScheduler(self.db, timefunc=datetime.utcnow)
         self.db_scheduler.add_callback(self._dispatch_from_scheduler)
@@ -303,6 +304,13 @@ class Chiaki(commands.Bot):
     @property
     def colour(self):
         return config.colour
+
+    @property
+    def webhook(self):
+        wh_url = config.webhook_url
+        if not wh_url:
+            return None
+        return discord.Webhook.from_url(wh_url, adapter=discord.AsyncWebhookAdapter(self.session))
 
     @property
     def confirm_reaction_emoji(self):

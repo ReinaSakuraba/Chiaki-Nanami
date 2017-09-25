@@ -13,6 +13,17 @@ carbon_key = ''
 # The API key for Discord Bots. Again, keep this private.
 bots_key = ''
 
+# The credentials to log into your PostgreSQL database.
+# Please keep this private.
+psql_user = ''
+psql_pass = ''
+psql_host = ''
+psql_db = ''
+
+# The bot's webhook URL. Keep this private too.
+# This can be None or an empty string.
+webhook_url = ''
+
 # -------------------- BOT STUFF ---------------------
 
 # The bot's default command prefix. This can either be a string, 
