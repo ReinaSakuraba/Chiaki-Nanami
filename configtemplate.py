@@ -44,3 +44,10 @@ ok_colour = 0x00FF00
 # something went wrong
 error_colour = 0xFF000
 
+# --------------------- EMOJIS ------------------------
+
+# The emoji that will be used as the confirm option for the confirmation prompt
+confirm_emoji = '\N{WHITE HEAVY CHECK MARK}'
+
+# The emoji that will be used as the deny option for the confirmation prompt
+deny_emoji = '\N{CROSS MARK}'

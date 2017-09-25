@@ -170,9 +170,7 @@ class Context(commands.Context):
             if not destination.permissions_for(self.me).add_reactions:
                 raise RuntimeError('Bot does not have Add Reactions permission.')
 
-        # If you want to change the confirm and deny emoji, change them here
-        # TODO: put this in config.py
-        confirm_emoji, deny_emoji = emojis = ['\N{WHITE HEAVY CHECK MARK}', '\N{CROSS MARK}']
+        confirm_emoji, deny_emoji = emojis = [self.bot.confirm_emoji, self.bot.deny_emoji]
         is_valid_emoji = frozenset(emojis).__contains__
 
         instructions = f'React with {confirm_emoji} to confirm or {deny_emoji} to deny\n'
@@ -194,7 +192,7 @@ class Context(commands.Context):
             print(result, 'emoji:', emoji)
             return result
 
-        for em in emojis:
+        for em in [self.bot.confirm_reaction_emoji, self.bot.deny_reaction_emoji]:
             await msg.add_reaction(em)
 
         if reacquire:

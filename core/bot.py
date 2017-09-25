@@ -8,6 +8,7 @@ import inspect
 import json
 import logging
 import random
+import re
 import sys
 import traceback
 
@@ -32,6 +33,14 @@ log.addHandler(file_handler('chiakinanami'))
 
 command_log = logging.getLogger('commands')
 command_log.addHandler(file_handler('commands'))
+
+
+EMOJI_REGEX = re.compile(r'<:(.+?):([0-9]{15,21})>')
+def _parse_emoji_for_reaction(emoji):
+    m = EMOJI_REGEX.match(emoji)
+    if m is not None:
+        return f'{m[1]}:{m[2]}'
+    return emoji
 
 
 _MINIMAL_PERMISSIONS = [
@@ -294,6 +303,22 @@ class Chiaki(commands.Bot):
     @property
     def colour(self):
         return config.colour
+
+    @property
+    def confirm_reaction_emoji(self):
+        return _parse_emoji_for_reaction(self.confirm_emoji)
+
+    @property
+    def deny_reaction_emoji(self):
+        return _parse_emoji_for_reaction(self.deny_emoji)
+
+    @property
+    def confirm_emoji(self):
+        return config.confirm_emoji
+
+    @property
+    def deny_emoji(self):
+        return config.deny_emoji
 
     # ------ misc. properties ------
 
