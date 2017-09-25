@@ -191,6 +191,7 @@ class Owner:
     @commands.command(aliases=['kys'])
     async def die(self, ctx):
         """Shuts the bot down"""
+        await ctx.release()  # Needed because logout closes the DatabaseInterface.
         await ctx.send("Bye... Please don't forget about me.")
         await ctx.bot.logout()
 
