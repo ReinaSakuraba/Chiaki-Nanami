@@ -30,6 +30,8 @@ class Warn(_Table, table_name='warn_entries'):
     reason = asyncqlio.Column(asyncqlio.String(2000))
     warned_at = asyncqlio.Column(asyncqlio.Timestamp)
 
+
+# XXX: Should I have the timeout and punishments as one table?
 class WarnTimeout(_Table, table_name='warn_timeouts'):
     guild_id = asyncqlio.Column(asyncqlio.BigInt, primary_key=True)
     timeout = asyncqlio.Column(dbtypes.Interval)
@@ -43,6 +45,19 @@ class WarnPunishment(_Table, table_name='warn_punishments'):
 class MuteRole(_Table, table_name='muted_roles'):
     guild_id = asyncqlio.Column(asyncqlio.BigInt, primary_key=True)
     role_id = asyncqlio.Column(asyncqlio.BigInt)
+
+
+class _ConflictColumns(namedtuple('_ConflictColumns', 'columns')):
+    """Hack to support multiple columns for on_conflict"""
+    __slots__ = ()
+
+    @property
+    def quoted_name(self):
+        return ', '.join(c.quoted_name for c in self.columns)
+
+WarnPunishmentCC = _ConflictColumns((WarnPunishment.guild_id, WarnPunishment.warns))
+del _ConflictColumns
+
 
 # Dummy punishment class for default warn punishment
 _DummyPunishment = namedtuple('_DummyPunishment', 'warns type duration')
@@ -519,16 +534,23 @@ class Moderator:
                        f'Valid punishments: {", ".join(_warn_punishments)}')
             return await ctx.send(message)
 
-        if lowered in {'tempban', 'mute'} and not duration:
-            return await ctx.send(f'A duration is required for {lowered}...')
+        if lowered in {'tempban', 'mute'}:
+            if not duration:
+                return await ctx.send(f'A duration is required for {lowered}...')
+        else:
+            duration = 0
 
-        guild_id = ctx.guild.id
-        query = ctx.session.select(WarnPunishment).where((WarnPunishment.guild_id == guild_id)
-                                                         & (WarnPunishment.warns == num))
-        punishment = await query.first() or WarnPunishment(guild_id=guild_id, warns=num)
-        punishment.type = lowered
-        punishment.duration = int(duration)
-        await ctx.session.add(punishment)
+        row = WarnPunishment(
+            guild_id=ctx.guild.id,
+            warns=num,
+            type=lowered,
+            duration=duration,
+        )
+
+        await (ctx.session.insert.add_row(row)
+                          .on_conflict(WarnPunishmentCC)
+                          .update(WarnPunishment.type, WarnPunishment.duration))
+
         await ctx.send(f'\N{OK HAND SIGN} if a user has been warned {num} times, '
                        'I will **{lowered}** them.')
 
@@ -551,10 +573,9 @@ class Moderator:
         """Sets the maximum time between the oldest warn and the most recent warn.
         If a user hits a warn limit within this timeframe, they will be punished.
         """
-        query = ctx.session.select(WarnTimeout).where((WarnTimeout.guild_id == ctx.guild.id))
-        timeout = await query.first() or WarnTimeout(guild_id=ctx.guild.id)
-        timeout.timeout = datetime.timedelta(seconds=duration)
-        await ctx.session.add(timeout)
+        row = WarnTimeout(guild_id=ctx.guild.id, timeout=datetime.timedelta(seconds=duration))
+        await (ctx.session.insert.add_row(row).on_conflict(WarnTimeout.guild_id)
+                          .update(WarnTimeout.timeout))
 
         await ctx.send(f'Alright, if a user was warned within {time.duration_units(duration)} '
                         'after their oldest warn, bad things will happen.')
@@ -577,12 +598,9 @@ class Moderator:
     async def _update_muted_role(self, guild, new_role):
         await self._regen_muted_role_perms(new_role, *guild.channels)
         async with self.bot.db.get_session() as session:
-            row = await session.select.from_(MuteRole).where(MuteRole.guild_id == guild.id).first()
-            if row is None:
-                row = MuteRole(guild_id=guild.id)
-
-            row.role_id = new_role.id
-            await session.add(row)
+            await (session.insert.add_row(MuteRole(guild_id=guild.id, role_id=new_role.id))
+                                 .on_conflict(MuteRole.guild_id)
+                                 .update(MuteRole.role_id))
 
     async def _create_muted_role(self, guild):
         role = await guild.create_role(name='Chiaki-Muted', colour=discord.Colour.red())
