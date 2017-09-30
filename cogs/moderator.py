@@ -540,6 +540,8 @@ class Moderator:
         else:
             duration = 0
 
+        extra = f'for {time.duration_units(duration)}' if duration else ''
+
         row = WarnPunishment(
             guild_id=ctx.guild.id,
             warns=num,
@@ -552,18 +554,19 @@ class Moderator:
                           .update(WarnPunishment.type, WarnPunishment.duration))
 
         await ctx.send(f'\N{OK HAND SIGN} if a user has been warned {num} times, '
-                       f'I will **{lowered}** them.')
+                       f'I will **{lowered}** them {extra}.')
 
     @commands.command(name='warnpunishments', aliases=['warnpl'])
     async def warn_punishments(self, ctx):
         """Shows this list of warn punishments"""
         query = ctx.session.select(WarnPunishment).where((WarnPunishment.guild_id == ctx.guild.id))
-        punishments = [(p.warns, p.type.title()) async for p in await query.all()]
+        punishments = [(p.warns, p.type.title(), p.duration) async for p in await query.all()]
         if not punishments:
             punishments += (_default_punishment,)
         punishments.sort()
 
-        entries = itertools.starmap('{0} => **{1}**'.format, punishments)
+        entries = (f'{warns} strikes => **{type}** {f"for {time.duration_units(duration)}" if duration else ""}'
+                   for warns, type, duration in punishments)
         pages = ListPaginator(ctx, entries, title=f'Punishments for {ctx.guild}', colour=ctx.bot.colour)
         await pages.interact()
 
