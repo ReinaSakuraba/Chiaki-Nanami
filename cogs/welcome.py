@@ -112,9 +112,52 @@ class WelcomeMessages:
 
         await ctx.session.insert.add_row(row).on_conflict(_ConflictServerColumns).update(column)
 
+    async def _show_server_config(self, ctx, thing):
+        config = await self._get_server_config(ctx.session, ctx.guild.id, thing)
+        if not config:
+            commands = sorted(ctx.command.commands, key=str)
+            message = ("Um... you haven't even set this at all...\n"
+                       f"Please use one of the {len(commands)} subcommands to get started.")
+
+            embed = discord.Embed(colour=0xf44336, description=message)
+            for c in commands:
+                embed.add_field(name=f'{ctx.prefix} {c}', value=c.short_doc)
+
+            return await ctx.send(embed=embed)
+
+        colour, prefix = (0x4CAF50, 'en') if config.enabled else (0xf44336, 'dis')
+        message = (f'**Message:**\n{config.message}'
+                   if config.message else
+                   f"You haven't even set the message...\nUse `{thing.command_name} message` to set it.")
+
+        embed = (discord.Embed(colour=colour, description=message)
+                 .set_author(name=f'{thing.name.title()} Status: {prefix}abled')
+                 )
+
+        ch_id = config.channel_id
+        if ch_id == -1:
+            ch_field = f"You haven't even set this! Use `{thing.command_name} channel your_channel` right now!"
+        else:
+            channel = ctx.bot.get_channel(ch_id)
+            if channel:
+                ch_field = channel.mention
+            else:
+                ch_field = (f"{config.channel_id} has been deleted, pls reset it with "
+                            f"`{thing.command_name} channel your_channel`")
+
+        embed.add_field(name='Channel', value=ch_field, inline=False)
+
+        delete_after = (time.duration_units(config.delete_after)
+                        if config.delete_after > 0 else
+                        "Actually wait, I won't delete it at all...")
+
+        embed.add_field(name='I will delete it after', value=delete_after, inline=False)
+
+        await ctx.send(embed=embed)
+
     async def _toggle_config(self, ctx, do_thing, *, thing):
         if do_thing is None:
-            ...
+            await self._show_server_config(ctx, thing)
         else:
             await self._update_server_config(ctx, thing, enabled=do_thing)
             to_say = (f"Yay I will {thing.toggle_text}" if do_thing else
@@ -284,4 +327,4 @@ class WelcomeMessages:
 
 
 def setup(bot):
-    bot.add_cog(WelcomeLeave(bot))
+    bot.add_cog(WelcomeMessages(bot))
