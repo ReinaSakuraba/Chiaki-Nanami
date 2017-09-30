@@ -1,20 +1,16 @@
 import asyncio
 import asyncqlio
 import asyncpg
-import contextlib
 import copy
 import discord
-import enum
 
-from datetime import datetime
 from discord.ext import commands
 from functools import partial
 from itertools import starmap
 
-from .utils import disambiguate, errors, time
-from .utils.context_managers import redirect_exception, temp_attr, temp_message
-from .utils.formats import multi_replace
-from .utils.misc import nice_time, ordinal, str_join
+from .utils import disambiguate
+from .utils.context_managers import temp_attr
+from .utils.misc import str_join
 
 
 _Table = asyncqlio.table_base()
@@ -28,29 +24,6 @@ class SelfRoles(_Table):
 class AutoRoles(_Table):
     guild_id = asyncqlio.Column(asyncqlio.BigInt, primary_key=True)
     role_id = asyncqlio.Column(asyncqlio.BigInt)
-
-class ServerMessage(_Table, table_name='server_messages'):
-    guild_id = asyncqlio.Column(asyncqlio.BigInt, primary_key=True)
-    is_welcome = asyncqlio.Column(asyncqlio.Boolean, primary_key=True)
-    channel_id = asyncqlio.Column(asyncqlio.BigInt, default=-1, primary_key=True)
-    enabled = asyncqlio.Column(asyncqlio.Boolean, default=False)
-    delete_after = asyncqlio.Column(asyncqlio.SmallInt, default=0)
-    message_text = asyncqlio.Column(asyncqlio.String(2000), default='', nullable=True)
-
-
-class ServerMessageType(enum.Enum):
-    leave = False
-    welcome = True
-
-    def __str__(self):
-        return self.name
-
-
-welcome_leave_message_check = partial(commands.has_permissions, manage_guild=True)
-
-
-def special_message(message):
-    return message if '{user}' in message else f'{{user}}{message}'
 
 
 class LowerRole(commands.RoleConverter):
@@ -348,203 +321,8 @@ class Admin:
 
             await ctx.send(message)
 
-    # ---------------- WELCOME AND LEAVE MESSAGE STUFF -------------
-
-    _channel_format = """
-        Sets the channel where I will {thing}.
-        If no arguments are given, it shows the current channel.
-
-        By default it's the server's default channel.
-        If the channel gets deleted or doesn't exist, the message will
-        redirect to the server's default channel.
-        """
-
-    _delete_after_format = """
-        Sets the time it takes for {thing} messages to be auto-deleted.
-        Passing it with no arguments will return the current duration.
-
-        A number less than or equal 0 will disable automatic deletion.
-        """
-
-    async def _get_server_message_setting(self, session, guild_id, thing):
-        query = session.select(ServerMessage).where((ServerMessage.guild_id == guild_id)
-                                                    & (ServerMessage.is_welcome == thing.value))
-        return await query.first()
-
-    async def _setdefault_server_message_setting(self, session, guild_id, thing):
-        config = await self._get_server_message_setting(session, guild_id, thing)
-        return config or ServerMessage(guild_id=guild_id, is_welcome=thing.value)
-
-    async def _toggle_config(self, ctx, do_thing, *, thing, text):
-        config = await self._setdefault_server_message_setting(ctx.session, ctx.guild.id, thing)
-        config.enabled = do_thing if do_thing is not None else not config.enabled
-        await ctx.session.add(config)
-
-        to_say = (f"Yay I will {text}" if config.enabled else
-                  "Oki I'll just sit in my corner then :~")
-        await ctx.send(to_say)
-
-    async def _message_config(self, ctx, message, *, thing):
-        config = await self._setdefault_server_message_setting(ctx.session, ctx.guild.id, thing)
-
-        if message:
-            config.message_text = message
-            await ctx.session.add(config)
-            await ctx.send(f"{thing.name.title()} message has been set to *{message}*")
-        else:
-            message = config.message_text
-            to_say = f"I will say {message} to the user." if message else "I won't say anything..."
-            await ctx.send(to_say)
-
-    async def _channel_config(self, ctx, channel, *, thing):
-        config = await self._setdefault_server_message_setting(ctx.session, ctx.guild.id, thing)
-
-        if channel:
-            config.channel_id = channel.id
-            await ctx.session.add(config)
-            await ctx.send(f'Ok, {channel.mention} it is then!')
-        else:
-            channel = self.bot.get_channel(config.channel_id)
-            if not channel:
-                message = ("I don't have a channel at the moment, "
-                           f"set one with `{ctx.prefix}{ctx.command} my_channel`")
-            else:
-                message = f"I'm gonna say the {thing} message in {channel.mention}"
-            await ctx.send(message)
-
-    async def _delete_after_config(self, ctx, duration, *, thing):
-        config = await self._setdefault_server_message_setting(ctx.session, ctx.guild.id, thing)
-
-        if duration is None:
-            duration = config.delete_after
-            message = (f"I won't delete the {thing} message." if not duration or duration < 0 else
-                       f"I will delete the {thing} message after {time.duration_units(duration)}.")
-            await ctx.send(message)
-        else:
-            auto_delete = duration > 0
-            config.delete_after = duration
-            await ctx.session.add(config)
-            message = (f"Ok, I'm deleting the {thing} message after {time.duration_units(duration)}" if auto_delete else
-                       f"Ok, I won't delete the {thing} message.")
-            await ctx.send(message)
-
-    # TODO: Allow embeds in welcome messages
-    # XXX: Should I actually do it though? It will be very complicated and Nadeko-like
-    @commands.group(aliases=['hi'], invoke_without_command=True)
-    @welcome_leave_message_check()
-    async def welcome(self, ctx, do_welcome: bool = None):
-        """Sets whether or not I announce when someone joins the server.
-        Specifying with no arguments will toggle it.
-        """
-        await self._toggle_config(ctx, do_welcome, thing=ServerMessageType.welcome,
-                                  text='welcome all new members to the server! ^o^')
-
-    @welcome.command(name='message', aliases=['msg'])
-    @welcome_leave_message_check()
-    async def welcome_message(self, ctx, *, message: special_message = None):
-        """Sets the bot's message when a member joins this server.
-
-        The following special formats can be in the message:
-        `{{user}}`     = The member that joined. If one isn't placed, it's placed at the beginning of the message.
-        `{{uid}}`      = The ID of member that joined.
-        `{{server}}`   = The name of the server.
-        `{{count}}`    = How many members are in the server now.
-        `{{countord}}` = Like `{{count}}`, but as an ordinal, eg instead of `5` it becomes `5th`.
-        `{{time}}`     = The date and time when the member joined.
-        """
-        await self._message_config(ctx, message, thing=ServerMessageType.welcome)
-
-    @welcome.command(name='channel', aliases=['chnl'],
-                     help=_channel_format.format(thing='greet the user'))
-    @welcome_leave_message_check()
-    async def welcome_channel(self, ctx, *, channel: discord.TextChannel=None):
-        await self._channel_config(ctx, channel, thing=ServerMessageType.welcome)
-
-    @welcome.command(name='delete', aliases=['del'], help=_delete_after_format.format(thing='welcome'))
-    @welcome_leave_message_check()
-    async def welcome_delete(self, ctx, duration: time.duration = None):
-        await self._delete_after_config(ctx, duration, thing=ServerMessageType.welcome)
-
-    @commands.group(aliases=['bye'], invoke_without_command=True)
-    @welcome_leave_message_check()
-    async def byebye(self, ctx, do_bye: bool = None):
-        """Sets whether or not I announce when someone leaves the server.
-        Specifying with no arguments will toggle it.
-        """
-        await self._toggle_config(ctx, do_bye, thing=ServerMessageType.leave,
-                                  text='mourn the loss of members. ;-;')
-
-    @byebye.command(name='message', aliases=['msg'])
-    @welcome_leave_message_check()
-    async def byebye_message(self, ctx, *, message: special_message = None):
-        """Sets the bot's message when a member leaves this server
-
-        The following special formats can be in the message:
-        `{{user}}`     = The member that joined. If one isn't placed, it's placed at the beginning of the message.
-        `{{uid}}`      = The ID of member that left.
-        `{{server}}`   = The name of the server.
-        `{{count}}`    = How many members are in the server now.
-        `{{countord}}` = Like `{{count}}`, but as an ordinal, eg instead of `5` it becomes `5th`.
-        `{{time}}`     = The date and time when the member left the server.
-        """
-
-        await self._message_config(ctx, message, thing=ServerMessageType.leave)
-
-    @byebye.command(name='channel', aliases=['chnl'],
-                    help=_channel_format.format(thing='mourn for the user'))
-    @welcome_leave_message_check()
-    async def byebye_channel(self, ctx, *, channel: discord.TextChannel = None):
-        await self._channel_config(ctx, channel, thing=ServerMessageType.leave)
-
-    @byebye.command(name='delete', aliases=['del'], help=_delete_after_format.format(thing='leave'))
-    @welcome_leave_message_check()
-    async def byebye_delete(self, ctx, duration: time.duration = None):
-        await self._delete_after_config(ctx, duration, thing=ServerMessageType.leave)
-
-    async def _maybe_do_message(self, member, thing, time):
-        guild = member.guild
-        async with self.bot.db.get_session() as session:
-            config = await self._get_server_message_setting(session, guild.id, thing)
-        if not (config and config.enabled):
-            return
-
-        channel_id = config.channel_id
-        channel = self.bot.get_channel(channel_id)
-        if channel is None:
-            return
-
-        message = config.message_text
-        if not message:
-            return
-
-        member_count = len(guild.members)
-
-        replacements = {
-            '{user}': member.mention,
-            '{uid}': str(member.id),
-            '{server}': str(guild),
-            '{count}': str(member_count),
-            '{countord}': ordinal(member_count),
-            # TODO: Should I use %c...?
-            '{time}': nice_time(time)
-        }
-
-        delete_after = config.delete_after
-        if delete_after <= 0:
-            delete_after = None
-
-        # Not using str.format because that will raise KeyError on anything surrounded in {}
-        message = multi_replace(message, replacements)
-        await channel.send(message, delete_after=delete_after)
-
     async def on_member_join(self, member):
-        await self._maybe_do_message(member, ServerMessageType.welcome, member.joined_at)
         await self._add_auto_role(member)
-
-    # Hm, this needs less repetition
-    # XXX: Lower the repetition
-    async def on_member_remove(self, member):
-        await self._maybe_do_message(member, ServerMessageType.leave, datetime.utcnow())
 
     # ------------------------- PREFIX RELATED STUFF -------------------
 
