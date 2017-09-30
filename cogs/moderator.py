@@ -558,7 +558,7 @@ class Moderator:
     async def warn_punishments(self, ctx):
         """Shows this list of warn punishments"""
         query = ctx.session.select(WarnPunishment).where((WarnPunishment.guild_id == ctx.guild.id))
-        punishments = [(p.num, p.type.title()) async for p in await query.all()]
+        punishments = [(p.warns, p.type.title()) async for p in await query.all()]
         if not punishments:
             punishments += (_default_punishment,)
         punishments.sort()
