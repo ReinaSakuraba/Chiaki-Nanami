@@ -552,7 +552,7 @@ class Moderator:
                           .update(WarnPunishment.type, WarnPunishment.duration))
 
         await ctx.send(f'\N{OK HAND SIGN} if a user has been warned {num} times, '
-                       'I will **{lowered}** them.')
+                       f'I will **{lowered}** them.')
 
     @commands.command(name='warnpunishments', aliases=['warnpl'])
     async def warn_punishments(self, ctx):
@@ -751,7 +751,7 @@ class Moderator:
 
         self._check_user(ctx, member)
         await member.kick(reason=reason)
-        await ctx.send(f"Done. Please don't make me do that again...")
+        await ctx.send("Done. Please don't make me do that again...")
 
     @commands.command(aliases=['sb'], usage='259209114268336129 Enough of your raid fetish.')
     @commands.has_permissions(kick_members=True, manage_messages=True)
