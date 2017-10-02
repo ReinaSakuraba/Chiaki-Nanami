@@ -88,7 +88,7 @@ class Aliases:
     @commands.has_permissions(manage_guild=True)
     async def delalias(self, ctx, *, alias):
         """Deletes an alias."""
-        await ctx.session.delete.Table(Alias).where((Alias.guild_id == ctx.guild.id) & (Alias.alias == alias))
+        await ctx.session.delete.table(Alias).where((Alias.guild_id == ctx.guild.id) & (Alias.alias == alias))
         await ctx.send(f'Ok... bye "{alias}"')
 
     @commands.command()
