@@ -64,7 +64,7 @@ class Aliases:
         For multi-word aliases you must use quotes.
         """
         if not _first_word_is_command(ctx.bot, command):
-            return await ctx.send('The command has to be an actual command you know...')
+            return await ctx.send(f"{command} isn't an actual command...")
 
         # asyncqlio's upsert is broken. It passes ALL the columns in the query,
         # including the SERIAL column. This makes it pass None (NULL in SQL) in
@@ -81,14 +81,15 @@ class Aliases:
         await ctx.session.execute(query, params)
         # row = Alias(guild_id=ctx.guild.id, alias=alias, command=command)
         # await ctx.session.insert.add_row(row).on_conflict(AliasCC).update(Alias.command)
-        await ctx.send('ok')
+        await ctx.send(f'Ok, typing "{ctx.prefix}{alias}" will now be '
+                       f'the same as "{ctx.prefix}{command}"')
 
     @commands.command()
     @commands.has_permissions(manage_guild=True)
     async def delalias(self, ctx, *, alias):
         """Deletes an alias."""
         await ctx.session.delete.Table(Alias).where((Alias.guild_id == ctx.guild.id) & (Alias.alias == alias))
-        await ctx.send('ok')
+        await ctx.send(f'Ok... bye "{alias}"')
 
     @commands.command()
     async def aliases(self, ctx):
