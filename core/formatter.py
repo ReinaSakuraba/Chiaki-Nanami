@@ -93,7 +93,6 @@ class HelpCommandPage(BaseReactionPaginator):
 
         requirements = _make_command_requirements(command) or 'None'
         cmd_name = f"`{clean_prefix}{command.full_parent_name} {' / '.join(command.all_names)}`"
-        footer = '"{0}" is in the module *{0.cog_name}*'.format(command)
 
         description = command.help.format(prefix=clean_prefix)
         cmd_embed = discord.Embed(title=func(cmd_name), description=func(description), colour=bot.colour)
@@ -105,9 +104,11 @@ class HelpCommandPage(BaseReactionPaginator):
 
         cmd_embed.add_field(name=func("Requirements"), value=func(requirements))
         cmd_embed.add_field(name=func("Structure"), value=f'`{func(signature)}`', inline=False)
+        cmd_embed.add_field(name=func('Module'), value=func(command.cog_name))
 
         # if usages is not None:
         #    cmd_embed.add_field(name=func("Usage"), value=func(usages), inline=False)
+        footer = f'Module: {command.cog_name} | Click the info button below to see an example.'
         return cmd_embed.set_footer(text=func(footer))
 
     def _example(self):
@@ -123,7 +124,7 @@ class HelpCommandPage(BaseReactionPaginator):
         else:
             embed.set_image(url=image_url)
 
-        return embed
+        return embed.set_footer(text='Click the info button to go back.')
 
 
 class ChiakiFormatter(commands.HelpFormatter):
