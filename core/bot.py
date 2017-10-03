@@ -80,6 +80,12 @@ class Chiaki(commands.Bot):
                          description=config.description,
                          pm_help=None)
 
+        try:
+            with open('data/command_image_urls.json') as f:
+                self.command_image_urls = __import__('json').load(f)
+        except FileNotFoundError:
+            self.command_image_urls = {}
+
         self.message_counter = 0
         self.command_counter = collections.Counter()
         self.custom_prefixes = Database('customprefixes.json')

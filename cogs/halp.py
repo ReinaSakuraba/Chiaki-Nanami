@@ -9,7 +9,7 @@ from datetime import datetime
 from .utils.converter import BotCogConverter, BotCommand
 from .utils.formats import multi_replace
 from .utils.misc import emoji_url, truncate
-from .utils.paginator import ListPaginator
+from .utils.paginator import BaseReactionPaginator, ListPaginator
 
 
 CHIAKI_TIP_EPOCH = datetime(2017, 8, 24)
@@ -62,6 +62,8 @@ async def default_help(ctx, command=None, func=lambda s: s):
 
     if isinstance(page, discord.Embed):
         await destination.send(embed=page)
+    elif isinstance(page, BaseReactionPaginator):
+        await page.interact()
     else:
         await destination.send(page)
 

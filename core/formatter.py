@@ -12,7 +12,7 @@ from more_itertools import always_iterable
 
 from cogs.utils.context_managers import temp_attr
 from cogs.utils.misc import truncate
-from cogs.utils.paginator import DelimPaginator
+from cogs.utils.paginator import BaseReactionPaginator, DelimPaginator, page
 
 def _unique(iterable):
     return list(OrderedDict.fromkeys(iterable))
@@ -32,6 +32,98 @@ If you need help with something, or there's some weird issue with me, which will
 *Use `->modules` for all the modules with commands.
 Or `->commands "module"` for a list of commands for a particular module.*
 """
+
+
+def _clean_prefix(ctx):
+    # XXX: Function for getting the clean prefix until I use the actual Context method.
+    user = ctx.bot.user
+    return ctx.prefix.replace(user.mention, f'@{user.name}')
+
+
+def _make_command_requirements(command):
+    requirements = []
+    # All commands in this cog are owner-only anyway.
+    if command.cog_name == 'Owner':
+        requirements.append('**Bot Owner only**')
+
+    def make_pretty(p):
+        return p.replace('_', ' ').title().replace('Guild', 'Server')
+
+    for check in command.checks:
+        name = getattr(check, '__qualname__', '')
+
+        if name.startswith('is_owner'):
+            # the bot owner line must come above every other line, for emphasis.
+            requirements.insert(0, '**Bot Owner only**')
+        elif name.startswith('has_permissions'):
+            # Here's the biggest hack in history.
+            permissions = check.__closure__[0].cell_contents
+            pretty_perms = [make_pretty(k) if v else f'~~{make_pretty(k)}~~'
+                            for k, v in permissions.items()]
+
+            perm_names = ', '.join(pretty_perms)
+            requirements.append(f'{perm_names} permission{"s" * (len(pretty_perms) != 1)}')
+        print(requirements)
+
+        return '\n'.join(requirements)
+
+
+class HelpCommandPage(BaseReactionPaginator):
+    def __init__(self, ctx, command, func=None):
+        super().__init__(ctx)
+        self.command = command
+        self.func = func
+        self._toggle = True
+
+    @page('\N{INFORMATION SOURCE}')
+    def default(self):
+        self._toggle = toggle = not self._toggle
+        meth = self._example if toggle else self._command_info
+        return meth()
+
+    def _command_info(self):
+        command, ctx, func = self.command, self.context, self.func
+        bot = ctx.bot
+        clean_prefix = _clean_prefix(ctx)
+        # usages = self.command_usage
+
+        # if usage is truthy, it will immediately return with that usage. We don't want that.
+        with temp_attr(command, 'usage', None):
+            signature = command.signature
+
+        requirements = _make_command_requirements(command) or 'None'
+        cmd_name = f"`{clean_prefix}{command.full_parent_name} {' / '.join(command.all_names)}`"
+        footer = '"{0}" is in the module *{0.cog_name}*'.format(command)
+
+        description = command.help.format(prefix=clean_prefix)
+        cmd_embed = discord.Embed(title=func(cmd_name), description=func(description), colour=bot.colour)
+
+        if isinstance(command, commands.GroupMixin):
+            command_names = sorted(cmd.name for cmd in command.commands)
+            children = ', '.join(command_names) or "No commands... yet."
+            cmd_embed.add_field(name=func("Child Commands"), value=func(children), inline=False)
+
+        cmd_embed.add_field(name=func("Requirements"), value=func(requirements))
+        cmd_embed.add_field(name=func("Structure"), value=f'`{func(signature)}`', inline=False)
+
+        # if usages is not None:
+        #    cmd_embed.add_field(name=func("Usage"), value=func(usages), inline=False)
+        return cmd_embed.set_footer(text=func(footer))
+
+    def _example(self):
+        command, bot = self.command, self.context.bot
+
+        embed = discord.Embed(colour=bot.colour).set_author(name=f'Example for {command}')
+
+        try:
+            image_url = bot.command_image_urls[self.command.qualified_name]
+        except (KeyError, AttributeError):
+            error = f"`{self.command}` doesn't have an image.\nContact MIkusaba#4553 to fix that!"
+            embed.add_field(name='\u200b', value=error)
+        else:
+            embed.set_image(url=image_url)
+
+        return embed
 
 
 class ChiakiFormatter(commands.HelpFormatter):
@@ -62,11 +154,6 @@ class ChiakiFormatter(commands.HelpFormatter):
             return 'No example... yet'
         # commands that don't take any arguments don't really need an example generated manually...
         return None
-
-    @property
-    def command_checks(self):
-        # TODO: Factor in the group stuff later
-        return self.command.checks
 
     @property
     def command_requirements(self):
@@ -125,33 +212,6 @@ class ChiakiFormatter(commands.HelpFormatter):
         embeds[-1].set_footer(text=self.get_ending_note())
         return embeds
 
-    async def command_embed(self):
-        command, ctx, func = self.command, self.context, self.apply_function
-        bot = ctx.bot
-        usages = self.command_usage
-
-        # if usage is truthy, it will immediately return with that usage. We don't want that.
-        with temp_attr(command, 'usage', None):
-            signature = command.signature
-
-        requirements = self.command_requirements or 'None'
-        cmd_name = f"`{self.clean_prefix}{command.full_parent_name} {' / '.join(command.all_names)}`"
-        footer = '"{0}" is in the module *{0.cog_name}*'.format(command)
-
-        cmd_embed = discord.Embed(title=func(cmd_name), description=func(self.description), colour=bot.colour)
-
-        if self.has_subcommands():
-            command_names = sorted(cmd.name for cmd in command.commands)
-            children = ', '.join(command_names) or "No commands... yet."
-            cmd_embed.add_field(name=func("Child Commands"), value=func(children), inline=False)
-
-        cmd_embed.add_field(name=func("Requirements"), value=func(requirements))
-        cmd_embed.add_field(name=func("Structure"), value=f'`{func(signature)}`', inline=False)
-
-        if usages is not None:
-            cmd_embed.add_field(name=func("Usage"), value=func(usages), inline=False)
-        return cmd_embed.set_footer(text=func(footer))
-
     async def format_help_for(self, ctx, command, func=lambda s: s):
         self.apply_function = func
         return await super().format_help_for(ctx, command)
@@ -161,4 +221,4 @@ class ChiakiFormatter(commands.HelpFormatter):
             return await self.bot_help()
         elif self.is_cog():
             return await self.cog_embed()
-        return await self.command_embed()
+        return HelpCommandPage(self.context, self.command, self.apply_function)
