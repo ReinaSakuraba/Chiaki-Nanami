@@ -56,8 +56,7 @@ def _make_command_requirements(command):
             # the bot owner line must come above every other line, for emphasis.
             requirements.insert(0, '**Bot Owner only**')
         elif name.startswith('has_permissions'):
-            # Here's the biggest hack in history.
-            permissions = check.__closure__[0].cell_contents
+            permissions = inspect.getclosurevars(check).nonlocals['perms']
             pretty_perms = [make_pretty(k) if v else f'~~{make_pretty(k)}~~'
                             for k, v in permissions.items()]
 
