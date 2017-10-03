@@ -136,55 +136,6 @@ class ChiakiFormatter(commands.HelpFormatter):
         description = (self.command.help if not self.is_cog() else inspect.getdoc(self.command)) or 'No description'
         return description.format(prefix=self.clean_prefix)
 
-    @property
-    def command_usage(self):
-        cmd = self.command
-        prefix = self.clean_prefix
-        parent_name = cmd.full_parent_name
-        # We want to append with a space if AND ONLY IF there is a parent.
-        # Otherwise there will be a space between the prefix and the command name
-        parent_name = f'{parent_name} ' * bool(parent_name)
-
-        qualified_names = [f"{parent_name}{name}" for name in cmd.all_names]
-        if cmd.clean_params:
-            usage = cmd.usage
-            if isinstance(usage, Sequence):
-                return '\n'.join([f'`{prefix}{random.choice(qualified_names)} {u}`' 
-                                  for u in always_iterable(usage)])
-            # Assume it's invalid; usage must be a sequence (either a tuple, list, or str)
-            return 'No example... yet'
-        # commands that don't take any arguments don't really need an example generated manually...
-        return None
-
-    @property
-    def command_requirements(self):
-        command = self.command
-        requirements = []
-        # All commands in this cog are owner-only anyway.
-        if command.cog_name == 'Owner':
-            requirements.append('**Bot Owner only**')
-
-        def make_pretty(p):
-            return p.replace('_', ' ').title().replace('Guild', 'Server')
-
-        for check in self.command_checks:
-            name = getattr(check, '__qualname__', '')
-
-            if name.startswith('is_owner'):
-                # the bot owner line must come above every other line, for emphasis.
-                requirements.insert(0, '**Bot Owner only**')
-            elif name.startswith('has_permissions'): 
-                # Here's the biggest hack in history.
-                permissions = check.__closure__[0].cell_contents
-                pretty_perms = [make_pretty(k) if v else f'~~{make_pretty(k)}~~' 
-                                for k, v in permissions.items()]
-
-                perm_names = ', '.join(pretty_perms)
-                requirements.append(f'{perm_names} permission{"s" * (len(pretty_perms) != 1)}')
-            print(requirements)
-
-        return '\n'.join(requirements)
-
     def paginate_cog_commands(self, cog_name):
         visible = (c for c in self.context.bot.get_cog_commands(cog_name)
                    if not (c.hidden or self.show_hidden))
