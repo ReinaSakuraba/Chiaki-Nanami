@@ -103,7 +103,6 @@ class HelpCommandPage(BaseReactionPaginator):
 
         cmd_embed.add_field(name=func("Requirements"), value=func(requirements))
         cmd_embed.add_field(name=func("Structure"), value=f'`{func(signature)}`', inline=False)
-        cmd_embed.add_field(name=func('Module'), value=func(command.cog_name))
 
         # if usages is not None:
         #    cmd_embed.add_field(name=func("Usage"), value=func(usages), inline=False)
