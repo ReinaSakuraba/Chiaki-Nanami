@@ -300,11 +300,13 @@ class ListPaginator(BaseReactionPaginator):
     async def numbered(self):
         """Takes a number from the user and goes to that page"""
         ctx = self.context
+        channel = self._message.channel
+
         def check(m):
-            return (m.channel.id == ctx.channel.id and
+            return (m.channel.id == channel.id and
                     m.author.id == ctx.author.id)
 
-        async with temp_message(self.context, f'Please enter a number from 1 to {len(self)}'):
+        async with temp_message(channel, f'Please enter a number from 1 to {len(self)}'):
             while True:
                 try:
                     result = await ctx.bot.wait_for('message', check=check, timeout=60)
@@ -342,7 +344,7 @@ class ListPaginator(BaseReactionPaginator):
             # Gotta do this inefficient branch because of stop not being moved to
             # the end, so I can't just subract the two fast arrow emojis
             if not (small and emoji in fast_forwards):
-                await self.message.add_reaction(emoji)
+                await self._message.add_reaction(emoji)
 
     async def interact(self, destination=None, *, timeout=120, delete_after=True):
         bot = self.context.bot
