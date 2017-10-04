@@ -145,6 +145,8 @@ _note = (
 
 
 class CogPages(ListPaginator):
+    numbered = None
+
     def __init__(self, ctx, cog):
         cog_name = cog.__class__.__name__
         entries = (c for c in ctx.bot.get_cog_commands(cog_name)
