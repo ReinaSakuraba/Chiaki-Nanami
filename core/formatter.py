@@ -125,6 +125,25 @@ class HelpCommandPage(BaseReactionPaginator):
         return embed.set_footer(text='Click the info button to go back.')
 
 
+async def _can_run(command, ctx):
+    try:
+        return await command.can_run(ctx)
+    except commands.CommandError:
+        return False
+
+
+async def _command_formatters(commands, ctx):
+    for command in commands:
+        fmt = '`{}`' if await _can_run(command, ctx) else '~~`{}`~~'
+        yield map(fmt.format, command.all_names)
+
+
+_note = (
+    "You can't commands that have\n"
+    "been crossed out (~~`like this`~~)"
+)
+
+
 class CogPages(ListPaginator):
     def __init__(self, ctx, cog):
         cog_name = cog.__class__.__name__
@@ -135,15 +154,16 @@ class CogPages(ListPaginator):
         self._cog_doc = inspect.getdoc(cog) or 'No description... yet.'
         self._cog_name = cog_name
 
-    def _create_embed(self, idx, entries):
-        names = (map('`{}`'.format, cmd.all_names) for cmd in entries)
-        lines = map(' | '.join, names)
+    async def _create_embed(self, idx, entries):
+        lines = [' | '.join(line) async for line in _command_formatters(entries, self.context)]
 
         return (discord.Embed(colour=self.colour, description=self._cog_doc)
                 .set_author(name=self._cog_name)
                 .add_field(name='Commands', value='\n'.join(lines))
+                .add_field(name='Note', value=_note, inline=False)
                 .set_footer(text=f'Currently on page {idx + 1}')
                 )
+
 
 
 class ChiakiFormatter(commands.HelpFormatter):
