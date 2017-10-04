@@ -342,7 +342,7 @@ class ListPaginator(BaseReactionPaginator):
             # Gotta do this inefficient branch because of stop not being moved to
             # the end, so I can't just subract the two fast arrow emojis
             if not (small and emoji in fast_forwards):
-                await self.message.add_reaction(emoji)
+                await self._message.add_reaction(emoji)
 
     async def interact(self, destination=None, *, timeout=120, delete_after=True):
         bot = self.context.bot
