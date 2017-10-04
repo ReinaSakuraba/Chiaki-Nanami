@@ -104,16 +104,30 @@ class BaseReactionPaginator:
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         cls._reaction_map = OrderedDict()
+        _suppressed_methods = set()
         # We can't use inspect.getmembers because it returns the members in
         # lexographical order, rather than definition order.
         for name, member in itertools.chain.from_iterable(b.__dict__.items() for b in cls.__mro__):
             if name.startswith('_'):
                 continue
+
             # Support for using functools.partialmethod as a means of simplifying pages.
-            if not (callable(member) or isinstance(member, functools.partialmethod)):
+            is_callable = callable(member) or isinstance(member, functools.partialmethod)
+
+            # Support suppressing page methods by assigning them to None
+            if not (member is None or is_callable):
                 continue
+
             # Let sub-classes override the current methods.
             if name in cls._reaction_map.values():
+                continue
+
+            # Let subclasses suppress page methods.
+            if name in _suppressed_methods:
+                continue
+
+            if member is None:
+                _suppressed_methods.add(name)
                 continue
 
             emoji = getattr(member, '__reaction_emoji__', None)
