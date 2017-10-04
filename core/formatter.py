@@ -147,25 +147,32 @@ _note = (
 class CogPages(ListPaginator):
     numbered = None
 
-    def __init__(self, ctx, cog):
+    # Don't feel like doing an async def __init__ and hacking through that.
+    # We have to make this async because we need to make the entries in one go.
+    # As we have to check if the commands can be run, which entails querying the
+    # DB too.
+    @classmethod
+    async def create(cls, ctx, cog):
         cog_name = cog.__class__.__name__
         entries = (c for c in ctx.bot.get_cog_commands(cog_name)
                    if not (c.hidden or ctx.bot.formatter.show_hidden))
-        super().__init__(ctx, sorted(entries, key=str), colour=ctx.bot.colour)
 
+        formats = _command_formatters(sorted(entries, key=str), ctx)
+        lines = [' | '.join(line) async for line in formats]
+
+        self = cls(ctx, lines, colour=ctx.bot.colour)
         self._cog_doc = inspect.getdoc(cog) or 'No description... yet.'
         self._cog_name = cog_name
 
-    async def _create_embed(self, idx, entries):
-        lines = [' | '.join(line) async for line in _command_formatters(entries, self.context)]
+        return self
 
+    def _create_embed(self, idx, entries):
         return (discord.Embed(colour=self.colour, description=self._cog_doc)
                 .set_author(name=self._cog_name)
-                .add_field(name='Commands', value='\n'.join(lines))
+                .add_field(name='Commands', value='\n'.join(entries))
                 .add_field(name='Note', value=_note, inline=False)
                 .set_footer(text=f'Currently on page {idx + 1}')
                 )
-
 
 
 class ChiakiFormatter(commands.HelpFormatter):
@@ -185,5 +192,5 @@ class ChiakiFormatter(commands.HelpFormatter):
         if self.is_bot():
             return await self.bot_help()
         elif self.is_cog():
-            return CogPages(self.context, self.command)
+            return await CogPages.create(self.context, self.command)
         return HelpCommandPage(self.context, self.command, self.apply_function)
