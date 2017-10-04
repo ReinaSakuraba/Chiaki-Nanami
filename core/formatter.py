@@ -12,7 +12,7 @@ from more_itertools import always_iterable
 
 from cogs.utils.context_managers import temp_attr
 from cogs.utils.misc import truncate
-from cogs.utils.paginator import BaseReactionPaginator, DelimPaginator, page
+from cogs.utils.paginator import BaseReactionPaginator, DelimPaginator, ListPaginator, page
 
 def _unique(iterable):
     return list(OrderedDict.fromkeys(iterable))
@@ -125,42 +125,35 @@ class HelpCommandPage(BaseReactionPaginator):
         return embed.set_footer(text='Click the info button to go back.')
 
 
+class CogPages(ListPaginator):
+    def __init__(self, ctx, cog):
+        cog_name = cog.__class__.__name__
+        entries = (c for c in ctx.bot.get_cog_commands(cog_name)
+                   if not (c.hidden or ctx.bot.formatter.show_hidden))
+        super().__init__(ctx, sorted(entries, key=str), colour=ctx.bot.colour)
+
+        self._cog_doc = inspect.getdoc(cog) or 'No description... yet.'
+        self._cog_name = cog_name
+
+    def _create_embed(self, idx, entries):
+        names = (map('`{}`'.format, cmd.all_names) for cmd in entries)
+        lines = map(' | '.join, names)
+
+        return (discord.Embed(colour=self.colour, description=self._cog_doc)
+                .set_author(name=self._cog_name)
+                .add_field(name='Commands', value='\n'.join(lines))
+                .set_footer(text=f'Currently on page {idx + 1}')
+                )
+
+
 class ChiakiFormatter(commands.HelpFormatter):
     def get_ending_note(self):
         return f"Type {self.clean_prefix}help command for more info on a command."
-
-    @property
-    def description(self):
-        description = (self.command.help if not self.is_cog() else inspect.getdoc(self.command)) or 'No description'
-        return description.format(prefix=self.clean_prefix)
-
-    def paginate_cog_commands(self, cog_name):
-        visible = (c for c in self.context.bot.get_cog_commands(cog_name)
-                   if not (c.hidden or self.show_hidden))
-        sorted_commands = sorted(visible, key=str)
-        formatted_names =  (map('`{}`'.format, cmd.all_names) for cmd in sorted_commands)
-        formatted_lines = map(' | '.join, formatted_names)
-        headers = (self.description, '', '**List of commands:**')
-
-        return DelimPaginator.from_iterable(chain(headers, formatted_lines), 
-                                            prefix='', suffix='', max_size=2048)
 
     async def bot_help(self):
         bot, func = self.context.bot, self.apply_function
         result = _default_help.format(bot, bot=bot)
         return func(result)
-
-    async def cog_embed(self):
-        ctx, cog = self.context, self.command
-        cog_name = type(cog).__name__
-        paginated_commands = self.paginate_cog_commands(cog_name)
-
-        embed = functools.partial(discord.Embed, colour=ctx.bot.colour)
-        embeds = [embed(description=page) for page in paginated_commands.pages]
-
-        embeds[0].title = f'{cog_name} ({self.clean_prefix})'
-        embeds[-1].set_footer(text=self.get_ending_note())
-        return embeds
 
     async def format_help_for(self, ctx, command, func=lambda s: s):
         self.apply_function = func
@@ -170,5 +163,5 @@ class ChiakiFormatter(commands.HelpFormatter):
         if self.is_bot():
             return await self.bot_help()
         elif self.is_cog():
-            return await self.cog_embed()
+            return CogPages(self.context, self.command)
         return HelpCommandPage(self.context, self.command, self.apply_function)

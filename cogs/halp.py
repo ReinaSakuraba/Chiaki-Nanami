@@ -125,9 +125,8 @@ class Help:
     @commands.command(name='commands', aliases=['cmds'])
     async def commands_(self, ctx, cog: BotCogConverter):
         """Shows all the *visible* commands I have in a given cog/module"""
-        commands_embeds = await self.bot.formatter.format_help_for(ctx, cog)
-        for embed in commands_embeds:
-            await ctx.send(embed=embed)
+        pages = await self.bot.formatter.format_help_for(ctx, cog)
+        await pages.interact()
 
     async def _show_tip(self, ctx, number):
         if number > _get_tip_index() + 1:
