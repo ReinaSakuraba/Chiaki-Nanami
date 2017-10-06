@@ -5,6 +5,7 @@ import inspect
 import itertools
 import platform
 import textwrap
+import time
 
 from collections import Counter, OrderedDict
 from collections.abc import Sequence
@@ -186,12 +187,18 @@ class CogPages(ListPaginator):
                 .set_footer(text=f'Currently on page {idx + 1}')
                 )
 
+
 # TODO: Save these images in the event of a deletion
 CHIAKI_INTRO_URL = 'https://66.media.tumblr.com/feb7b9be75025afadd5d03fe7ad63aba/tumblr_oapg2wRooV1vn8rbao10_r2_500.gif'
 CHIAKI_MOTIVATION_URL = 'http://pa1.narvii.com/6186/3d315c4d1d8f249a392fd7740c7004f28035aca9_hq.gif'
 
+
 class GeneralHelpPaginator(ListPaginator):
     help_page = None
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._start_time = None
 
     @classmethod
     async def create(cls, ctx):
@@ -359,6 +366,13 @@ class GeneralHelpPaginator(ListPaginator):
     async def stop(self):
         """Exit the help page"""
         super().stop()
+
+        # Only do it for a minute, so if someone does a quick stop,
+        # we'll grant them their wish of stopping early.
+        end = time.monotonic()
+        if end - self._start_time < 60:
+            return
+
         final_embed = (discord.Embed(colour=self.colour, description='*Just remember...* \N{HEAVY BLACK HEART}')
                        .set_author(name='Thank you for looking at the help page!')
                        .set_image(url=CHIAKI_MOTIVATION_URL)
@@ -381,11 +395,15 @@ class GeneralHelpPaginator(ListPaginator):
         """Shows how to use the bot."""
         return self.how_to_use()
 
-    # async def interact(self, **kwargs):
+    async def interact(self, **kwargs):
+        self._start_time = time.monotonic()
+        await super().interact(**kwargs)
+
+        # TODO: Maybe DM them the help?
         # try:
-            # await super().interact(self.context.author, **kwargs)
+        #     await super().interact(self.context.author, **kwargs)
         # except discord.HTTPException:
-            # await super().interact(**kwargs)
+        #     await super().interact(**kwargs)
 
 
 # We need to retain order of the buttons here. But at the same time,
