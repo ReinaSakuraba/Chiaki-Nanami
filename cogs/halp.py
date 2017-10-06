@@ -56,16 +56,8 @@ def default_help_command(func=lambda s: s, **kwargs):
 
 async def default_help(ctx, command=None, func=lambda s: s):
     command = ctx.bot if command is None else command
-    destination = ctx.channel
-
     page = await ctx.bot.formatter.format_help_for(ctx, command, func)
-
-    if isinstance(page, discord.Embed):
-        await destination.send(embed=page)
-    elif isinstance(page, BaseReactionPaginator):
-        await page.interact()
-    else:
-        await destination.send(page)
+    await page.interact()
 
 
 _bracket_repls = {
@@ -125,8 +117,7 @@ class Help:
     @commands.command(name='commands', aliases=['cmds'])
     async def commands_(self, ctx, cog: BotCogConverter):
         """Shows all the *visible* commands I have in a given cog/module"""
-        pages = await self.bot.formatter.format_help_for(ctx, cog)
-        await pages.interact()
+        await default_help(ctx, cog)
 
     async def _show_tip(self, ctx, number):
         if number > _get_tip_index() + 1:
