@@ -320,21 +320,31 @@ class ListPaginator(BaseReactionPaginator):
             return (m.channel.id == channel.id and
                     m.author.id == ctx.author.id)
 
-        async with temp_message(channel, f'Please enter a number from 1 to {len(self)}'):
-            while True:
-                try:
-                    result = await ctx.bot.wait_for('message', check=check, timeout=60)
-                except asyncio.TimeoutError:
-                    return None
+        embed = (discord.Embed(colour=self.colour, description=f'Please enter a number from 1 to {len(self)}')
+                 .set_author(name=f'We were on page {self._index + 1}')
+                 )
 
-                try:
-                    result = int(result.content)
-                except ValueError:
-                    continue
+        while True:
+            await self._message.edit(embed=embed)
 
-                embed = self.page_at(result - 1)
-                if embed:
-                    return embed
+            try:
+                result = await ctx.bot.wait_for('message', check=check, timeout=60)
+            except asyncio.TimeoutError:
+                return self._current
+
+            try:
+                result = int(result.content)
+            except ValueError:
+                embed.description = "That's not even a number..."
+                embed.colour = 0xf44336
+                continue
+
+            page = self.page_at(result - 1)
+            if page:
+                return page
+            else:
+                embed.description = f"That's not between 1 and {len(self)}..."
+                embed.colour = 0xf44336
 
     @page('\N{INFORMATION SOURCE}')
     def help_page(self):
