@@ -318,8 +318,10 @@ class ListPaginator(BaseReactionPaginator):
         to_delete = []
 
         def check(m):
-            return (m.channel.id == channel.id and
-                    m.author.id == ctx.author.id)
+            return (m.channel.id == channel.id
+                    and m.author.id == ctx.author.id
+                    and m.content.isdigit()
+                    )
 
         embed = (discord.Embed(colour=self.colour, description=f'Please enter a number from 1 to {len(self)}')
                  .set_author(name=f'What page do you want to go to, {ctx.author.display_name}?')
@@ -337,13 +339,7 @@ class ListPaginator(BaseReactionPaginator):
 
                 to_delete.append(result)
 
-                try:
-                    result = int(result.content)
-                except ValueError:
-                    embed.description = "That's not even a number..."
-                    embed.colour = 0xf44336
-                    continue
-
+                result = int(result.content)
                 page = self.page_at(result - 1)
                 if page:
                     return page
