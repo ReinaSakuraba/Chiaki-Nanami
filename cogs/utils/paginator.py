@@ -315,36 +315,44 @@ class ListPaginator(BaseReactionPaginator):
         """Takes a number from the user and goes to that page"""
         ctx = self.context
         channel = self._message.channel
+        to_delete = []
 
         def check(m):
             return (m.channel.id == channel.id and
                     m.author.id == ctx.author.id)
 
         embed = (discord.Embed(colour=self.colour, description=f'Please enter a number from 1 to {len(self)}')
-                 .set_author(name=f'We were on page {self._index + 1}')
+                 .set_author(name=f'What page do you want to go to, {ctx.author.display_name}?')
+                 .set_footer(text=f'We were on page {self._index + 1}')
                  )
 
-        while True:
-            await self._message.edit(embed=embed)
+        try:
+            while True:
+                await self._message.edit(embed=embed)
 
-            try:
-                result = await ctx.bot.wait_for('message', check=check, timeout=60)
-            except asyncio.TimeoutError:
-                return self._current
+                try:
+                    result = await ctx.bot.wait_for('message', check=check, timeout=60)
+                except asyncio.TimeoutError:
+                    return self._current
 
-            try:
-                result = int(result.content)
-            except ValueError:
-                embed.description = "That's not even a number..."
-                embed.colour = 0xf44336
-                continue
+                to_delete.append(result)
 
-            page = self.page_at(result - 1)
-            if page:
-                return page
-            else:
-                embed.description = f"That's not between 1 and {len(self)}..."
-                embed.colour = 0xf44336
+                try:
+                    result = int(result.content)
+                except ValueError:
+                    embed.description = "That's not even a number..."
+                    embed.colour = 0xf44336
+                    continue
+
+                page = self.page_at(result - 1)
+                if page:
+                    return page
+                else:
+                    embed.description = f"That's not between 1 and {len(self)}..."
+                    embed.colour = 0xf44336
+        finally:
+            with contextlib.suppress(Exception):
+                await channel.delete_messages(to_delete)
 
     @page('\N{INFORMATION SOURCE}')
     def help_page(self):
