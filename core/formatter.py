@@ -314,7 +314,8 @@ class GeneralHelpPaginator(ListPaginator):
         cog_lines = (f'`\u200b{numbers:<{padding}}\u200b` - {name}' for numbers, name in pairs)
 
         return (discord.Embed(colour=self.colour, description='\n'.join(extra_lines))
-                .add_field(name='Cogs', value='\n'.join(cog_lines))
+                .add_field(name='Cogs', value='\n'.join(cog_lines), inline=False)
+                .add_field(name='Other', value=f'`{len(self)}` - Useful info about the bot.', inline=False)
                 .set_author(name='Table of Contents')
                 )
 
