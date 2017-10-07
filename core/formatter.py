@@ -405,17 +405,9 @@ class GeneralHelpPaginator(ListPaginator):
         self._start_time = time.monotonic()
         await super().interact(**kwargs)
 
-        # TODO: Maybe DM them the help?
-        # try:
-        #     await super().interact(self.context.author, **kwargs)
-        # except discord.HTTPException:
-        #     await super().interact(**kwargs)
 
-
-# We need to retain order of the buttons here. But at the same time,
-# we need the last button to return something else, this should do ok for now,
 rmap = GeneralHelpPaginator._reaction_map
-#r map['\N{BLACK RIGHT-POINTING DOUBLE TRIANGLE WITH VERTICAL BAR}'] = '_last'
+# signature is currently at the beginning so we need to move it to the end
 rmap.move_to_end('\N{WHITE QUESTION MARK ORNAMENT}')
 del rmap
 
