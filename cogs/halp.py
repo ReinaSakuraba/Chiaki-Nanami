@@ -47,9 +47,26 @@ class TipPaginator(ListPaginator):
                .set_author(name=f"#{idx + 1}: {p['title']}", icon_url=TIP_EMOJI))
 
 
+class HelpCommand(BotCommand):
+    _choices = [
+        'Help yourself.',
+        'https://cdn.discordapp.com/attachments/329401961688596481/366323237526831135/retro.jpg',
+        'Just remember the mitochondria is the powerhouse of the cell! \U0001f605',
+        'Save me!',
+    ]
+
+    async def convert(self, ctx, arg):
+        try:
+            return await super().convert(ctx, arg)
+        except commands.BadArgument:
+            if arg.lower() != 'me':
+                raise
+            raise commands.BadArgument(random.choice(self._choices))
+
+
 def default_help_command(func=lambda s: s, **kwargs):
     @commands.command(help=func("Shows this message and stuff"), **kwargs)
-    async def help_command(self, ctx, *, command: BotCommand=None):
+    async def help_command(self, ctx, *, command: HelpCommand=None):
         await default_help(ctx, command, func=func)
     return help_command
 
