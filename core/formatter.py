@@ -235,6 +235,11 @@ class GeneralHelpPaginator(ListPaginator):
             self._index = idx
             return self._page_footer_embed(self._extra_pages[idx](self))
         elif idx in {-1, len(self) - 1}:
+            if idx < 0:
+                # normalize the index because -1 isn't technically allowed
+                idx += len(self)
+
+            self._index = idx
             return self.ending()
 
         result = super().__getitem__(idx - self._num_extra_pages)
