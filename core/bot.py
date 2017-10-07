@@ -191,6 +191,9 @@ class Chiaki(commands.Bot):
         else:
             self.owner = self.get_user(self.owner_id)
 
+        if not hasattr(self, 'creator'):
+            self.creator = await self.get_user_info(239110748180054017)
+
         if not hasattr(self, 'start_time'):
             self.start_time = datetime.utcnow()
 

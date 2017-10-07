@@ -194,7 +194,6 @@ CHIAKI_MOTIVATION_URL = 'http://pa1.narvii.com/6186/3d315c4d1d8f249a392fd7740c70
 
 
 class GeneralHelpPaginator(ListPaginator):
-    _creator = None
     help_page = None
 
     def __init__(self, *args, **kwargs):
@@ -345,17 +344,7 @@ class GeneralHelpPaginator(ListPaginator):
                 .add_field(name='Note', value=note, inline=False)
                 )
 
-    async def creator(self):
-        ghp = GeneralHelpPaginator
-
-        if ghp._creator is None:
-            ghp._creator = creator = await self.context.bot.get_user_info(239110748180054017)
-        else:
-            creator = ghp._creator
-
-        return creator
-
-    async def ending(self):
+    def ending(self):
         """End of the help page, and info about the bot."""
         bot = self.context.bot
         description = 'This page contains some basic but useful info.'
@@ -371,7 +360,7 @@ class GeneralHelpPaginator(ListPaginator):
                 .set_thumbnail(url=bot.user.avatar_url)
                 .set_author(name="You've reached the end of the help page!")
                 .add_field(name='For more help', value=support, inline=False)
-                .add_field(name='Creator', value=await self.creator())
+                .add_field(name='Creator', value=bot.creator)
                 .add_field(name='Servers', value=len(bot._connection._guilds.values()))
                 .add_field(name='Python', value=platform.python_version())
                 .add_field(name='Library', value=DISCORD_PY_LIB)
