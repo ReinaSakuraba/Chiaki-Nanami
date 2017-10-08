@@ -263,15 +263,14 @@ class GeneralHelpPaginator(ListPaginator):
 
     @page('\N{NOTEBOOK WITH DECORATIVE COVER}')
     def jump_to_commands(self):
-        """Jump to the commands"""
-        return self[self._num_extra_pages]
+        """Jump to the table of contents"""
+        return self[1]
 
     def intro(self):
         """The intro, ie the thing you just saw."""
         instructions = (
             'This is the help page for me!\n'
-            'Press \N{BLACK RIGHT-POINTING TRIANGLE} to see the instructions\n'
-            'on how to use this thing!'
+            'Press \N{BLACK RIGHT-POINTING TRIANGLE} to see what this help has in store!'
         )
 
         return (discord.Embed(colour=self.colour, description=self.context.bot.description)
@@ -390,8 +389,8 @@ class GeneralHelpPaginator(ListPaginator):
 
     _extra_pages = [
         intro,
-        instructions,
         table_of_contents,
+        instructions,
         # how_to_use,
     ]
     _num_extra_pages = len(_extra_pages)
