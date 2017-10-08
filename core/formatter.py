@@ -348,7 +348,7 @@ class GeneralHelpPaginator(ListPaginator):
         bot = self.context.bot
         support = f'Go to the support server here!\n{bot.support_invite}'
         useful_links = (
-            '[Click me to invite me to your server!]({bot.invite_url})\n'
+            f'[Click me to invite me to your server!]({bot.invite_url})\n'
             "[Check the code out here (it's fire!)](https://github.com/Ikusaba-san/Chiaki-Nanami)\n"
         )
 

@@ -200,8 +200,8 @@ class Meta:
         bot = ctx.bot
         description = 'This page contains some basic but useful info.'
         useful_links = (
-            '[Click here to go to the support server!]({bot.support_invite})\n'
-            '[Click me to invite me to your server!]({bot.invite_url})\n'
+            f'[Click here to go to the support server!]({bot.support_invite})\n'
+            f'[Click me to invite me to your server!]({bot.invite_url})\n'
             "[Check the code out here (it's fire!)](https://github.com/Ikusaba-san/Chiaki-Nanami)\n"
         )
 
