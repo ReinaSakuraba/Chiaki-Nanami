@@ -215,6 +215,9 @@ class GeneralHelpPaginator(ListPaginator):
         get_cog = ctx.bot.get_cog
         for cog, cmds in itertools.groupby(entries, key=key):
             cog = get_cog(cog)
+            if getattr(cog, '__hidden__', False):
+                continue
+
             if cog is None:
                 description = 'This is all the misc commands!'
             else:
