@@ -313,7 +313,7 @@ class GeneralHelpPaginator(ListPaginator):
 
         return (discord.Embed(colour=self.colour, description='\n'.join(extra_lines))
                 .add_field(name='Cogs', value='\n'.join(cog_lines), inline=False)
-                .add_field(name='Other', value=f'`{len(self)}` - Useful info about the bot.', inline=False)
+                .add_field(name='Other', value=f'`{len(self)}` - Some useful links.', inline=False)
                 .set_author(name='Table of Contents')
                 )
 
@@ -346,25 +346,17 @@ class GeneralHelpPaginator(ListPaginator):
     def ending(self):
         """End of the help page, and info about the bot."""
         bot = self.context.bot
-        description = 'This page contains some basic but useful info.'
-        support = f'Go to the support server here! {bot.support_invite}'
+        support = f'Go to the support server here!\n{bot.support_invite}'
         useful_links = (
             '[Click me to invite me to your server!]({bot.invite_url})\n'
             "[Check the code out here (it's fire!)](https://github.com/Ikusaba-san/Chiaki-Nanami)\n"
         )
-        prefixes = bot.get_guild_prefixes(self.context.guild)
-        del prefixes[-1]
 
-        return (discord.Embed(colour=self.colour, description=description)
+        return (discord.Embed(colour=self.colour)
                 .set_thumbnail(url=bot.user.avatar_url)
                 .set_author(name="You've reached the end of the help page!")
                 .add_field(name='For more help', value=support, inline=False)
-                .add_field(name='Creator', value=bot.creator)
-                .add_field(name='Servers', value=len(bot._connection._guilds.values()))
-                .add_field(name='Python', value=platform.python_version())
-                .add_field(name='Library', value=DISCORD_PY_LIB)
-                .add_field(name='Prefixes', value='\n'.join(prefixes), inline=False)
-                .add_field(name='Other useful links', value=useful_links, inline=False)
+                .add_field(name='And for some other useful links...', value=useful_links, inline=False)
                 )
 
     @page('\N{BLACK SQUARE FOR STOP}')

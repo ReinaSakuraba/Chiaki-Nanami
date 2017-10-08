@@ -7,6 +7,7 @@ import functools
 import inspect
 import json
 import os
+import platform
 import psutil
 import sys
 
@@ -25,6 +26,16 @@ from .utils.errors import InvalidUserArgument, ResultsNotFound
 from .utils.formats import *
 from .utils.misc import group_strings, str_join, nice_time, ordinal
 from .utils.paginator import BaseReactionPaginator, ListPaginator, page
+
+
+try:
+    import pkg_resources
+except ImportError:
+    # TODO: Get the version AND commit number without pkg_resources
+    DISCORD_PY_LIB = 'discord.py {discord.__version__}'
+else:
+    DISCORD_PY_LIB = str(pkg_resources.get_distribution('discord.py'))
+    del pkg_resources
 
 
 async def _mee6_stats(session, member):
@@ -183,46 +194,41 @@ class Meta:
                 .set_footer(text=f"ID: {member.id}")
                 )
 
-    @commands.command(aliases=['you'])
+    @commands.command()
     async def about(self, ctx):
-        """Shows some info about me"""
-        bot = self.bot
-        command_stats = '\n'.join(starmap('{1} {0}'.format, bot.command_counter.most_common())) or 'No stats yet.'
-        extension_stats = '\n'.join(f'{len(set(getattr(bot, attr).values()))} {attr}'
-                                    for attr in ('cogs', 'extensions'))
-        python_version = str_join('.', sys.version_info[:3])
+        """Shows some info about the bot."""
+        bot = ctx.bot
+        description = 'This page contains some basic but useful info.'
+        useful_links = (
+            '[Click here to go to the support server!]({bot.support_invite})\n'
+            '[Click me to invite me to your server!]({bot.invite_url})\n'
+            "[Check the code out here (it's fire!)](https://github.com/Ikusaba-san/Chiaki-Nanami)\n"
+        )
 
-        with self.process.oneshot():
-            memory_usage_in_mb = self.process.memory_full_info().uss / 1024**2
-            cpu_usage = self.process.cpu_percent() / psutil.cpu_count()
-
-        try:
-            creator = self._creator
-        except AttributeError:
-            creator = self._creator = await self.bot.get_user_info(239110748180054017)
-
-        chiaki_embed = (discord.Embed(description=bot.appinfo.description, colour=self.bot.colour)
-                       .set_author(name=str(ctx.bot.user), icon_url=bot.user.avatar_url)
-                       .add_field(name='Created by', value=str(creator))
-                       .add_field(name='Servers', value=len(self.bot.guilds))
-                       .add_field(name='Modules', value=extension_stats)
-                       .add_field(name='CPU Usage', value=f'{cpu_usage}%\n{memory_usage_in_mb :.2f}MB')
-                       .add_field(name='Commands', value=command_stats)
-                       .add_field(name='Uptime', value=self.bot.str_uptime.replace(', ', '\n'))
-                       .set_footer(text=f'Made with discord.py {discord.__version__} | Python {python_version}')
-                       )
-        await ctx.send(embed=chiaki_embed)
+        embed = (discord.Embed(colour=bot.colour)
+                 .set_thumbnail(url=bot.user.avatar_url)
+                 .set_author(name=str(bot.user))
+                 .add_field(name='Creator', value=bot.creator)
+                 .add_field(name='Servers', value=len(bot._connection._guilds.values()))
+                 .add_field(name='Python', value=platform.python_version())
+                 .add_field(name='Library', value=DISCORD_PY_LIB)
+                 .add_field(name='Useful links', value=useful_links, inline=False)
+                 )
+        await ctx.send(embed=embed)
 
     @commands.group()
     async def info(self, ctx):
         """Super-command for all info-related commands"""
         if ctx.invoked_subcommand is None:
+            if not ctx.subcommand_passed:
+                return await ctx.invoke(self.about)
+
             subcommands = '\n'.join(sorted(map(f'`{ctx.prefix}{{0}}`'.format, ctx.command.commands)))
             description = f'Possible commands...\n\n{subcommands}'
 
             embed = (discord.Embed(colour=0xFF0000, description=description)
-                    .set_author(name=f"{ctx.command} {ctx.subcommand_passed} isn't a command")
-                    )
+                     .set_author(name=f"{ctx.command} {ctx.subcommand_passed} isn't a command")
+                     )
             await ctx.send(embed=embed)
 
     @info.command(name='user')
