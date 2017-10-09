@@ -138,7 +138,7 @@ class HelpCommandPage(BaseReactionPaginator):
 
         cmd_embed = (discord.Embed(title=func(cmd_name), description=func(description), colour=bot.colour)
                      .add_field(name=func("Requirements"), value=func(requirements))
-                     .add_field(name=func("Structure"), value=f'`{func(signature)}`', inline=False)
+                     .add_field(name=func("Signature"), value=f'`{func(signature)}`', inline=False)
                      )
 
         if _has_subcommands(command):
