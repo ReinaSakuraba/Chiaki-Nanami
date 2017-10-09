@@ -158,8 +158,7 @@ class HelpCommandPage(BaseReactionPaginator):
         try:
             image_url = bot.command_image_urls[self.command.qualified_name]
         except (KeyError, AttributeError):
-            error = f"`{self.command}` doesn't have an image.\nContact MIkusaba#4553 to fix that!"
-            embed.add_field(name='\u200b', value=error)
+            embed.description = f"`{self.command}` doesn't have an image.\nContact MIkusaba#4553 to fix that!"
         else:
             embed.set_image(url=image_url)
 
