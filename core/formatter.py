@@ -4,6 +4,7 @@ import functools
 import inspect
 import itertools
 import platform
+import random
 import textwrap
 import time
 
@@ -80,18 +81,45 @@ def _make_command_requirements(command):
         return '\n'.join(requirements)
 
 
+def _has_subcommands(command):
+    return isinstance(command, commands.GroupMixin)
+
+
 class HelpCommandPage(BaseReactionPaginator):
     def __init__(self, ctx, command, func=None):
         super().__init__(ctx)
         self.command = command
         self.func = func
         self._toggle = True
+        self._on_subcommand_page = False
+        self._reaction_map = self._reaction_map if _has_subcommands(command) else self._normal_reaction_map
 
     @page('\N{INFORMATION SOURCE}')
     def default(self):
-        self._toggle = toggle = not self._toggle
+        if self._on_subcommand_page:
+            self._on_subcommand_page = toggle = False
+        else:
+            self._toggle = toggle = not self._toggle
+
         meth = self._example if toggle else self._command_info
         return meth()
+
+    @page('\N{DOWNWARDS BLACK ARROW}')
+    def subcommands(self):
+        assert isinstance(self.command, commands.GroupMixin), "command has no subcommands"
+        self._on_subcommand_page = True
+        subs = sorted(map(str, set(self.command.walk_commands())))
+
+        ctx = self.context
+        note = (
+            'Type `{prefix}{invoked} command` for more info on a command.\n'
+            f'(e.g. type `{{prefix}}{{invoked}} {random.choice(subs)}`)'
+        ).format(prefix=_clean_prefix(ctx), invoked=ctx.invoked_with)
+
+        return (discord.Embed(colour=self.context.bot.colour, description='\n'.join(map('`{}`'.format, subs)))
+                .set_author(name=f'Child Commands for {self.command}')
+                .add_field(name='\u200b', value=note, inline=False)
+                )
 
     def _command_info(self):
         command, ctx, func = self.command, self.context, self.func
@@ -107,15 +135,15 @@ class HelpCommandPage(BaseReactionPaginator):
         cmd_name = f"`{clean_prefix}{command.full_parent_name} {' / '.join(command.all_names)}`"
 
         description = command.help.format(prefix=clean_prefix)
-        cmd_embed = discord.Embed(title=func(cmd_name), description=func(description), colour=bot.colour)
 
-        if isinstance(command, commands.GroupMixin):
-            command_names = sorted(cmd.name for cmd in command.commands)
-            children = ', '.join(command_names) or "No commands... yet."
-            cmd_embed.add_field(name=func("Child Commands"), value=func(children), inline=False)
+        cmd_embed = (discord.Embed(title=func(cmd_name), description=func(description), colour=bot.colour)
+                     .add_field(name=func("Requirements"), value=func(requirements))
+                     .add_field(name=func("Structure"), value=f'`{func(signature)}`', inline=False)
+                     )
 
-        cmd_embed.add_field(name=func("Requirements"), value=func(requirements))
-        cmd_embed.add_field(name=func("Structure"), value=f'`{func(signature)}`', inline=False)
+        if _has_subcommands(command):
+            prompt = func('Click \N{DOWNWARDS BLACK ARROW} to see all the subcommands!')
+            cmd_embed.add_field(name=func('Subcommands'), value=prompt, inline=False)
 
         # if usages is not None:
         #    cmd_embed.add_field(name=func("Usage"), value=func(usages), inline=False)
@@ -136,6 +164,10 @@ class HelpCommandPage(BaseReactionPaginator):
             embed.set_image(url=image_url)
 
         return embed.set_footer(text='Click the info button to go back.')
+
+
+HelpCommandPage._normal_reaction_map = HelpCommandPage._reaction_map.copy()
+del HelpCommandPage._normal_reaction_map['\N{DOWNWARDS BLACK ARROW}']
 
 
 async def _can_run(command, ctx):
