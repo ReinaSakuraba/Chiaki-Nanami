@@ -80,6 +80,12 @@ class Chiaki(commands.Bot):
                          description=config.description,
                          pm_help=None)
 
+        try:
+            with open('data/command_image_urls.json') as f:
+                self.command_image_urls = __import__('json').load(f)
+        except FileNotFoundError:
+            self.command_image_urls = {}
+
         self.message_counter = 0
         self.command_counter = collections.Counter()
         self.custom_prefixes = Database('customprefixes.json')
@@ -185,14 +191,15 @@ class Chiaki(commands.Bot):
         else:
             self.owner = self.get_user(self.owner_id)
 
+        if not hasattr(self, 'creator'):
+            self.creator = await self.get_user_info(239110748180054017)
+
         if not hasattr(self, 'start_time'):
             self.start_time = datetime.utcnow()
 
         self.loop.create_task(self.change_game())
 
     async def on_command_error(self, ctx, error):
-        print(type(error), error, isinstance(error, commands.CheckFailure))
-        print(ctx, ctx.command)
         if isinstance(error, commands.CheckFailure) and await self.is_owner(ctx.author):
             try:
                 await ctx.reinvoke()

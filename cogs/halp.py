@@ -9,7 +9,7 @@ from datetime import datetime
 from .utils.converter import BotCogConverter, BotCommand
 from .utils.formats import multi_replace
 from .utils.misc import emoji_url, truncate
-from .utils.paginator import ListPaginator
+from .utils.paginator import BaseReactionPaginator, ListPaginator
 
 
 CHIAKI_TIP_EPOCH = datetime(2017, 8, 24)
@@ -47,23 +47,34 @@ class TipPaginator(ListPaginator):
                .set_author(name=f"#{idx + 1}: {p['title']}", icon_url=TIP_EMOJI))
 
 
+class HelpCommand(BotCommand):
+    _choices = [
+        'Help yourself.',
+        'https://cdn.discordapp.com/attachments/329401961688596481/366323237526831135/retro.jpg',
+        'Just remember the mitochondria is the powerhouse of the cell! \U0001f605',
+        'Save me!',
+    ]
+
+    async def convert(self, ctx, arg):
+        try:
+            return await super().convert(ctx, arg)
+        except commands.BadArgument:
+            if arg.lower() != 'me':
+                raise
+            raise commands.BadArgument(random.choice(self._choices))
+
+
 def default_help_command(func=lambda s: s, **kwargs):
     @commands.command(help=func("Shows this message and stuff"), **kwargs)
-    async def help_command(self, ctx, *, command: BotCommand=None):
+    async def help_command(self, ctx, *, command: HelpCommand=None):
         await default_help(ctx, command, func=func)
     return help_command
 
 
 async def default_help(ctx, command=None, func=lambda s: s):
     command = ctx.bot if command is None else command
-    destination = ctx.channel
-
     page = await ctx.bot.formatter.format_help_for(ctx, command, func)
-
-    if isinstance(page, discord.Embed):
-        await destination.send(embed=page)
-    else:
-        await destination.send(page)
+    await page.interact()
 
 
 _bracket_repls = {
@@ -123,9 +134,7 @@ class Help:
     @commands.command(name='commands', aliases=['cmds'])
     async def commands_(self, ctx, cog: BotCogConverter):
         """Shows all the *visible* commands I have in a given cog/module"""
-        commands_embeds = await self.bot.formatter.format_help_for(ctx, cog)
-        for embed in commands_embeds:
-            await ctx.send(embed=embed)
+        await default_help(ctx, cog)
 
     async def _show_tip(self, ctx, number):
         if number > _get_tip_index() + 1:
