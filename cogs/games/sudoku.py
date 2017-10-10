@@ -257,7 +257,7 @@ class SudokuSession(BaseReactionPaginator):
 
     @page('\N{WHITE HEAVY CHECK MARK}')
     async def check(self):
-        """Checks to see if your answer is correct."""
+        """Check to see if your the board you have is correct."""
         if not self.board.is_full():
             self._screen.set_author(name="This board isn't even remotely done!")
             self._screen.colour = 0xFF0000
@@ -277,20 +277,20 @@ class SudokuSession(BaseReactionPaginator):
 
     @page('\N{INPUT SYMBOL FOR NUMBERS}')
     async def default(self):
-        """Goes back to the game"""
+        """Go back to the game"""
         self._state = State.default
         await self._message.edit(embed=self._screen)
 
     @page('\N{ANTICLOCKWISE DOWNWARDS AND UPWARDS OPEN CIRCLE ARROWS}')
     async def reset(self):
-        """Resets the board. In case you badly mess up or something"""
+        """Reset the board. In case you badly mess up or something."""
         self.board.clear()
         self.edit_screen()
         await self._message.edit(embed=self._screen)
 
     @page('\N{INFORMATION SOURCE}')
     async def help_page(self):
-        """Shows this page (you knew that already)"""
+        """Show this page (you knew that already)"""
         self._state = State.on_help
         help_text = textwrap.dedent('''
         The objective is to fill a 9×9 grid with digits so that each column,
@@ -325,7 +325,7 @@ class SudokuSession(BaseReactionPaginator):
 
     @page('\N{BLACK SQUARE FOR STOP}')
     async def stop(self):
-        """Stops the game"""
+        """Stop the game"""
         self._runner.cancel()
 
     @property
