@@ -503,6 +503,7 @@ class Minesweeper:
 
     @commands.group(aliases=['msw'], invoke_without_command=True)
     async def minesweeper(self, ctx, level: Level=Level.beginner):
+        """Starts a game of Minesweeper"""
         board = getattr(Board, str(level).lower())()
         """Starts a game of Minesweeper."""
         await self._do_minesweeper(ctx, level, board)
