@@ -379,14 +379,14 @@ class MinesweeperSession:
                 and message.author == self.ctx.author)
 
     def parse_message(self, content):
-        splitted = content.lower().split()
+        splitted = content.lower().split(None, 3)[:3]
         chars = len(splitted)
 
         if chars == 2:
             flag = FlagType.default
         elif chars == 3:
             flag = getattr(FlagType, splitted[2].lower(), FlagType.default)
-        else:
+        else:  # We need at least the x, y coordinates...
             return None
 
         try:
