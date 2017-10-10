@@ -465,6 +465,15 @@ class MinesweeperSession:
         try:
             return await self._runner
         finally:
+            # For some reason having all these games hanging around causes lag.
+            # Until I properly make a delete_after on the paginator I'll have to
+            # settle with this hack.
+            async def task():
+                await asyncio.sleep(30)
+                with contextlib.suppress(discord.HTTPException):
+                    await self._game_screen._message.delete()
+
+            self.ctx.bot.loop.create_task(task())
             self._interaction.cancel()
 
     def stop(self):
