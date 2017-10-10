@@ -311,7 +311,7 @@ class _MinesweeperHelp(BaseReactionPaginator):
 
     @page('\N{BLACK SQUARE FOR STOP}')
     async def stop(self):
-        """Stops the game"""
+        """Closes this help page"""
         await self.game.edit_board(self.colour, header=self.game._default_header)
         return super().stop()
 
