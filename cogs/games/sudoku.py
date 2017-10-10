@@ -181,7 +181,7 @@ class SudokuSession(BaseReactionPaginator):
     def __init__(self, ctx, board, level):
         self.context = ctx
         self.board = board
-        self.message = None
+        self._message = None
         self._header = f'Sudoku - {level}'
         self._state = State.default
         self._completed = False
@@ -215,7 +215,7 @@ class SudokuSession(BaseReactionPaginator):
 
     async def _loop(self):
         self.edit_screen()
-        self.message = await self.ctx.send(embed=self._screen)
+        self._message = await self.ctx.send(embed=self._screen)
         await self.add_buttons()
 
         while True:
@@ -240,7 +240,7 @@ class SudokuSession(BaseReactionPaginator):
                 await message.delete()
 
             self.edit_screen()
-            await self.message.edit(embed=self._screen)
+            await self._message.edit(embed=self._screen)
 
     async def run(self):
         try:
@@ -249,11 +249,11 @@ class SudokuSession(BaseReactionPaginator):
                 await self._runner
         finally:
             if not self._completed:
-                self._screen = self.message.embeds[0]
+                self._screen = self._message.embeds[0]
                 self._screen.colour = 0
 
-            await self.message.edit(embed=self._screen)
-            await self.message.clear_reactions()
+            await self._message.edit(embed=self._screen)
+            await self._message.clear_reactions()
 
     @page('\N{WHITE HEAVY CHECK MARK}')
     async def check(self):
@@ -269,24 +269,24 @@ class SudokuSession(BaseReactionPaginator):
             self._screen.set_author(name="Sorry, it's not correct :(")
             self._screen.colour = 0xFF0000
 
-        await self.message.edit(embed=self._screen)
+        await self._message.edit(embed=self._screen)
         await asyncio.sleep(10)
         self._screen.set_author(name=self._header)
         self._screen.colour = self.ctx.bot.colour
-        await self.message.edit(embed=self._screen)
+        await self._message.edit(embed=self._screen)
 
     @page('\N{INPUT SYMBOL FOR NUMBERS}')
     async def default(self):
         """Goes back to the game"""
         self._state = State.default
-        await self.message.edit(embed=self._screen)
+        await self._message.edit(embed=self._screen)
 
     @page('\N{ANTICLOCKWISE DOWNWARDS AND UPWARDS OPEN CIRCLE ARROWS}')
     async def reset(self):
         """Resets the board. In case you badly mess up or something"""
         self.board.clear()
         self.edit_screen()
-        await self.message.edit(embed=self._screen)
+        await self._message.edit(embed=self._screen)
 
     @page('\N{INFORMATION SOURCE}')
     async def help_page(self):
@@ -321,7 +321,7 @@ class SudokuSession(BaseReactionPaginator):
                  .add_field(name='Reaction Button Reference', value=self.reaction_help)
                  )
 
-        await self.message.edit(embed=embed)
+        await self._message.edit(embed=embed)
 
     @page('\N{BLACK SQUARE FOR STOP}')
     async def stop(self):
