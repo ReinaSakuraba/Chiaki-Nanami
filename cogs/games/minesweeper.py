@@ -232,58 +232,33 @@ class Board:
         return cls(13, 13, 40)
 
 
-class _State(enum.Enum):
-    GAME = enum.auto()
-    HELP = enum.auto()
-
-
-class _MinesweeperDisplay(BaseReactionPaginator):
+class _MinesweeperHelp(BaseReactionPaginator):
     def __init__(self, game):
         super().__init__(game.ctx)
         self.game = game
-        self.state = None
+
+    @property
+    def colour(self):
+        return self.context.bot.colour
 
     @property
     def board(self):
         return self.game.board
 
-    def _board_repr(self):
-        top_row = ' '.join(REGIONAL_INDICATORS[:self.board.width])
-        # Discord strips any leading and trailing spaces.
-        # By putting a zero-width space we bypass that
-        return f'\N{BLACK LARGE SQUARE} {top_row}\n{self.board}'
-
-    @staticmethod
-    def _possible_spaces():
-        number = random.randint(1, 9)
-        return textwrap.dedent(f'''
-        {Tile.shown} - Empty tile, reveals other empty or numbered tiles near it
-
-        {Tile.numbered(number)} - Displays the number of mines surrounding it.
-        This one shows that they are {number} mines around it.
-
-        {Tile.boom} - BOOM! Selecting a mine makes it explode, causing all other mines to explode
-        and thus ending the game. Avoid mines at any costs!
-        \u200b
-        ''')
-
-    @page('\N{INPUT SYMBOL FOR NUMBERS}')
-    def default(self):
-        """Returns you to the game"""
-        self.state = _State.GAME
-        board = self.board
-        return (discord.Embed(colour=self.context.bot.colour, description=self._board_repr())
-                .set_author(name=f'Minesweeper - {board.width} x {board.height}')
-                .add_field(name='Player', value=self.context.author)
-                .add_field(name='Mines Marked', value=f'{board.mines_marked} / {board.mine_count}')
-                .add_field(name='Flags Remaining', value=board.remaining_flags)
-                .add_field(name='\u200b', value='Stuck? Click the \N{INFORMATION SOURCE} reaction for some help.')
-               )
-
     @page('\N{INFORMATION SOURCE}')
-    def help_page(self):
-        """Shows this page"""
-        self.state = _State.HELP
+    def default(self):
+        """How to navigate this help page (this page)"""
+        desc = 'Basically the goal is to reveal all of the board and NOT get hit with a mine!'
+        instructions = 'To navigate through this help page, click one of the reactions below'
+
+        return (discord.Embed(colour=self.colour, description=desc)
+                .set_author(name='Welcome to Minesweeper!')
+                .add_field(name=instructions, value=self.reaction_help)
+                )
+
+    @page('\N{VIDEO GAME}')
+    def controls(self):
+        """Controls for playing Minesweeper"""
         text = textwrap.dedent(f'''
         Basically the goal is to reveal all of the board and NOT get hit with a mine!
 
@@ -303,19 +278,79 @@ class _MinesweeperDisplay(BaseReactionPaginator):
         (ie typing anything in this screen won't do anything.)
         \u200b
         ''')
-
-        reaction_text = '\n'.join(f'{em} => {getattr(self, f).__doc__}'
-                                  for em, f in self._reaction_map.items())
-        return (discord.Embed(colour=self.context.bot.colour, description=text)
-                .set_author(name='Welcome to Minesweeper!')
-                .add_field(name='If you select a tile, chances are you will hit one of these 3 things', value=self._possible_spaces())
-                .add_field(name='Reaction Buttons', value=reaction_text)
+        return (discord.Embed(colour=self.colour, description=text)
+                .set_author(name='How to play Minesweeper')
+                .add_field(name='Reactions you can click on in the game', value=self.game._game_screen.reaction_help)
                 )
+
+    @staticmethod
+    def _possible_spaces():
+        number = random.randint(1, 9)
+        return textwrap.dedent(f'''
+        {Tile.shown} - Empty tile, reveals other empty or numbered tiles near it
+
+        {Tile.numbered(number)} - Displays the number of mines surrounding it.
+        This one shows that they are {number} mines around it.
+
+        {Tile.boom} - BOOM! Selecting a mine makes it explode, causing all other mines to explode
+        and thus ending the game. Avoid mines at any costs!
+        \u200b
+        ''')
+
+    @page('\N{COLLISION SYMBOL}')
+    def possible_spaces(self):
+        """Things you might hit when you select a tile"""
+        return (discord.Embed(colour=self.colour, description=self._possible_spaces())
+                .set_author(name='If you select a tile, chances are you will hit one of these 3 things')
+                )
+
+
+class _MinesweeperDisplay(BaseReactionPaginator):
+    def __init__(self, game):
+        super().__init__(game.ctx)
+        self.game = game
+        self.state = None
+        self._help_future = self.context.bot.loop.create_future()
+        self._help_future.set_result(None)  # We just need an already done future.
+
+    @property
+    def board(self):
+        return self.game.board
+
+    def _board_repr(self):
+        top_row = ' '.join(REGIONAL_INDICATORS[:self.board.width])
+        # Discord strips any leading and trailing spaces.
+        # By putting a zero-width space we bypass that
+        return f'\N{BLACK LARGE SQUARE} {top_row}\n{self.board}'
+
+    def is_on_help(self):
+        return not self._help_future.done()
+
+    def default(self):
+        board = self.board
+        return (discord.Embed(colour=self.context.bot.colour, description=self._board_repr())
+                .set_author(name=f'Minesweeper - {board.width} x {board.height}')
+                .add_field(name='Player', value=self.context.author)
+                .add_field(name='Mines Marked', value=f'{board.mines_marked} / {board.mine_count}')
+                .add_field(name='Flags Remaining', value=board.remaining_flags)
+                .add_field(name='\u200b', value='Stuck? Click the \N{INFORMATION SOURCE} reaction for some help.')
+                )
+
+    @page('\N{INFORMATION SOURCE}')
+    async def help_page(self):
+        """Gives you a help page (the page you're currently looking at)"""
+        if self._help_future.done():
+            self._help_future = asyncio.ensure_future(_MinesweeperHelp(self.game).interact())
 
     @page('\N{BLACK SQUARE FOR STOP}')
     def stop(self):
         """Stops the game"""
         self.game.stop()
+        # In case the user has the help page open when canceling it
+        # (this shouldn't technically happen but this is here just in case.)
+        if not self._help_future.done():
+            self._help_future.cancel()
+
         return super().stop()
 
     async def edit(self, embed):
@@ -331,11 +366,9 @@ class MinesweeperSession:
         self._game_screen = _MinesweeperDisplay(self)
 
     def check_message(self, message):
-        if self._game_screen.state != _State.GAME:
-            return False
-
-        return (message.channel == self.ctx.channel and
-                message.author == self.ctx.author)
+        return (not self._game_screen.is_on_help()
+                and message.channel == self.ctx.channel
+                and message.author == self.ctx.author)
 
     def parse_message(self, content):
         splitted = content.lower().split()
