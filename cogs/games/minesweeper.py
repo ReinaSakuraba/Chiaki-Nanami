@@ -543,11 +543,12 @@ class Minesweeper:
 
         session.stop()
 
-    @minesweeper.command(name='leaderboard', aliases=['lb'])
+    # XXX: Add these later when I connect the DB to this
+    # @minesweeper.command(name='leaderboard', aliases=['lb'])
     async def minesweeper_leaderboard(self, ctx, level: Level):
         pass
 
-    @minesweeper.command(name='rank')
+    # @minesweeper.command(name='rank')
     async def minesweeper_rank(self, ctx, level: Level):
         pass
 
