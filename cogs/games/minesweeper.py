@@ -456,7 +456,6 @@ class MinesweeperSession:
         except asyncio.CancelledError:
             await self.edit_board(0, header='Minesweeper stopped.')
             raise
-        return None
 
     async def run(self):
         self._interaction = asyncio.ensure_future(self._game_screen.interact(timeout=None, delete_after=False))
