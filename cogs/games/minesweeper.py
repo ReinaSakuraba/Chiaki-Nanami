@@ -300,8 +300,13 @@ class _MinesweeperHelp(BaseReactionPaginator):
     @page('\N{COLLISION SYMBOL}')
     def possible_spaces(self):
         """Things you might hit when you select a tile"""
-        return (discord.Embed(colour=self.colour, description=self._possible_spaces())
-                .set_author(name='If you select a tile, chances are you will hit one of these 3 things')
+        description = (
+            'When you select a tile, chances are you will hit one of these 3 things.\n'
+            + self._possible_spaces()
+        )
+
+        return (discord.Embed(colour=self.colour, description=description)
+                .set_author(name='Tiles')
                 )
 
     @page('\N{BLACK SQUARE FOR STOP}')
