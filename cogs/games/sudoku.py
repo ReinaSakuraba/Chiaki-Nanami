@@ -347,6 +347,7 @@ class Sudoku:
 
     @commands.command()
     async def sudoku(self, ctx, difficulty: Level = Level.beginner):
+        """Starts game of Sudoku"""
         if self.manager.session_exists(ctx.author):
             return await ctx.send('no')
 
