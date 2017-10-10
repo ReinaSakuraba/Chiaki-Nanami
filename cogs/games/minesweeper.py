@@ -401,7 +401,6 @@ class MinesweeperSession:
     async def edit_board(self, new_colour=None, *, header=None):
         embed = self._game_screen.default()
 
-        board = self.board
         header = header or self._default_header
         embed.set_author(name=header)
 
