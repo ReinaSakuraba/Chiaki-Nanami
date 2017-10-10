@@ -178,8 +178,10 @@ class Moderator:
         affected. If you want to put them in slowmode too,
         use `{prefix}slowmode noimmune`.
         """
+        pronoun = 'They'
         if member is None:
             member = ctx.channel
+            pronoun = 'Everyone'
         elif self._is_slowmode_immune(member):
             message = (f"{member} is immune from slowmode due to having the "
                        f"Manage Server permission. Consider using `{ctx.prefix}slowmode "
@@ -196,7 +198,7 @@ class Moderator:
         await self.slowmodes.put(ctx.guild.id, config)
 
         await ctx.send(f'{member.mention} is now in slowmode! '
-                       f'They must wait {time.duration_units(duration)} '
+                       f'{pronoun} must wait {time.duration_units(duration)} '
                         'between each message they send.')
 
     @slowmode.command(name='noimmune', aliases=['n-i'], usage=['10', '1000000000 @b1nzy#1337'])
