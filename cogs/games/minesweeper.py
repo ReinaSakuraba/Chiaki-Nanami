@@ -232,16 +232,20 @@ class Board:
         return cls(13, 13, 40)
 
 
-class MinesweeperDisplay(BaseReactionPaginator):
-    class State(enum.Enum):
-        GAME = enum.auto()
-        HELP = enum.auto()
+class _State(enum.Enum):
+    GAME = enum.auto()
+    HELP = enum.auto()
 
-    def __init__(self, context, game):
-        super().__init__(context)
-        context.game_stopped = False
-        self.state = None
+
+class _MinesweeperDisplay(BaseReactionPaginator):
+    def __init__(self, game):
+        super().__init__(game.ctx)
         self.game = game
+        self.state = None
+
+    @property
+    def board(self):
+        return self.game.board
 
     def _board_repr(self):
         top_row = ' '.join(REGIONAL_INDICATORS[:self.board.width])
@@ -263,27 +267,23 @@ class MinesweeperDisplay(BaseReactionPaginator):
         \u200b
         ''')
 
-    @property
-    def board(self):
-        return self.game.board
-
     @page('\N{INPUT SYMBOL FOR NUMBERS}')
     def default(self):
         """Returns you to the game"""
-        self.state = self.State.GAME
+        self.state = _State.GAME
         board = self.board
         return (discord.Embed(colour=self.context.bot.colour, description=self._board_repr())
-               .set_author(name=f'Minesweeper - {board.width} x {board.height}')
-               .add_field(name='Player', value=self.context.author)
-               .add_field(name='Mines Marked', value=f'{board.mines_marked} / {board.mine_count}')
-               .add_field(name='Flags Remaining', value=board.remaining_flags)
-               .add_field(name='\u200b', value='Stuck? Click the \N{INFORMATION SOURCE} reaction for some help.')
+                .set_author(name=f'Minesweeper - {board.width} x {board.height}')
+                .add_field(name='Player', value=self.context.author)
+                .add_field(name='Mines Marked', value=f'{board.mines_marked} / {board.mine_count}')
+                .add_field(name='Flags Remaining', value=board.remaining_flags)
+                .add_field(name='\u200b', value='Stuck? Click the \N{INFORMATION SOURCE} reaction for some help.')
                )
 
     @page('\N{INFORMATION SOURCE}')
     def help_page(self):
         """Shows this page"""
-        self.state = self.State.HELP
+        self.state = _State.HELP
         text = textwrap.dedent(f'''
         Basically the goal is to reveal all of the board and NOT get hit with a mine!
 
@@ -307,16 +307,19 @@ class MinesweeperDisplay(BaseReactionPaginator):
         reaction_text = '\n'.join(f'{em} => {getattr(self, f).__doc__}'
                                   for em, f in self._reaction_map.items())
         return (discord.Embed(colour=self.context.bot.colour, description=text)
-               .set_author(name='Welcome to Minesweeper!')
-               .add_field(name='If you select a tile, chances are you will hit one of these 3 things', value=self._possible_spaces())
-               .add_field(name='Reaction Buttons', value=reaction_text)
-               )
+                .set_author(name='Welcome to Minesweeper!')
+                .add_field(name='If you select a tile, chances are you will hit one of these 3 things', value=self._possible_spaces())
+                .add_field(name='Reaction Buttons', value=reaction_text)
+                )
 
     @page('\N{BLACK SQUARE FOR STOP}')
     def stop(self):
         """Stops the game"""
         self.game.stop()
         return super().stop()
+
+    async def edit(self, embed):
+        await self._message.edit(embed=embed)
 
 
 class MinesweeperSession:
@@ -325,10 +328,10 @@ class MinesweeperSession:
         self.ctx = ctx
         self._interaction = None
         self._runner = None
-        self._game_screen = MinesweeperDisplay(ctx, self)
+        self._game_screen = _MinesweeperDisplay(self)
 
     def check_message(self, message):
-        if self._game_screen.state != MinesweeperDisplay.State.GAME:
+        if self._game_screen.state != _State.GAME:
             return False
 
         return (message.channel == self.ctx.channel and
@@ -362,7 +365,7 @@ class MinesweeperSession:
             if not new_colour:
                 embed.set_author(name='Minesweeper stopped.')
 
-        await self._game_screen._message.edit(embed=embed)
+        await self._game_screen.edit(embed=embed)
 
     async def _loop(self):
         start = time.perf_counter()
@@ -406,7 +409,7 @@ class MinesweeperSession:
 
     async def run_loop(self):
         try:
-           return await self._loop()
+            return await self._loop()
         except asyncio.CancelledError:
             await self.edit_board(0)
             raise
