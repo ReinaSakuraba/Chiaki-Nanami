@@ -304,6 +304,12 @@ class _MinesweeperHelp(BaseReactionPaginator):
                 .set_author(name='If you select a tile, chances are you will hit one of these 3 things')
                 )
 
+    @page('\N{BLACK SQUARE FOR STOP}')
+    async def stop(self):
+        """Stops the game"""
+        await self.game.edit_board(self.colour, header=self.game._default_header)
+        return super().stop()
+
 
 class _MinesweeperDisplay(BaseReactionPaginator):
     def __init__(self, game):
@@ -329,7 +335,7 @@ class _MinesweeperDisplay(BaseReactionPaginator):
     def default(self):
         board = self.board
         return (discord.Embed(colour=self.context.bot.colour, description=self._board_repr())
-                .set_author(name=f'Minesweeper - {board.width} x {board.height}')
+                .set_author(name=self.game._default_header)
                 .add_field(name='Player', value=self.context.author)
                 .add_field(name='Mines Marked', value=f'{board.mines_marked} / {board.mine_count}')
                 .add_field(name='Flags Remaining', value=board.remaining_flags)
@@ -340,6 +346,7 @@ class _MinesweeperDisplay(BaseReactionPaginator):
     async def help_page(self):
         """Gives you a help page (the page you're currently looking at)"""
         if self._help_future.done():
+            await self.game.edit_board(0x90A4AE, header='Currently on the help page...')
             self._help_future = asyncio.ensure_future(_MinesweeperHelp(self.game).interact())
 
     @page('\N{BLACK SQUARE FOR STOP}')
@@ -364,6 +371,7 @@ class MinesweeperSession:
         self._interaction = None
         self._runner = None
         self._game_screen = _MinesweeperDisplay(self)
+        self._default_header = f'Minesweeper - {board.width} x {board.height}'
 
     def check_message(self, message):
         return (not self._game_screen.is_on_help()
@@ -390,25 +398,28 @@ class MinesweeperSession:
                 return None
             return x, y, flag
 
-    async def edit_board(self, new_colour=None):
+    async def edit_board(self, new_colour=None, *, header=None):
         embed = self._game_screen.default()
+
+        board = self.board
+        header = header or self._default_header
+        embed.set_author(name=header)
+
         if new_colour is not None:
             embed.colour = new_colour
-
-            if not new_colour:
-                embed.set_author(name='Minesweeper stopped.')
 
         await self._game_screen.edit(embed=embed)
 
     async def _loop(self):
         start = time.perf_counter()
         while True:
-            colour = None
+            colour = header = None
             try:
                 message = await self.ctx.bot.wait_for('message', timeout=120, check=self.check_message)
             except asyncio.TimeoutError:
                 await self.ctx.send(f'{self.ctx.author.mention} You took too long!')
-                break
+                await self.edit_board(0, header='Took too long...')
+                return None
 
             parsed = self.parse_message(message.content)
             if parsed is None:      # garbage input, ignore.
@@ -424,27 +435,27 @@ class MinesweeperSession:
                     self.board.show(x, y)
             except HitMine:
                 self.board.explode(x, y)
-                await self.edit_board(0xFFFF00)
+                await self.edit_board(0xFFFF00, header='BOOM!')
                 await asyncio.sleep(random.uniform(0.5, 1))
                 self.board.reveal_mines()
-                colour = 0xFF0000
+                colour, header = 0xFF0000, 'Game Over!'
                 raise
             except Exception as e:
                 await self.ctx.send(f'An error happened.\n```\y\n{type(e).__name__}: {e}```')
                 raise
             else:
                 if self.board.is_solved():
-                    colour = 0x00FF00
+                    colour, header = 0x00FF00, "A winner is you!"
                     self.board.reveal_mines(success=True)
                     return time.perf_counter() - start
             finally:
-                await self.edit_board(colour)
+                await self.edit_board(colour, header=header)
 
     async def run_loop(self):
         try:
             return await self._loop()
         except asyncio.CancelledError:
-            await self.edit_board(0)
+            await self.edit_board(0, header='Minesweeper stopped.')
             raise
         return None
 
