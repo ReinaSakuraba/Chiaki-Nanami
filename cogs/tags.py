@@ -282,14 +282,14 @@ class Tags:
     async def tag_list(self, ctx):
         """Shows all the tags in the server."""
         query = ctx.session.select(Tag).where(Tag.location_id == ctx.guild.id).order_by(Tag.name)
-        counter = itertools.count(1)
-        tags = [(next(counter), tag.name) async for tag in await query.all()]
+        tags = [tag.name async for tag in await query.all()]
 
-        entries = (itertools.starmap('{0}. {1}'.format, tags)
-                   if tags else
-                   ('There are no tags. Use `{ctx.prefix}tag create` to fix that.', ))
+        entries = (
+            itertools.starmap('{0}. {1}'.format, enumerate(tags, 1)) if tags else
+            ('There are no tags. Use `{ctx.prefix}tag create` to fix that.', )
+        )
 
-        paginator = ServerTagPaginator(ctx, entries)
+        paginator = ServerTagPaginator(ctx, entries, colour=ctx.bot.colour)
         await paginator.interact()
 
     @tag.command(name='from', aliases=['by'])
@@ -301,13 +301,13 @@ class Tags:
                             .order_by(Tag.name)
                  )
 
-        counter = itertools.count(1)
-        tags = [(next(counter), tag.name) async for tag in await query.all()]
+        tags = [tag.name async for tag in await query.all()]
 
-        entries = (itertools.starmap('{0}. {1}'.format, tags)
-                   if tags else
-                   (f"{member} didn't make any tags yet. :(",))
-        paginator = ListPaginator(ctx, entries)
+        entries = (
+            itertools.starmap('{0}. {1}'.format, enumerate(tags, 1)) if tags else
+            (f"{member} didn't make any tags yet. :(", )
+        )
+        paginator = MemberTagPaginator(ctx, entries, member=member, colour=ctx.bot.colour)
         await paginator.interact()
 
     @commands.group(invoke_without_command=True)
