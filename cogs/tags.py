@@ -82,13 +82,32 @@ class Tags:
         if isinstance(error, TagError):
             await ctx.send(error)
 
+    async def _disambiguate_error(self, session, name, guild_id):
+        # ~~thanks danno~~
+        query = """SELECT     name
+                   FROM       tags
+                   WHERE      location_id={guild_id} AND name % {name}
+                   ORDER BY   similarity(name, {name}) DESC
+                   LIMIT 5;
+                """
+        params = {'guild_id': guild_id, 'name': name}
+        results = await (await session.cursor(query, params)).flatten()
+
+        message = f'Tag "{name}" not found...'
+        if results:
+            # f-strings can't have backslashes in {}
+            message += ' Did you mean...\n' + '\n'.join(r['name'] for r in results)
+
+        return TagError(message)
+
     async def _get_tag(self, session, name, guild_id):
         query = (session.select.from_(Tag)
                         .where((Tag.name == name)
                                & (Tag.location_id == guild_id)))
+
         tag = await query.first()
         if tag is None:
-            raise TagError(f"Tag {name} not found.")
+            raise await self._disambiguate_error(session, name, guild_id)
 
         return tag
 
