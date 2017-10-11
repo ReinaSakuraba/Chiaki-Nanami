@@ -261,6 +261,22 @@ class Tags:
 
         await ctx.send(embed=embed)
 
+    @tag.command(name='search')
+    async def tag_search(self, ctx, *, name):
+        """Searches and shows up to the 50 closest matches for a given name."""
+        query = """SELECT   name
+                   FROM     tags
+                   WHERE    location_id={guild_id} AND name % {name}
+                   ORDER BY similarity(name, {name}) DESC
+                   LIMIT 5;
+                """
+        params = {'guild_id': ctx.guild.id, 'name': name}
+        tags = [tag['name'] async for tag in await ctx.session.cursor(query, params)]
+        entries = itertools.starmap('{0}. {1}'.format, enumerate(tags, 1)) if tags else ['No results found... :(']
+
+        pages = ListPaginator(ctx, entries, colour=ctx.bot.colour, title=f'Tags relating to {name}')
+        await pages.interact()
+
     # XXX: too much repetition...
     @tag.command(name='list', aliases=['all'])
     async def tag_list(self, ctx):
