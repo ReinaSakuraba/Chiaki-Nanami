@@ -3,12 +3,14 @@ import asyncqlio
 import datetime
 import discord
 import itertools
+import logging
 
 from discord.ext import commands
 
 from .utils import formats
 from .utils.paginator import ListPaginator
 
+tag_logger = logging.getLogger(__name__)
 
 class TagError(commands.UserInputError):
     pass
@@ -84,19 +86,25 @@ class Tags:
 
     async def _disambiguate_error(self, session, name, guild_id):
         # ~~thanks danno~~
-        query = """SELECT     name
-                   FROM       tags
-                   WHERE      location_id={guild_id} AND name % {name}
-                   ORDER BY   similarity(name, {name}) DESC
+        message = f'Tag "{name}" not found...'
+
+        query = """SELECT   name
+                   FROM     tags
+                   WHERE    location_id={guild_id} AND name % {name}
+                   ORDER BY similarity(name, {name}) DESC
                    LIMIT 5;
                 """
         params = {'guild_id': guild_id, 'name': name}
-        results = await (await session.cursor(query, params)).flatten()
-
-        message = f'Tag "{name}" not found...'
-        if results:
-            # f-strings can't have backslashes in {}
-            message += ' Did you mean...\n' + '\n'.join(r['name'] for r in results)
+        try:
+            results = await (await session.cursor(query, params)).flatten()
+        except asyncpg.SyntaxOrAccessError:
+            # % and similarity aren't supported, which means the owner didn't do
+            # CREATE EXTENSION pg_trgm in their database
+            tag_logger.error('pg_trgm extension not created, contact %s to create it for the tags', self.bot.owner)
+        else:
+            if results:
+                # f-strings can't have backslashes in {}
+                message += ' Did you mean...\n' + '\n'.join(r['name'] for r in results)
 
         return TagError(message)
 
