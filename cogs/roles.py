@@ -107,9 +107,12 @@ class AutoRole(disambiguate.DisambiguateRole):
         return role
 
 
-class Admin:
-    """Admin-only commands"""
-    __aliases__ = "Administrator", "Administration"
+class Roles:
+    """Commands that are related to roles.
+
+    Self-assignable, auto-assignable, and general role-related commands
+    are in this cog.
+    """
 
     def __init__(self, bot):
         self.bot = bot
