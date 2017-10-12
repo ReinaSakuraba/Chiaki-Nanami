@@ -9,6 +9,7 @@ from datetime import timedelta
 
 from .utils.context_managers import redirect_exception
 from .utils.misc import emoji_url, truncate
+from .utils.paginator import EmbedFieldPages
 from .utils.time import duration, human_timedelta
 
 
@@ -51,7 +52,8 @@ class Reminder:
                )
 
     async def _add_reminder(self, ctx, when, message):
-        args = (ctx.author.id, ctx.channel.id, message)
+        channel_id = ctx.channel.id if ctx.guild else None
+        args = (ctx.author.id, channel_id, message)
         await ctx.bot.db_scheduler.add_abs(when, 'reminder_complete', args)
         await ctx.send(embed=self._create_reminder_embed(ctx, when, message))
 
@@ -135,36 +137,44 @@ class Reminder:
         if not reminders:
             return await ctx.send("You have no reminders at the moment.")
 
-        em = (discord.Embed(colour=self.bot.colour)
-             .set_author(name=f'Reminders for {ctx.author}')
-             )
+        def entries():
+            for i, (created, expires, channel_id, message) in enumerate(reminders, start=1):
+                channel = f'<#{channel_id}>' if channel_id else 'Direct Message'
 
-        for i, (created, expires, channel_id, message) in enumerate(reminders, start=1):
-            value = f'Created {human_timedelta(created)}\n<#{channel_id}>: {message}'
-            em.add_field(name=f'{i}. In {human_timedelta(expires)} from now.',
-                         value=truncate(value, 1024, '...'), inline=False)
+                name = f'{i}. In {human_timedelta(expires)} from now.'
+                value = truncate(f'{channel}: {message}', 1024, '...')
+                yield name, value
 
-        await ctx.send(embed=em)
+        pages = EmbedFieldPages(ctx, entries(), lines_per_page=5, title=f'Reminders for {ctx.author}', inline=False)
+        await pages.interact()
 
     async def on_reminder_complete(self, timer):
         user_id, channel_id, message = timer.args
         human_delta = human_timedelta(timer.created)
-        channel = self.bot.get_channel(channel_id)
-        if channel is None:
-            # rip
-            return
 
-        user = self.bot.get_user(user_id)
+        # channel_id will be None in a DM channel, because we need
+        # to distinguish between a DM channel and a deleted channel.
+        # (the latter of which will fail anyway)
+        if channel_id is None:
+            user = self.bot.get_user(user_id)
+            try:
+                channel = await user.create_dm()
+            except Exception:  # user was either gone or deleted
+                return
+        else:
+            channel = self.bot.get_channel(channel_id)
+            if channel is None:
+                # deleted channel. rip
+                return
 
         is_private = isinstance(channel, discord.abc.PrivateChannel)
         destination_format = ('Direct Message' if is_private else f'#{channel} in {channel.guild}!')
+
         embed = (discord.Embed(description=message, colour=0x00ff00, timestamp=timer.utc)
                 .set_author(name=f'Reminder for {destination_format}', icon_url=ALARM_CLOCK_URL)
                 .set_footer(text=f'From {human_delta}.')
                 )
 
-        with contextlib.suppress(discord.HTTPException):
-            await user.send(embed=embed)
         try:
             await channel.send(f"<@{user_id}>", embed=embed)
         except discord.HTTPException:  # can't embed

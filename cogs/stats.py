@@ -33,7 +33,7 @@ ERROR_ICON_URL = emoji_url('\N{NO ENTRY SIGN}')
 
 class Command(_Table, table_name='commands'):
     id = asyncqlio.Column(asyncqlio.Serial, primary_key=True)
-    guild_id = asyncqlio.Column(asyncqlio.BigInt, index=True)
+    guild_id = asyncqlio.Column(asyncqlio.BigInt, index=True, nullable=True)
     commands_guild_id_idx = asyncqlio.Index(guild_id)
 
     channel_id = asyncqlio.Column(asyncqlio.BigInt)
@@ -58,8 +58,10 @@ class Stats:
     async def on_command(self, ctx):
         command = ctx.command.qualified_name
         self.bot.command_leaderboard[command] += 1
+
+        guild_id = None if ctx.guild is None else ctx.guild.id
         row = Command(
-            guild_id=ctx.guild.id,
+            guild_id=guild_id,
             channel_id=ctx.channel.id,
             author_id=ctx.author.id,
             used=ctx.message.created_at,

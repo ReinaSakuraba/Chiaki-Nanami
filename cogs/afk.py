@@ -119,6 +119,9 @@ class AFK:
                 await message.channel.send(embed=afk_embed)
 
     async def on_message(self, message):
+        if message.guild is None:
+            return
+
         await self.check_user_message(message)
         await self.check_user_mention(message)
 
