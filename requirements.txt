@@ -1,6 +1,7 @@
 git+https://github.com/Rapptz/discord.py@rewrite#egg=discord.py[voice]
-git+https://github.com/SunDwarf/asyncqlio.git#egg=asyncqlio[postgresql]
+git+https://github.com/SunDwarf/asyncqlio.git
 
+asyncpg
 colorthief
 fuzzywuzzy[speedup]
 lru_dict
