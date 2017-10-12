@@ -1,8 +1,11 @@
+import asyncio
 import discord
 import functools
+import io
 import itertools
 import os
 import random
+import secrets
 import time
 
 from collections import namedtuple
@@ -10,21 +13,43 @@ from contextlib import suppress
 from datetime import datetime
 from discord.ext import commands
 from more_itertools import always_iterable
+from PIL import Image
 
-from .utils import cache
 from .utils.misc import emoji_url, load_async
 
 
 # ---------------- Ship-related utilities -------------------
 
-def _lerp_color(c1, c2, interp, clamp=False):
+def _lerp_color(c1, c2, interp):
     colors = (round((v2 - v1) * interp + v1) for v1, v2 in zip(c1, c2))
-    if clamp:
-        colors = (min(max(c, 0), 255) for c in colors)
-    return tuple(colors)
+    return tuple((min(max(c, 0), 255) for c in colors))
 
 
-_lerp_red = functools.partial(_lerp_color, (0, 0, 0), (255, 0, 0), clamp=True)
+_lerp_pink = functools.partial(_lerp_color, (0, 0, 0), (255, 105, 180))
+
+# Some large-ish Merseene prime cuz... idk.
+_OFFSET = 2 ** 3217 - 1
+
+# This seed is used to change the result of ->ship without having to do a
+# complicated cache
+_seed = 0
+
+
+async def _change_ship_seed():
+    global _seed
+    while True:
+        _seed = secrets.randbits(256)
+        next_delay = random.uniform(10, 60) * 60
+        await asyncio.sleep(next_delay)
+
+
+def _user_score(user):
+    return (user.id
+            + int(user.avatar or str(user.default_avatar.value), 16)
+            # 0x10FFFF is the highest Unicode can go.
+            + sum(ord(c) * 0x10FFFF * i for i, c in enumerate(user.name))
+            + int(user.discriminator)
+            )
 
 
 _default_rating_comments = (
@@ -45,7 +70,8 @@ def _scale(old_min, old_max, new_min, new_max, number):
 
 _value_to_index = functools.partial(_scale, 0, 100, 0, len(_default_rating_comments) - 1)
 
-class ShipRating(namedtuple('ShipRating', 'value comment')):
+
+class _ShipRating(namedtuple('ShipRating', 'value comment')):
     __slots__ = ()
 
     def __new__(cls, value, comment=None):
@@ -53,6 +79,7 @@ class ShipRating(namedtuple('ShipRating', 'value comment')):
             index = round(_value_to_index(value))
             comment = _default_rating_comments[index]
         return super().__new__(cls, value, comment)
+
 
 _special_pairs = {}
 
@@ -72,16 +99,27 @@ def _get_special_pairing(user1, user2):
     except IndexError:      # most likely no comment field was specified
         comment = None
 
-    return ShipRating(value=value, comment=comment)
+    return _ShipRating(value=value, comment=comment)
 
 
-@cache.cache(maxsize=None, make_key=cache.unordered)
-def _calculate_compatibilty(user1, user2):
+# List of possible ratings when someone attempts to ship themself
+_self_ratings = [
+    "Rip {user}, they're forever alone...",
+    "Selfcest is bestest.",
+]
+
+
+def _calculate_rating(user1, user2):
     if user1 == user2:
-        return ShipRating(0, f"RIP {user1}. They're forever alone.")
+        index = _seed % 2
+        return _ShipRating(index * 100, _self_ratings[index].format(user=user1))
 
     special = _get_special_pairing(user1, user2)
-    return special or ShipRating(random.randrange(101))
+    if special:
+        return special
+
+    score = ((_user_score(user1) + _user_score(user2)) * _OFFSET + _seed) % 100
+    return _ShipRating(score)
 
 #--------------- End ship stuffs ---------------------
 
@@ -101,8 +139,12 @@ class OtherStuffs:
         self.default_time = datetime.utcnow()
         self.bot.loop.create_task(self._load())
 
-        # bookkeeping for optimization since on_member_update can be called multiple times.
-        self._shipped = set()
+        self._mask = open('data/images/heart.png', 'rb')
+        self._future = asyncio.ensure_future(_change_ship_seed())
+
+    def __unload(self):
+        self._mask.close()
+        self._future.cancel()
 
     async def _load(self):
         global _special_pairs
@@ -145,29 +187,68 @@ class OtherStuffs:
             await ctx.send(f"Category \"{self.copypastas[ctx.args[2]]['category']}\" "
                            f"doesn't have pasta called \"{ctx.kwargs['name']}\"")
 
-    @commands.command(usage=['@rjt#2336 XenaWolf'])
-    async def ship(self, ctx, user1: discord.Member, user2: discord.Member=None):
-        """Determines if two users are compatible with one another.
+    # -------------------- SHIP -------------------
+    async def _load_user_avatar(self, user):
+        url = user.avatar_url_as(format='png', size=512)
+        async with self.bot.session.get(url) as r:
+            return await r.read()
 
-        If only one user is specified, it determines *your* compatibility with that user.
-        """
+    def _create_ship_image(self, score, avatar1, avatar2):
+        ava_im1 = Image.open(avatar1).convert('RGBA')
+        ava_im2 = Image.open(avatar2).convert('RGBA')
+
+        # Assume the two images are square
+        size = min(ava_im1.size, ava_im2.size)
+        offset = round(_scale(0, 100, size[0], 0, score))
+
+        ava_im1.thumbnail(size)
+        ava_im2.thumbnail(size)
+
+        # paste img1 on top of img2
+        newimg1 = Image.new('RGBA', size=size, color=(0, 0, 0, 0))
+        newimg1.paste(ava_im2, (-offset, 0))
+        newimg1.paste(ava_im1, (offset, 0))
+
+        # paste img2 on top of img1
+        newimg2 = Image.new('RGBA', size=size, color=(0, 0, 0, 0))
+        newimg2.paste(ava_im1, (offset, 0))
+        newimg2.paste(ava_im2, (-offset, 0))
+
+        # blend with alpha=0.5
+        im = Image.blend(newimg1, newimg2, alpha=0.6)
+
+        mask = Image.open(self._mask).convert('L')
+        mask = mask.resize(ava_im1.size, resample=Image.BILINEAR)
+        im.putalpha(mask)
+
+        f = io.BytesIO()
+        im.save(f, 'png')
+        f.seek(0)
+        return discord.File(f, filename='test.png')
+
+    async def _ship_image(self, score, user1, user2):
+        user_avatar_data1 = io.BytesIO(await self._load_user_avatar(user1))
+        user_avatar_data2 = io.BytesIO(await self._load_user_avatar(user2))
+        return await self.bot.loop.run_in_executor(None, self._create_ship_image, score,
+                                                   user_avatar_data1, user_avatar_data2)
+
+    @commands.command()
+    async def ship(self, ctx, user1: discord.Member, user2: discord.Member=None):
+        """Ships two users together, and scores accordingly."""
         if user2 is None:
             user1, user2 = ctx.author, user1
 
-        rating = _calculate_compatibilty(user1, user2)
-        self._shipped.update((user1.id, user2.id))
+        score, comment = _calculate_rating(user1, user2)
+        file = await self._ship_image(score, user1, user2)
+        colour = discord.Colour.from_rgb(*_lerp_pink(score / 100))
 
-        # TODO: Use pillow to make an image out of the two users' thumbnails.
-        field_name = 'I give it a...'       # In case I decide to have it choose between mulitiple field_names
-        description = f'{user1.mention} x {user2.mention}?'
-        colour = discord.Colour.from_rgb(*_lerp_red(rating.value / 100))
-        ship_embed = (discord.Embed(description=description, colour=colour)
-                     .set_author(name='Ship')
-                     .add_field(name=field_name, value=f'{rating.value} / 100')
-                     .set_footer(text=rating.comment)
-                     )
-
-        await ctx.send(embed=ship_embed)
+        embed = (discord.Embed(colour=colour, description=f"{user1.mention} x {user2.mention}")
+                 .set_author(name='Shipping')
+                 .add_field(name='Score', value=f'{score}/100')
+                 .add_field(name='\u200b', value=f'*{comment}*', inline=False)
+                 .set_image(url='attachment://test.png')
+                 )
+        await ctx.send(file=file, embed=embed)
 
     @commands.command()
     async def ping(self, ctx):
@@ -263,23 +344,6 @@ class OtherStuffs:
         embed.set_author(name=f'Test completed', icon_url=embed.author.icon_url)
         embed.set_thumbnail(url=ctx.author.avatar_url)
         await message.edit(embed=embed)
-
-    async def on_member_update(self, before, after):
-        if before.id not in self._shipped:
-            return
-
-        if (before.avatar, before.name) == (after.avatar, after.name):
-            return
-
-        cache = _calculate_compatibilty.cache
-        for key in list(cache):
-            # Cannot use cache.invalidate because we're using the actual key
-            # in the cache. It would always raise KeyError since we're bsaically
-            # doing a frozenset of a frozenset.
-            if before in key:
-                del cache[key]
-
-        self._shipped.discard(before.id)
 
 
 def setup(bot):
