@@ -8,10 +8,12 @@ from collections import defaultdict, namedtuple
 from discord.ext import commands
 from more_itertools import one, partition
 
-from .utils import cache, formats, disambiguate
-from .utils.converter import BotCommand, BotCogConverter
-from .utils.misc import emoji_url, truncate, unique
-from .utils.paginator import ListPaginator
+from ._initroot import InitRoot
+
+from ..utils import cache, formats, disambiguate
+from ..utils.converter import BotCommand, BotCogConverter
+from ..utils.misc import emoji_url, truncate, unique
+from ..utils.paginator import ListPaginator
 
 
 ALL_MODULES_KEY = '*'
@@ -168,7 +170,7 @@ _plonk_embed_mappings = {
 PLONK_ICON = emoji_url('\N{HAMMER}')
 
 
-class Permissions:
+class Permissions(InitRoot):
     """Used for enabling or disabling commands for a channel, member,
     role, or even the whole server.
     """
@@ -185,7 +187,7 @@ class Permissions:
     # more dangerous.
 
     def __init__(self, bot):
-        self.bot = bot
+        super().__init__(bot)
         self._md = self.bot.db.bind_tables(_Table)
         # Unlike other cogs, this has to be created always. See below.
         self.bot.loop.create_task(self._create_permissions())

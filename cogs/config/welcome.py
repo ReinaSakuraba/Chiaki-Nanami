@@ -8,9 +8,11 @@ from discord.ext import commands
 from datetime import datetime
 from more_itertools import one
 
-from .utils import time
-from .utils.formats import multi_replace
-from .utils.misc import nice_time, ordinal
+from ._initroot import InitRoot
+
+from ..utils import time
+from ..utils.formats import multi_replace
+from ..utils.misc import nice_time, ordinal
 
 
 _DEFAULT_CHANNEL_CHANGE_URL = ('https://github.com/discordapp/discord-api-docs/blob/master/docs/'
@@ -82,12 +84,12 @@ def special_message(message):
     return message if '{user}' in message else f'{{user}}{message}'
 
 
-class WelcomeMessages:
+class WelcomeMessages(InitRoot):
     """Commands related to welcome and leave messages."""
     # TODO: Put this in a config module.
 
     def __init__(self, bot):
-        self.bot = bot
+        super().__init__(bot)
         self._md = self.bot.db.bind_tables(_Table)
 
     # ------------ config helper functions --------------------
