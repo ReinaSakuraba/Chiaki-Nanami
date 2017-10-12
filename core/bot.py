@@ -1,3 +1,4 @@
+import aiohttp
 import asyncio
 import asyncqlio
 import collections
@@ -92,6 +93,8 @@ class Chiaki(commands.Bot):
                          formatter=_chiaki_formatter,
                          description=config.description,
                          pm_help=None)
+
+        self.session = aiohttp.ClientSession()
 
         try:
             with open('data/command_image_urls.json') as f:
