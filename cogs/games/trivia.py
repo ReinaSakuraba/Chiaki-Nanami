@@ -11,8 +11,8 @@ import json
 import os
 import random
 
+from difflib import SequenceMatcher
 from discord.ext import commands
-from fuzzywuzzy import fuzz
 from html import unescape
 
 from . import manager
@@ -91,8 +91,8 @@ class BaseTriviaSession:
             return False
 
         self._answered.set()
-        ratio = fuzz.ratio(message.content.lower(), self._current_question.answer.lower())
-        return ratio >= 85
+        sm = SequenceMatcher(None, message.content.lower(), self._current_question.answer.lower())
+        return sm.ratio() >= .85
 
     async def _show_question(self, n):
         leader = self.leader
