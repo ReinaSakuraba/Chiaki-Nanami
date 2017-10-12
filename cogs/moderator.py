@@ -137,7 +137,7 @@ class Moderator:
         return member.guild_permissions.manage_guild
 
     async def check_slowmode(self, message):
-        if not message.guild:
+        if message.guild is None:
             return
 
         guild_id = message.guild.id
@@ -148,6 +148,7 @@ class Moderator:
 
         author = message.author
         is_immune = self._is_slowmode_immune(author)
+
         for thing in (message.channel, author):
             key = str(thing.id)
             if key not in slowmodes:
