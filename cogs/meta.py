@@ -151,12 +151,7 @@ class Meta:
 
     def __init__(self, bot):
         self.bot = bot
-        self.session = aiohttp.ClientSession()
         self.process = psutil.Process()
-
-    def __unload(self):
-        # Pray it closes
-        self.bot.loop.create_task(self.session.close())
 
     @commands.command()
     @commands.guild_only()
@@ -261,7 +256,7 @@ class Meta:
         no_mee6_in_server = "No stats found. You don't have mee6 in this server... I think."
         with redirect_exception((json.JSONDecodeError, no_mee6_in_server)):
             async with ctx.typing(), temp_message(ctx, "Fetching data, please wait...") as message:
-                stats = await _mee6_stats(self.session, member)
+                stats = await _mee6_stats(ctx.bot.session, member)
 
         description = f"Currently sitting at {stats['rank']}!"
         xp_progress = "{xp}/{lvl_xp} ({xp_percent}%)".format(**stats)

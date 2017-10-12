@@ -48,9 +48,6 @@ class Command(_Table, table_name='commands'):
 
 class Stats:
     def __init__(self, bot):
-        if not hasattr(bot, 'session'):
-            bot.session = aiohttp.ClientSession()
-
         self.bot = bot
         self._md = self.bot.db.bind_tables(_Table)
         self.process = psutil.Process()
