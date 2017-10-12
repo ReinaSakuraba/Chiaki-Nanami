@@ -103,7 +103,7 @@ class Aliases:
         async with self.bot.db.get_session() as s:
             # Must use raw SQL because asyncqlio doesn't support string concatenation,
             # nor does it support binary ops with columns that aren't setters.
-            query = """SELECT * FROM command_aliases
+            query = """SELECT alias, command FROM command_aliases
                        WHERE guild_id = {guild_id}
                        AND ({content} ILIKE alias || ' %' OR {content} = alias)
                        ORDER BY length(alias)
