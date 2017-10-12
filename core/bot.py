@@ -1,81 +1,147 @@
+import aiohttp
 import asyncio
+import asyncqlio
 import collections
 import contextlib
 import discord
 import functools
 import inspect
+import json
 import logging
 import random
+import re
+import sys
+import traceback
 
 from datetime import datetime
 from discord.ext import commands
 from more_itertools import always_iterable
 
+from . import context
 from .formatter import ChiakiFormatter
 
-from cogs.utils.database import Database
-from cogs.utils.misc import cycle_shuffle, duration_units, file_handler
+from cogs.utils import errors
+from cogs.utils.jsonf import JSONFile
+from cogs.utils.misc import file_handler
+from cogs.utils.scheduler import DatabaseScheduler
+from cogs.utils.time import duration_units
+
+# The bot's config file
+import config
 
 log = logging.getLogger(__name__)
 log.addHandler(file_handler('chiakinanami'))
 
-_default_bot_help = """\
-*{0.description}*
+command_log = logging.getLogger('commands')
+command_log.addHandler(file_handler('commands'))
 
-To invite me to your server, use `->invite`, or just use this link:
-<{0.invite_url}>
 
-*Use `->modules` for all the modules with commands.
-Or `->commands "module"` for a list of commands for a particular module.*
-"""
+EMOJI_REGEX = re.compile(r'<:(.+?):([0-9]{15,21})>')
+def _parse_emoji_for_reaction(emoji):
+    m = EMOJI_REGEX.match(emoji)
+    if m is not None:
+        return f'{m[1]}:{m[2]}'
+    return emoji
 
-_default_config = {
-    'colour': "0xFFDDDD",
 
-    'default_command_prefix': '->',
-    'default_help': _default_bot_help,
+_MINIMAL_PERMISSIONS = [
+    'send_messages',
+    'embed_links',
+    'add_reactions',
+    'attach_files'
+    "use_external_emojis",
+]
 
-    'restart_code': 69,
-    'log': False,
-}
-del _default_bot_help
+_FULL_PERMISSIONS = [
+    *_MINIMAL_PERMISSIONS,
+    "manage_guild",
+    "manage_roles",
+    "manage_channels",
+    "kick_members",
+    "ban_members",
+    "create_instant_invite",
+
+    "manage_messages",
+    "read_message_history",
+
+    "mute_members",
+    "deafen_members",
+]
+
+def _make_permissions(*permissions):
+    perms = discord.Permissions.none()
+    perms.update(**dict.fromkeys(permissions, True))
+    return perms
+
+_MINIMAL_PERMISSIONS = _make_permissions(*_MINIMAL_PERMISSIONS)
+_FULL_PERMISSIONS = _make_permissions(*_FULL_PERMISSIONS)
+del _make_permissions
+
 
 MAX_FORMATTER_WIDTH = 90
-# small hacks to make command display all their possible names
-commands.Command.all_names = property(lambda self: [self.name, *self.aliases])
 
-class ChiakiBot(commands.Bot):
-    def __init__(self, command_prefix, formatter=None, description=None, pm_help=False, **options):
-        super().__init__(command_prefix, formatter, description, pm_help, **options)
-        self.remove_command('help')
+def _callable_prefix(bot, message):
+    prefixes = bot.custom_prefixes.get(message.guild.id, bot.default_prefix)
+    return commands.when_mentioned_or(*prefixes)(bot, message)
 
-        self._config = collections.ChainMap(options.get('config', {}), _default_config)
+_chiaki_formatter = ChiakiFormatter(width=MAX_FORMATTER_WIDTH, show_check_failure=True)
+
+
+class Chiaki(commands.Bot):
+    def __init__(self):
+        super().__init__(command_prefix=_callable_prefix,
+                         formatter=_chiaki_formatter,
+                         description=config.description,
+                         pm_help=None)
+
+        self.session = aiohttp.ClientSession()
+
+        try:
+            with open('data/command_image_urls.json') as f:
+                self.command_image_urls = __import__('json').load(f)
+        except FileNotFoundError:
+            self.command_image_urls = {}
+
         self.message_counter = 0
-        self.custom_prefixes = Database('customprefixes.json')
-        self.databases = [self.custom_prefixes, ]
+        self.command_counter = collections.Counter()
+        self.custom_prefixes = JSONFile('customprefixes.json')
         self.cog_aliases = {}
 
         self.reset_requested = False
-        if self._config['restart_code'] == 0:
-            raise RuntimeError("restart_code cannot be zero")
 
-        self.loop.create_task(self._set_colour())
+        psql = f'postgresql://{config.psql_user}:{config.psql_pass}@{config.psql_host}/{config.psql_db}'
+        self.db = asyncqlio.DatabaseInterface(psql)
+        self.loop.run_until_complete(self._connect_to_db())
+        self.db_scheduler = DatabaseScheduler(self.db, timefunc=datetime.utcnow)
+        self.db_scheduler.add_callback(self._dispatch_from_scheduler)
 
-    # commands.ColourConverter.convert() is now a coro, 
-    # so we have to set the colour this way
-    async def _set_colour(self):
-        self.colour = await commands.ColourConverter().convert(None, self._config['colour'])
+        for ext in config.extensions:
+            # Errors should never pass silently, if there's a bug in an extension,
+            # better to know now before the bot logs in, because a restart
+            # can become extremely expensive later on, especially with the
+            # 1000 IDENTIFYs a day limit.
+            self.load_extension(ext)
+
+    def _dispatch_from_scheduler(self, entry):
+        self.dispatch(entry.event, entry)
+
+    async def _connect_to_db(self):
+        # Unfortunately, while DatabaseInterface.connect takes in **kwargs, and
+        # passes them to the underlying connector, the AsyncpgConnector doesn't
+        # take them AT ALL. This is a big problem for my case, because I use JSONB
+        # types, which requires the type_codec to be set first (they need to be str).
+        #
+        # As a result I have to explicitly use json.dumps when storing them,
+        # which is rather annoying, but doable, since I only use JSONs in two
+        # places (reminders and welcome/leave messages).
+        await self.db.connect()
 
     async def close(self):
-        await self.dump_databases()
+        await self.db.close()
         await super().close()
 
     def add_cog(self, cog):
         members = inspect.getmembers(cog)
-        for name, member in members:
-            # add any databases
-            if isinstance(member, Database):
-                self.add_database(member)
 
         # cog aliases
         for alias in getattr(cog, '__aliases__', ()):
@@ -93,32 +159,8 @@ class ChiakiBot(commands.Bot):
             return
         super().remove_cog(cog_name)
 
-        members = inspect.getmembers(cog)
-        for name, member in members:
-            # remove any databases
-            if isinstance(member, Database):
-                self.remove_database(member)
-
         # remove cog aliases
         self.cog_aliases = {alias: real for alias, real in self.cog_aliases.items() if real is not cog}
-
-    def load_extension(self, name):
-        try:
-            super().load_extension(name)
-        except Exception as e:
-            log.error(f"{type(e).__name__}: {e}")
-            raise
-        else:
-            log.info(f"{name} successfully loaded")
-
-    def unload_extension(self, name):
-        try:
-            super().unload_extension(name)
-        except Exception as e:
-            log.error(f"{type(e).__name__}: {e}")
-            raise
-        else:
-            log.info(f"{name} successfully unloaded")
 
     @contextlib.contextmanager
     def temp_listener(self, func, name=None):
@@ -129,72 +171,175 @@ class ChiakiBot(commands.Bot):
         finally:
             self.remove_listener(func)
 
-    def add_database(self, db):
-        self.databases.append(db)
-        log.info(f"database {db.name} successfully added")
-
-    def remove_database(self, db):
-        if db in self.databases:
-            self.loop.create_task(db.dump())
-            self.databases.remove(db)
-        log.info(f"database {db.name} successfully removed")
-
-    async def dump_databases(self):
-        await asyncio.gather(*(db.dump() for db in self.databases))
-
-    # Just some looping functions
     async def change_game(self):
-        game_choices = cycle_shuffle(self._config['rotating_games'])
         await self.wait_until_ready()
         while True:
-            name = next(game_choices)
-            await self.change_presence(game=discord.Game(name=name))
+            name = random.choice(config.games)
+            await self.change_presence(game=discord.Game(name=name, type=0))
             await asyncio.sleep(random.uniform(0.5, 10) * 60)
 
-    async def update_official_invite(self):
-        await self.wait_until_ready()
-        self.invites_by_bot = [inv for inv in await self.official_guild.invites() if inv.inviter.id == self.user.id]
-        if not self.invites_by_bot:
-            self.invites_by_bot.append(await official_guild.create_invite())
+    def run(self):
+        super().run(config.token, reconnect=True)
+
+    def get_guild_prefixes(self, guild):
+        proxy_msg = discord.Object(id=None)
+        proxy_msg.guild = guild
+        return _callable_prefix(self, proxy_msg)
+
+    def get_raw_guild_prefixes(self, guild):
+        return self.custom_prefixes.get(guild.id, self.default_prefix)
+
+    async def set_guild_prefixes(self, guild, prefixes):
+        prefixes = prefixes or []
+        if len(prefixes) > 10:
+            raise RuntimeError("You have too many prefixes you indecisive goof!")
+
+        await self.custom_prefixes.put(guild.id, sorted(set(prefixes), reverse=True))
+
+    async def process_commands(self, message):
+        ctx = await self.get_context(message, cls=context.Context)
+
+        if ctx.command is None:
+            return
+
+        async with ctx.acquire():
+            await self.invoke(ctx)
+
+    # --------- Events ----------
+
+    async def on_ready(self):
+        print('Logged in as')
+        print(self.user.name)
+        print(self.user.id)
+        print('------')
+        self.db_scheduler.run()
+
+        if not hasattr(self, 'appinfo'):
+            self.appinfo = (await self.application_info())
+
+        if self.owner_id is None:
+            self.owner = self.appinfo.owner
+            self.owner_id = self.owner.id
+        else:
+            self.owner = self.get_user(self.owner_id)
+
+        if not hasattr(self, 'creator'):
+            self.creator = await self.get_user_info(239110748180054017)
+
+        if not hasattr(self, 'start_time'):
+            self.start_time = datetime.utcnow()
+
+        self.loop.create_task(self.change_game())
+
+    async def on_command_error(self, ctx, error):
+        if isinstance(error, commands.CheckFailure) and await self.is_owner(ctx.author):
+            # There is actually a race here. When this command is invoked the
+            # first time, it's wrapped in a context manager that automatically
+            # starts and closes a DB session.
+            #
+            # The issue is that this event is dispatched, which means during the
+            # first invoke, it creates a task for this and goes on with its day.
+            # The problem is that it doesn't wait for this event, meaning it might
+            # accidentally close the session before or during this command's
+            # reinvoke.
+            #
+            # This solution is dirty but since I'm only doing it once here
+            # it's fine. Besides it works anyway.
+            while ctx.session:
+                await asyncio.sleep(0)
+
+            try:
+                async with ctx.acquire():
+                    await ctx.reinvoke()
+            except Exception as exc:
+                await ctx.command.dispatch_error(ctx, exc)
+            return
+
+        # command_counter['failed'] += 0 sets the 'failed' key. We don't want that.
+        if not isinstance(error, commands.CommandNotFound):
+            self.command_counter['failed'] += 1
+
+        cause = error.__cause__
+        if isinstance(error, errors.ChiakiException):
+            await ctx.send(str(error))
+        elif type(error) is commands.BadArgument:
+            await ctx.send(str(cause or error))
+        elif isinstance(error, commands.NoPrivateMessage):
+            await ctx.send('This command cannot be used in private messages.')
+        elif isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send(f'This command ({ctx.command}) needs another parameter ({error.param})')
+        elif isinstance(error, commands.CommandInvokeError):
+            print(f'In {ctx.command.qualified_name}:', file=sys.stderr)
+            traceback.print_tb(error.original.__traceback__)
+            print(f'{error.__class__.__name__}: {error}'.format(error), file=sys.stderr)
+
+    async def on_message(self, message):
+        self.message_counter += 1
+
+        # prevent other selfs from triggering commands
+        if not message.author.bot:
+            await self.process_commands(message)
+
+    async def on_command(self, ctx):
+        self.command_counter['commands'] += 1
+        self.command_counter['executed in DMs'] += isinstance(ctx.channel, discord.abc.PrivateChannel)
+        fmt = ('Command executed in {0.channel} ({0.channel.id}) from {0.guild} ({0.guild.id}) '
+               'by {0.author} ({0.author.id}) Message: "{0.message.content}"')
+        command_log.info(fmt.format(ctx))
+
+    async def on_command_completion(self, ctx):
+        self.command_counter['succeeded'] += 1
 
     # ------ Config-related properties ------
 
     @discord.utils.cached_property
-    def permissions(self):
-        permissions_dict = dict.fromkeys(self._config['permissions'], True)
-        chiaki_permissions = discord.Permissions.none()
-        chiaki_permissions.update(**permissions_dict)
-        return chiaki_permissions
+    def minimal_invite_url(self):
+        return discord.utils.oauth_url(self.user.id, _MINIMAL_PERMISSIONS)
 
     @discord.utils.cached_property
-    def oauth_url(self):
-        return discord.utils.oauth_url(self.user.id, self.permissions)
-    invite_url = oauth_url
+    def invite_url(self):
+        return discord.utils.oauth_url(self.user.id, _FULL_PERMISSIONS)
 
     @property
     def default_prefix(self):
-        return always_iterable(self._config['default_command_prefix'])
+        return always_iterable(config.command_prefix)
 
     @property
-    def default_help(self):
-        return self._config['default_help']
+    def colour(self):
+        return config.colour
 
     @property
-    def official_guild(self):
-        id = self._config.get('official_guild') or self._config['official_server']
-        return self.get_guild(id)
-    official_server = official_guild
+    def webhook(self):
+        wh_url = config.webhook_url
+        if not wh_url:
+            return None
+        return discord.Webhook.from_url(wh_url, adapter=discord.AsyncWebhookAdapter(self.session))
 
     @property
-    def official_guild_invite(self):
-        return self._config.get('official_server_invite') or random.choice(self.invites_by_bot)
-    official_server_invite = official_guild_invite
+    def confirm_reaction_emoji(self):
+        return _parse_emoji_for_reaction(self.confirm_emoji)
+
+    @property
+    def deny_reaction_emoji(self):
+        return _parse_emoji_for_reaction(self.deny_emoji)
+
+    @property
+    def confirm_emoji(self):
+        return config.confirm_emoji
+
+    @property
+    def deny_emoji(self):
+        return config.deny_emoji
 
     # ------ misc. properties ------
 
-    @discord.utils.cached_property
-    def prefix_function(self):
-        return functools.partial(self.command_prefix, self)
+    @property
+    def support_invite(self):
+        # The following is the link to the bot's support server.
+        # You are allowed to change this to be another server of your choice.
+        # However, doing so will instantly void your warranty.
+        # Change this at your own peril.
+        return 'https://discord.gg/WtkPTmE'
 
     @property
     def uptime(self):
@@ -207,17 +352,3 @@ class ChiakiBot(commands.Bot):
     @property
     def all_cogs(self):
         return collections.ChainMap(self.cogs, self.cog_aliases)
-
-def _command_prefix(bot, message):
-    return (*commands.when_mentioned(bot, message),
-            *bot.custom_prefixes.get(message.guild, bot.default_prefix))
-
-# main bot
-def chiaki_bot(config):
-    """Factory function to create the bot"""
-    return ChiakiBot(command_prefix=_command_prefix,
-                     formatter=ChiakiFormatter(width=MAX_FORMATTER_WIDTH, show_check_failure=True),
-                     description=config.pop('description'), pm_help=None,
-                     command_not_found="I don't have a command called {}, I think.",
-                     config=config
-                    )

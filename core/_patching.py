@@ -20,25 +20,3 @@ def walk_parent_names(command):
     return (cmd.qualified_name for cmd in command.walk_parents())
 commands.Command.walk_parent_names = walk_parent_names
 del walk_parent_names
-
-def all_checks(command):
-    """Returns a list of all the checks that a command goes through.
-
-    This does not account for global checks.
-    """
-    # Not sure if this is how the actual command framework does it tbh
-
-    checks = chain.from_iterable(cmd.checks for cmd in command.walk_parents()
-                                 if not getattr(cmd, 'invoke_without_command', False))
-    checks = chain(command.checks, checks)
-    if command.instance is None:
-        return list(checks)
-    try:
-        local_check = getattr(command.instance, f'_{command.cog_name}__local_check')
-    except AttributeError:
-        pass
-    else: 
-        checks = chain(checks, (local_check, ))
-    return list(checks)
-commands.Command.all_checks = property(all_checks)
-del all_checks

@@ -3,25 +3,18 @@ import discord
 import enum
 import itertools
 import random
-import textwrap
 
-from collections import deque, namedtuple
-from discord.ext import commands
+from collections import namedtuple
 from more_itertools import first_true, one, windowed
 
+from . import errors
 from .bases import two_player_plugin
-from .manager import SessionManager
 
-from ..utils.compat import user_colour
 from ..utils.context_managers import temp_message
-from ..utils.misc import multi_replace
 
 NUM_ROWS = 6
 NUM_COLS = 7
 WINNING_LENGTH = 4
-
-class RageQuit(Exception):
-    pass
 
 
 def _diagonals(matrix, n):
@@ -98,7 +91,7 @@ class ConnectFourSession:
         self._opponent = opponent
         self._opponent_ready = asyncio.Event()
 
-    def _init_players(self):        
+    def _init_players(self):
         xo = (Tile.X, Tile.O) if random.random() < 0.5 else (Tile.O, Tile.X)
         self.players = list(map(Player, (self.ctx.author, self.opponent), xo))
         random.shuffle(self.players)
@@ -139,7 +132,7 @@ class ConnectFourSession:
     def get_column(string):
         lowered = string.lower()
         if lowered in {'quit', 'stop'}:
-            raise RageQuit
+            raise errors.RageQuit
 
         if lowered in {'help', 'h'}:
             return 'h'
@@ -181,7 +174,7 @@ class ConnectFourSession:
                 while True:
                     try:
                         column = await self.get_input()
-                    except (asyncio.TimeoutError, RageQuit):
+                    except (asyncio.TimeoutError, errors.RageQuit):
                         return Stats(next(cycle), turn)
 
                     if column == 'h':
@@ -212,10 +205,10 @@ class ConnectFourSession:
     def winner(self):
         return discord.utils.get(self.players, symbol=self.board.winner)
 
-class Connect4(two_player_plugin('Connect4', cls=ConnectFourSession, 
+class Connect4(two_player_plugin('Connect4', cls=ConnectFourSession,
                game_name='Connect 4', aliases=['con4'])):
 
-    
+
 
     @staticmethod
     def _make_invite_embed(ctx, member):

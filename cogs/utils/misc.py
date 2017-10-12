@@ -1,40 +1,17 @@
 import asyncio
-import functools
 import inspect
 import json
 import logging
 import os
-import random
-import re
 
-from collections import namedtuple, OrderedDict
-from datetime import datetime, timezone
-from discord.ext import commands
+from collections import OrderedDict
+from datetime import datetime
 from more_itertools import grouper
+
+from .formats import pluralize
 
 
 REGIONAL_INDICATORS = [chr(i + 0x1f1e6) for i in range(26)]
-
-def code_say(bot, msg):
-    return bot.say(code_msg(msg))
-
-def code_msg(msg, style=''):
-    return f'```{style}\n{msg}```'
-
-def cycle_shuffle(iterable):
-    saved = [elem for elem in iterable]
-    while True:
-        random.shuffle(saved)
-        for element in saved:
-              yield element
-
-def multi_replace(string, replacements):
-    substrs = sorted(replacements, key=len, reverse=True)
-    pattern = re.compile("|".join(map(re.escape, substrs)))
-    return pattern.sub(lambda m: replacements[m.group(0)], string)
-
-_markdown_replacements = {c: f'\\{c}' for c in ('*', '`', '_', '~', '\\')}
-escape_markdown = functools.partial(multi_replace, replacements=_markdown_replacements)
 
 def truncate(s, length, placeholder):
     return (s[:length] + placeholder) if len(s) > length + len(placeholder) else s
@@ -45,10 +22,6 @@ def str_join(delim, iterable):
 def group_strings(string, n):
     return map(''.join, grouper(n, string, ''))
 
-def pairwise(t):
-    it = iter(t)
-    return zip(it, it)
-
 def nice_time(time):
     return time.strftime("%d/%m/%Y %H:%M")
 
@@ -58,23 +31,6 @@ def parse_int(maybe_int, base=10):
     except ValueError:
         return None
 
-def duration_units(secs):
-    m, s = divmod(secs, 60)
-    h, m = divmod(m, 60)
-    d, h = divmod(h, 24)
-    w, d = divmod(d, 7)
-    # Weeks, days, hours, and minutes are guaranteed to be integral due to being
-    # the quotient rather than the remainder, so these can be safely made to ints.
-    # The reason for the int cast is because if the seconds is a float,
-    # the other units will be floats too.
-    unit_list = [(int(w), 'weeks'), (int(d), 'days'), (int(h), 'hours'), (int(m), 'mins')]
-    joined = ', '.join([f"{n} {u}" for n, u in unit_list if n])
-    if s:
-        if joined:
-            joined += ', '
-        s = round(s, 2) if s % 1 else int(s)
-        joined += f'{s} seconds'
-    return joined
 
 def ordinal(num):
     # pay no attention to this ugliness
@@ -99,10 +55,6 @@ def unique(iterable):
 async def maybe_awaitable(func, *args, **kwargs):
     maybe = func(*args, **kwargs)
     return await maybe if inspect.isawaitable(maybe) else maybe
-
-def role_name(member, role):
-    name = str(role)
-    return f'**{escape_markdown(name)}**' if role in member.roles else name
 
 async def load_async(filename, loop=None):
     loop = loop or asyncio.get_event_loop()

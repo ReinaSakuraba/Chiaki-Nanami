@@ -5,6 +5,7 @@ from more_itertools import iter_except
 
 from ..utils.misc import maybe_awaitable
 
+
 class SessionManager:
     def __init__(self):
         self.sessions = {}

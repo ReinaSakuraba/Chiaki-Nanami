@@ -9,14 +9,14 @@ import time
 
 from datetime import datetime
 from discord.ext import commands
-from string import ascii_lowercase
+from string import ascii_lowercase, ascii_uppercase
 
 from .manager import SessionManager
 
-from ..utils.converter import in_, ranged
-from ..utils.database import Database
+from ..utils.converter import ranged
 from ..utils.misc import REGIONAL_INDICATORS
 from ..utils.paginator import BaseReactionPaginator, page
+from ..utils.time import duration_units
 
 
 class MinesweeperException(Exception):
@@ -25,6 +25,7 @@ class MinesweeperException(Exception):
 
 class HitMine(MinesweeperException):
     def __init__(self, x, y):
+        self.point = x, y
         super().__init__(f'hit a mine on {x + 1} {y + 1}')
 
 
@@ -82,7 +83,7 @@ class Board:
             raise ValueError("A least one mine is required")
 
         self._mine_count = mines
-        
+
         self._board = [[Tile.blank] * width for _ in range(height)]
         self.visible = set()
         self.flags = set()
@@ -231,58 +232,29 @@ class Board:
         return cls(13, 13, 40)
 
 
-class MinesweeperDisplay(BaseReactionPaginator):
-    class State(enum.Enum):
-        GAME = enum.auto()
-        HELP = enum.auto()
-
-    def __init__(self, context, game):
-        super().__init__(context)
-        context.game_stopped = False
-        self.state = None
+class _MinesweeperHelp(BaseReactionPaginator):
+    def __init__(self, game):
+        super().__init__(game.ctx)
         self.game = game
-
-    def _board_repr(self):
-        top_row = ' '.join(REGIONAL_INDICATORS[:self.board.width])
-        # Discord strips any leading and trailing spaces.
-        # By putting a zero-width space we bypass that
-        return f'\N{BLACK LARGE SQUARE} {top_row}\n{self.board}' 
-
-    @staticmethod
-    def _possible_spaces():
-        number = random.randint(1, 9)
-        return textwrap.dedent(f'''
-        {Tile.shown} - Empty tile, reveals other empty or numbered tiles near it
-
-        {Tile.numbered(number)} - Displays the number of mines surrounding it.
-        This one shows that they are {number} mines around it.
-
-        {Tile.boom} - BOOM! Selecting a mine makes it explode, causing all other mines to explode 
-        and thus ending the game. Avoid mines at any costs!
-        \u200b
-        ''')
 
     @property
     def board(self):
         return self.game.board
 
-    @page('\N{INPUT SYMBOL FOR NUMBERS}')
-    def default(self):
-        """Returns you to the game"""
-        self.state = self.State.GAME
-        board = self.board
-        return (discord.Embed(colour=self.context.bot.colour, description=self._board_repr())
-               .set_author(name=f'Minesweeper - {board.width} x {board.height}')
-               .add_field(name='Player', value=self.context.author)
-               .add_field(name='Mines Found', value=f'{board.mines_marked} / {board.mine_count}')
-               .add_field(name='Flags Remaining', value=board.remaining_flags)
-               .add_field(name='\u200b', value='Stuck? Click the \N{INFORMATION SOURCE} reaction for some help.')
-               )
-
     @page('\N{INFORMATION SOURCE}')
-    def help_page(self):
-        """Shows this page"""
-        self.state = self.State.HELP
+    def default(self):
+        """How to navigate this help page (this page)"""
+        desc = 'Basically the goal is to reveal all of the board and NOT get hit with a mine!'
+        instructions = 'To navigate through this help page, click one of the reactions below'
+
+        return (discord.Embed(colour=self.colour, description=desc)
+                .set_author(name='Welcome to Minesweeper!')
+                .add_field(name=instructions, value=self.reaction_help)
+                )
+
+    @page('\N{VIDEO GAME}')
+    def controls(self):
+        """Controls for playing Minesweeper"""
         text = textwrap.dedent(f'''
         Basically the goal is to reveal all of the board and NOT get hit with a mine!
 
@@ -302,20 +274,95 @@ class MinesweeperDisplay(BaseReactionPaginator):
         (ie typing anything in this screen won't do anything.)
         \u200b
         ''')
+        return (discord.Embed(colour=self.colour, description=text)
+                .set_author(name='How to play Minesweeper')
+                .add_field(name='Reactions you can click on in the game', value=self.game._game_screen.reaction_help)
+                )
 
-        reaction_text = '\n'.join(f'{em} => {getattr(self, f).__doc__}' 
-                                  for em, f in self._reaction_map.items())
-        return (discord.Embed(colour=self.context.bot.colour, description=text)
-               .set_author(name='Welcome to Minesweeper!')
-               .add_field(name='If you select a tile, chances are you will hit one of these 3 things', value=self._possible_spaces())
-               .add_field(name='Reaction Buttons', value=reaction_text)
-               )
+    @staticmethod
+    def _possible_spaces():
+        number = random.randint(1, 9)
+        return textwrap.dedent(f'''
+        {Tile.shown} - Empty tile, reveals other empty or numbered tiles near it
+
+        {Tile.numbered(number)} - Displays the number of mines surrounding it.
+        This one shows that they are {number} mines around it.
+
+        {Tile.boom} - BOOM! Selecting a mine makes it explode, causing all other mines to explode
+        and thus ending the game. Avoid mines at any costs!
+        \u200b
+        ''')
+
+    @page('\N{COLLISION SYMBOL}')
+    def possible_spaces(self):
+        """Things you might hit when you select a tile"""
+        description = (
+            'When you select a tile, chances are you will hit one of these 3 things.\n'
+            + self._possible_spaces()
+        )
+
+        return (discord.Embed(colour=self.colour, description=description)
+                .set_author(name='Tiles')
+                )
+
+    @page('\N{BLACK SQUARE FOR STOP}')
+    async def stop(self):
+        """Closes this help page"""
+        await self.game.edit_board(self.colour, header=self.game._default_header)
+        return super().stop()
+
+
+class _MinesweeperDisplay(BaseReactionPaginator):
+    def __init__(self, game):
+        super().__init__(game.ctx)
+        self.game = game
+        self.state = None
+        self._help_future = self.context.bot.loop.create_future()
+        self._help_future.set_result(None)  # We just need an already done future.
+
+    @property
+    def board(self):
+        return self.game.board
+
+    def _board_repr(self):
+        top_row = ' '.join(REGIONAL_INDICATORS[:self.board.width])
+        # Discord strips any leading and trailing spaces.
+        # By putting a zero-width space we bypass that
+        return f'\N{BLACK LARGE SQUARE} {top_row}\n{self.board}'
+
+    def is_on_help(self):
+        return not self._help_future.done()
+
+    def default(self):
+        board = self.board
+        return (discord.Embed(colour=self.colour, description=self._board_repr())
+                .set_author(name=self.game._default_header)
+                .add_field(name='Player', value=self.context.author)
+                .add_field(name='Mines Marked', value=f'{board.mines_marked} / {board.mine_count}')
+                .add_field(name='Flags Remaining', value=board.remaining_flags)
+                .add_field(name='\u200b', value='Stuck? Click the \N{INFORMATION SOURCE} reaction for some help.')
+                )
+
+    @page('\N{INFORMATION SOURCE}')
+    async def help_page(self):
+        """Gives you a help page (the page you're currently looking at)"""
+        if self._help_future.done():
+            await self.game.edit_board(0x90A4AE, header='Currently on the help page...')
+            self._help_future = asyncio.ensure_future(_MinesweeperHelp(self.game).interact())
 
     @page('\N{BLACK SQUARE FOR STOP}')
     def stop(self):
         """Stops the game"""
         self.game.stop()
+        # In case the user has the help page open when canceling it
+        # (this shouldn't technically happen but this is here just in case.)
+        if not self._help_future.done():
+            self._help_future.cancel()
+
         return super().stop()
+
+    async def edit(self, embed):
+        await self._message.edit(embed=embed)
 
 
 class MinesweeperSession:
@@ -324,54 +371,55 @@ class MinesweeperSession:
         self.ctx = ctx
         self._interaction = None
         self._runner = None
-        self._game_screen = MinesweeperDisplay(ctx, self)
+        self._game_screen = _MinesweeperDisplay(self)
+        self._default_header = f'Minesweeper - {board.width} x {board.height}'
 
     def check_message(self, message):
-        if self._game_screen.state != MinesweeperDisplay.State.GAME:
-            return False
-
-        return (message.channel == self.ctx.channel and
-                message.author == self.ctx.author)
+        return (not self._game_screen.is_on_help()
+                and message.channel == self.ctx.channel
+                and message.author == self.ctx.author)
 
     def parse_message(self, content):
-        splitted = content.lower().split()
+        splitted = content.lower().split(None, 3)[:3]
         chars = len(splitted)
 
         if chars == 2:
             flag = FlagType.default
         elif chars == 3:
             flag = getattr(FlagType, splitted[2].lower(), FlagType.default)
-        else:
+        else:  # We need at least the x, y coordinates...
             return None
 
         try:
             x, y = map(ascii_lowercase.index, splitted[:2])
         except ValueError:
             return None
-        else: 
+        else:
             if (x, y) not in self.board:
                 return None
             return x, y, flag
 
-    async def edit_board(self, new_colour=None):
+    async def edit_board(self, new_colour=None, *, header=None):
         embed = self._game_screen.default()
+
+        header = header or self._default_header
+        embed.set_author(name=header)
+
         if new_colour is not None:
             embed.colour = new_colour
 
-            if not new_colour:
-                embed.set_author(name='Minesweeper stopped.')
-        
-        await self._game_screen.message.edit(embed=embed)
+        await self._game_screen.edit(embed=embed)
 
     async def _loop(self):
-        start = time.perf_counter() 
+        start = time.perf_counter()
         while True:
-            colour = None
+            colour = header = None
             try:
                 message = await self.ctx.bot.wait_for('message', timeout=120, check=self.check_message)
             except asyncio.TimeoutError:
                 await self.ctx.send(f'{self.ctx.author.mention} You took too long!')
-                break
+                await self.edit_board(0, header='Took too long...')
+                return None
 
             parsed = self.parse_message(message.content)
             if parsed is None:      # garbage input, ignore.
@@ -387,39 +435,47 @@ class MinesweeperSession:
                     self.board.show(x, y)
             except HitMine:
                 self.board.explode(x, y)
-                await self.edit_board(0xFFFF00)
+                await self.edit_board(0xFFFF00, header='BOOM!')
                 await asyncio.sleep(random.uniform(0.5, 1))
                 self.board.reveal_mines()
-                colour = 0xFF0000
+                colour, header = 0xFF0000, 'Game Over!'
                 raise
             except Exception as e:
                 await self.ctx.send(f'An error happened.\n```\y\n{type(e).__name__}: {e}```')
                 raise
             else:
                 if self.board.is_solved():
-                    colour = 0x00FF00
+                    colour, header = 0x00FF00, "A winner is you!"
                     self.board.reveal_mines(success=True)
                     return time.perf_counter() - start
             finally:
-                await self.edit_board(colour)
+                await self.edit_board(colour, header=header)
 
-    async def run_loop(self): 
+    async def run_loop(self):
         try:
-           return await self._loop()
+            return await self._loop()
         except asyncio.CancelledError:
-            await self.edit_board(0)
+            await self.edit_board(0, header='Minesweeper stopped.')
             raise
-        return None
 
     async def run(self):
         self._interaction = asyncio.ensure_future(self._game_screen.interact(timeout=None, delete_after=False))
         self._runner = asyncio.ensure_future(self.run_loop())
-        await self._game_screen.wait_until_ready()
+        # await self._game_screen.wait_until_ready()
         try:
             return await self._runner
         finally:
+            # For some reason having all these games hanging around causes lag.
+            # Until I properly make a delete_after on the paginator I'll have to
+            # settle with this hack.
+            async def task():
+                await asyncio.sleep(30)
+                with contextlib.suppress(discord.HTTPException):
+                    await self._game_screen._message.delete()
+
+            self.ctx.bot.loop.create_task(task())
             self._interaction.cancel()
-       
+
     def stop(self):
         for task in (self._runner, self._interaction):
             with contextlib.suppress(BaseException):
@@ -430,7 +486,7 @@ class Minesweeper:
     def __init__(self, bot):
         self.bot = bot
         self.manager_bucket = {level: SessionManager() for level in Level}
-        # self.leaderboard = Database('minesweeperlb.json')
+        # self.leaderboard = JSONFile('minesweeperlb.json')
 
     async def _do_minesweeper(self, ctx, level, board, *, record_time=True):
         manager = self.manager_bucket[level]
@@ -445,7 +501,8 @@ class Minesweeper:
             if time is None:
                 return
 
-            text = f'You beat game in {time :.2f} seconds.'
+            rounded = round(time, 2)
+            text = f'You beat game in {duration_units(rounded)}.'
             win_embed = (discord.Embed(title='A winner is you!', colour=0x00FF00, timestamp=datetime.utcnow(), description=text)
                         .set_thumbnail(url=ctx.author.avatar_url)
                         )
@@ -454,6 +511,7 @@ class Minesweeper:
 
     @commands.group(aliases=['msw'], invoke_without_command=True)
     async def minesweeper(self, ctx, level: Level=Level.beginner):
+        """Starts a game of Minesweeper"""
         board = getattr(Board, str(level).lower())()
         """Starts a game of Minesweeper."""
         await self._do_minesweeper(ctx, level, board)
@@ -474,7 +532,8 @@ class Minesweeper:
         if isinstance(cause, ValueError):
             await ctx.send(cause)
         if isinstance(cause, HitMine):
-            await ctx.send(f'You {cause}... ;-;')
+            x, y = cause.point
+            await ctx.send(f'You hit a mine on {ascii_uppercase[x]} {ascii_uppercase[y]}... ;-;')
         if isinstance(cause, asyncio.CancelledError):
             await ctx.send(f'Ok, cya later...')
 
@@ -482,7 +541,7 @@ class Minesweeper:
     async def minesweeper_stop(self, ctx, level: Level):
         """Stops a currently running minesweeper game.
 
-        Ideally, you should not have to call this, because the game already 
+        Ideally, you should not have to call this, because the game already
         has a stop button in place.
         """
         manager = self.manager_bucket[level]
@@ -492,11 +551,12 @@ class Minesweeper:
 
         session.stop()
 
-    @minesweeper.command(name='leaderboard', aliases=['lb'])
+    # XXX: Add these later when I connect the DB to this
+    # @minesweeper.command(name='leaderboard', aliases=['lb'])
     async def minesweeper_leaderboard(self, ctx, level: Level):
         pass
 
-    @minesweeper.command(name='rank')
+    # @minesweeper.command(name='rank')
     async def minesweeper_rank(self, ctx, level: Level):
         pass
 

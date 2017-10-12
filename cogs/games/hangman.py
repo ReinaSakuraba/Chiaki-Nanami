@@ -14,7 +14,8 @@ from discord.ext import commands
 from .manager import SessionManager
 
 from ..utils import errors
-from ..utils.misc import base_filename, escape_markdown, group_strings, truncate
+from ..utils.formats import escape_markdown, truncate
+from ..utils.misc import base_filename, group_strings
 from ..utils.paginator import ListPaginator
 
 
@@ -99,7 +100,7 @@ class HangmanSession:
     async def _loop(self, message):
         while True:
             guess = await self.ctx.bot.wait_for('message', check=self._check_message)
-            content = guess.content
+            content = guess.content.lower()
             content = content[len(content) > 1:]
 
             ok, result = self._verify_guess(content)
@@ -110,7 +111,7 @@ class HangmanSession:
                 self._game_screen.colour = 0xFF0000
                 self.fails += ok is not None
             if ok is not None:
-                self._guesses.append(content.lower())
+                self._guesses.append(content)
 
             self.edit_screen()
             await guess.delete()
@@ -212,7 +213,7 @@ class Hangman:
         """It's hangman..."""
         if self.manager.session_exists(ctx.channel):
              return await ctx.send("A hangman game is already running in this channel...")
-        
+
         words = await self._get_category(ctx, category)
         word = self._get_random_word(words)
         with self.manager.temp_session(ctx.channel, HangmanSession(ctx, word)) as inst:
@@ -221,7 +222,7 @@ class Hangman:
                 return
 
             game_over_message = 'You did it!' if success else 'Noooo you lost. \N{CRYING FACE}'
-            await ctx.send(f'{game_over_message} {message}') 
+            await ctx.send(f'{game_over_message} {message}')
 
     @hangman.command(name='stop')
     async def hangman_stop(self, ctx):

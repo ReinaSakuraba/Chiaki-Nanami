@@ -3,449 +3,350 @@
     "questions" : [
         {
             "question" : "Is it possible to kill an Arena Closer?",
-            "answers" : [
-                "yes"
-            ]
+            "answer" : "yes"
         },
         {
             "question" : "The **second** highest score of all time goes to Bela, who mains what tank?",
-            "answers" : [
-                "Penta-shot",
-                "Pentashot",
-                "Penta"
-            ]
+            "answer" : "Penta-shot"
         },
         {
             "question" : "Contrary to popular belief, people from MG **do not** always use what tank?",
-            "answers" : [
-                "Booster"
-            ]
+            "answer" : "Booster"
+            
         },
         {
             "question" : "Gabidou99 is also known as...?",
-            "answers" : [
-                "Shyguymask"
-            ]
+            "answer" : "Shyguymask"
+            
         },
         {
             "question" : "Gabidou99's favourite class is...?",
-            "answers" : [
-                "hybrid"
-            ]
+            "answer" : "hybrid"
+            
         },
         {
             "question" : "What name does MIkusaba give to the Destroyer?",
-            "answers" : [
-                "Junko Enoshima"
-            ]
+            "answer" : "Junko Enoshima"
+            
         },
         {
             "question" : "The grey tanks are prefixed with what word?",
-            "answers" : [
-                "Fallen"
-            ]
+            "answer" : "Fallen"
+            
         },
         {
             "question" : "Who killed lagbreaker in his 3.08m Hybrid run?",
-            "answers" : [
-                "leafybush"
-            ]
+            "answer" : "leafybush"
+            
         },
         {
             "question" : "What killed adasba in his 3.24m Overlord run?",
-            "answers" : [
-                "Alpha Pentagon"
-            ]
+            "answer" : "Alpha Pentagon"
+            
         },
         {
             "question" : "You can upgrade to Auto 5 from any basic branch, **except**...",
-            "answers" : [
-                "Sniper"
-            ]
+            "answer" : "Sniper"
+            
         },
         {
             "question" : "What was Anokuu's **former** main tank?",
-            "answers" : [
-                "Necromancer",
-                "Necro"
-            ]
+            "answer" : "Necromancer"
+            
         },
         {
             "question" : "What was Anokuu's **current** main tank?",
-            "answers" : [
-                "Factory",
-                "Master"
-            ]
+            "answer" : "Factory"
+            
         },
         {
             "question" : "What tank has the highest base body damage?",
-            "answers" : [
-                "Spike"
-            ]
+            "answer" : "Spike"
+            
         },
         {
             "question" : "What tank was merged with another?",
-            "answers" : [
-                "X hunter",
-                "X-hunter",
-                "Predator"
-            ]
+            "answer" : "X-hunter and Predator"
+            
         },
         {
             "question" : "In sandbox, what class comes **before** Arena Closer?",
-            "answers" : [
-                "Necromancer"
-            ]
+            "answer" : "Necromancer"
+            
         },
         {
             "question" : "How many sides does a Smasher have?",
-            "answers" : [
-                "6",
-                "six"
-            ]
+            "answer" : "6"
+            
         },
         {
             "question" : "How many spikes does a Spike have?",
-            "answers" : [
-                "12",
-                "twelve"
-            ]
+            "answer" : "12"
+            
         },
         {
             "question" : "How much bigger is an Annihilator's bullet to a Destroyer's?",
-            "answers" : [
-                "2",
-                "twice"
-            ]
+            "answer" : "2"
+            
         },
         {
             "question" : "Who *first* managed the WRA?",
-            "answers" : [
-                "Pyronomy"
-            ]
+            "answer" : "Pyronomy"
+            
         },
         {
             "question" : "Who is the current WRA manager?",
-            "answers" : [
-                "Taco"
-            ]
+            "answer" : "Taco"
+            
         },
         {
             "question" : "After which day's update did Diep have the longest gap before the next update?",
-            "answers" : [
-                "November 19",
-                "Nov 19"
-            ]
+            "answer" : "November 19"
+            
         },
         {
             "question" : "Which game mode was reintroduced after being earlier removed from Diep?",
-            "answers" : [
-                "Tag"
-            ]
+            "answer" : "Tag"
+            
         },
         {
             "question" : "How many levels were there in the first version of Diep?",
-            "answers" : [
-                "60"
-            ]
+            "answer" : "60"
+            
         },
         {
             "question" : "What message did the smasher have on its unusable skill upgrades when it first came out?",
-            "answers" : [
-                "Upgrade to Windows 10"
-            ]
+            "answer" : "Upgrade to Windows 10"
+            
         },
         {
             "question" : "From what two tanks can you upgrade to streamliner?",
-            "answers" : [
-                "Gunner",
-                "Hunter"
-            ]
+            "answer" : "Gunner and Hunter"         
         },
         {
             "question" : "Pressing F2 does...?",
-            "answers" : [
-                "Fullscreen"
-            ]
+            "answer" : "Fullscreen"
+            
         },
         {
             "question" : "What tank was added when tag mode came back?",
-            "answers" : [
-                "Auto Trapper"
-            ]
+            "answer" : "Auto Trapper"
+            
         },
         {
             "question" : "\"You've killed <name>\" **will not** appear if you're how many levels greater?",
-            "answers" : [
-                "20",
-                "twenty"
-            ]
+            "answer" : "20"
+            
         },
         {
             "question" : "When the Trapper branch was first released, which two tanks were unnamed?",
-            "answers" : [
-                "Gunner Trapper and Overtrapper",
-                "gunner and over",
-                "over and gunner",
-                "overtrapper and gunner trapper"
-            ]
+            "answer" : "Gunner Trapper and Overtrapper"
+            
         },
         {
             "question" : "What's the highest level you can be **now**? (hint: gamemodes)",
-            "answers" : [
-                "75"
-            ]
+            "answer" : "75"
+            
         },
         {
             "question" : "On the leaderboard, which way will the leader's tank face?",
-            "answers" : [
-                "Left"
-            ]
+            "answer" : "Left"
+            
         },
         {
             "question" : "When the overtrapper was first released, how many drones could it have at a time?",
-            "answers" : [
-                "6",
-                "six"
-            ]
+            "answer" : "6"
+            
         },
         {
             "question" : "Which two companies supply the servers for diep.io?",
-            "answers" : [
-                "Vultr and Linode",
-                "vultr linode",
-                "linode vultr",
-                "linode and vultr"
-            ]
+            "answer" : "Vultr and Linode"
         },
         {
             "question" : "Who started the RDT \"clan\"?",
-            "answers" : [
-                "Zenith"
-            ]
+            "answer" : "Zenith"
+            
         },
         {
             "question" : "Who started the SK clan?",
-            "answers" : [
-                "Anokuu"
-            ]
+            "answer" : "Anokuu"
+            
         },
         {
             "question" : "What base are the party codes? (diep.io/...)",
-            "answers" : [
-                "16",
-                "hex"
-            ]
+            "answer" : "16"
+            
         },
         {
             "question" : "How many characters are in a diep.io non-sandbox party code (excluding the #)",
-            "answers" : [
-                "20"
-            ]
+            "answer" : "20"
+            
         },
         {
             "question" : "The FFA button shares its colour with what stat?",
-            "answers" : [
-                "regen"
-            ]
+            "answer" : "regen"
+            
         },
         {
             "question" : "How many characters does the SK sun symbol take up?",
-            "answers" : [
-                "2"
-            ]
+            "answer" : "2"
+            
         },
         {
             "question" : "How many \"characters\" can your name be?",
-            "answers" : [
-                "15"
-            ]
+            "answer" : "15"
+            
         },
         {
             "question" : "In sandbox, what is the last tank (before you wrap back to Basic Tank)?",
-            "answers" : [
-                "Twin"
-            ]
+            "answer" : "Twin"
+            
         },
         {
             "question" : "Who founded the techniques \"Shooting Star\" and \"Claw\"?",
-            "answers" : [
-                "Anokuu"
-            ]
+            "answer" : "Anokuu"
+            
         },
         {
             "question" : "There are two classes that have a two class gap between it and its previous upgrade. Name those tanks.",
-            "answers" : [
-                "Smasher and Sprayer",
-                "Smasher Sprayer",
-                "Sprayer Smasher",
-                "Sprayer and Smasher"
-            ]
+            "answer" : "Smasher and Sprayer"
+            
         },
         {
             "question" : "What is the maximum \"length\" can you diep.io name be?",
-            "answers" : [
-                "15",
-                "fifteen"
-            ]
+            "answer" : "15"
+            
         },
         {
             "question" : "If you press 'K' in Sandbox, what color does your name become?",
-            "answers" : [
-                "yellow"
-            ]
+            "answer" : "yellow"
+            
         },
         {
             "question" : "What is the first tank-alias alphabetically for the ->wr command?",
-            "answers" : [
-                "adasba"
-            ]
+            "answer" : "adasba"
+            
         },
         {
             "question" : "The only asian Linode server is situated where?",
-            "answers" : [
-                "singapore"
-            ]
+            "answer" : "singapore"
+            
         },
         {
             "question" : "How many American server locations are there?",
-            "answers" : [
-                "9"
-            ]
+            "answer" : "9"
+            
         },
         {
             "question" : "Name one thing that the Auto Tank could do that the Auto 3 and 5 cannot.",
-            "answers" : [
-                "Spin manually"
-            ]
+            "answer" : "Spin manually"
+            
         },
         {
             "question" : "Does Octo Tank fire all of its cannons at the same time?",
-            "answers" : [
-                "No"
-            ]
+            "answer" : "No"
+            
         },
         {
             "question" : "Name one thing that Overlord was unable to do when it was first added.",
-            "answers" : [
-                "Repel Drones"
-            ]
+            "answer" : "Repel Drones"
+            
         },
         {
             "question" : "Besides diep.io, what game did Zeach create?",
-            "answers" : [
-                "agar.io"
-            ]
+            "answer" : "agar.io"
+            
         },
         {
             "question" : "When Maze was first released, there was a glitch that occurred with the Maze walls. What was it?",
-            "answers" : [
-                "Drones could be spawned inside of walls"
-            ]
+            "answer" : "Drones could be spawned inside of walls"
+            
         },
         {
             "question" : "Name the only tank that was achievable at lv60.",
-            "answers" : [
-                "Octo Tank"
-            ]
+            "answer" : "Octo Tank"
+            
         },
         {
             "question" : "How many drones did Overlord originally have?",
-            "answers" : [
-                "16"
-            ]
+            "answer" : "16"
+            
         },
         {
             "question" : "What tank did Landmine originally look like?",
-            "answers" : [
-                "Smasher"
-            ]
+            "answer" : "Smasher"
+            
         },
         {
             "question" : "When Necromancer was released, what did reload do for it?",
-            "answers" : [
+            "answer" : 
                 "Nothing"
-            ]
+            
         },
         {
             "question" : "What did the first version of the deathscreen say when you died?",
-            "answers" : [
-                "You died"
-            ]
+            "answer" : "You died"
+            
         },
         {
             "question" : "If you died at lv45 in original diep.io, what level would you respawn at?",
-            "answers" : [
-                "1"
-            ]
+            "answer" : "1"
+            
         },
         {
             "question" : "How were the tank upgrades arranged originally?",
-            "answers" : [
-                "Vertically"
-            ]
+            "answer" : "Vertically"
+            
         },
         {
             "question" : "In an **all-round build**, what's the maximum number of points you can put in each stat?",
-            "answers" : [
-                "4",
-                "Four"
-            ]
+            "answer" : "4"
+            
         },
         {
             "question" : "The \"dragon\" is a build that has zero bullet speed (but max bullet stats otherwise). What tank is commonly used for a dragon build?",
-            "answers" : [
-                "Fighter"
-            ]
+            "answer" : "Fighter"
+            
         },
         {
             "question" : "What colour is a contested Dominator?",
-            "answers" : [
-                "yellow"
-            ]
+            "answer" : "yellow"
+            
         },
         {
             "question" : "In sandbox, what class comes **after** Mothership?",
-            "answers" : [
-                "Manager"
-            ]
+            "answer" : "Manager"
+            
         },
         {
             "question" : "In sandbox, what class comes **after** Mothership?",
-            "answers" : [
-                "Manager"
-            ]
+            "answer" : "Manager"
+            
         },
         {
             "question" : "What tank has the most barrels?",
-            "answers" : [
-                "Spread Shot"
-            ]
+            "answer" : "Spread Shot"
+            
         },
         {
             "question" : "What score do you need to reach level 15?",
-            "answers" : [
-                "787"
-            ]
+            "answer" : "787"
+            
         },
         {
             "question" : "What score do you need to reach level 30?",
-            "answers" : [
-                "6184"
-            ]
+            "answer" : "6184"
+            
         },
         {
             "question" : "What score do you need to reach level 45?",
-            "answers" : [
-                "23536"
-            ]
+            "answer" : "23536"
+            
         },
         {
             "question" : "How many tanks were there in the very first version of Diep.io?",
-            "answers" : [
-                "3",
-                "three"
-            ]
+            "answer" : "3"
+            
         }
     ]
 }

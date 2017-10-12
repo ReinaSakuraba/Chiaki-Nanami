@@ -1,111 +1,443 @@
+import asyncio
 import discord
 import functools
 import inspect
-import operator
+import itertools
+import platform
 import random
+import textwrap
+import time
 
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from collections.abc import Sequence
 from discord.ext import commands
-from itertools import chain
-from more_itertools import always_iterable
+from more_itertools import always_iterable, sliced
 
 from cogs.utils.context_managers import temp_attr
-from cogs.utils.misc import truncate
-from cogs.utils.paginator import DelimPaginator
+from cogs.utils.misc import emoji_url
+from cogs.utils.paginator import BaseReactionPaginator, DelimPaginator, ListPaginator, page
+
+
+try:
+    import pkg_resources
+except ImportError:
+    # TODO: Get the version AND commit number without pkg_resources
+    DISCORD_PY_LIB = 'discord.py {discord.__version__}'
+else:
+    DISCORD_PY_LIB = str(pkg_resources.get_distribution('discord.py'))
+    del pkg_resources
+
 
 def _unique(iterable):
     return list(OrderedDict.fromkeys(iterable))
 
-class ChiakiFormatter(commands.HelpFormatter):
-    def get_ending_note(self):
-        return f"Type {self.clean_prefix}help command for more info on a command."
 
-    @property
-    def description(self):
-        description = (self.command.help if not self.is_cog() else inspect.getdoc(self.command)) or 'No description'
-        return description.format(prefix=self.context.prefix)
+# placeholder for later
+_default_help = """
+*{0.description}*
 
-    @property
-    def command_usage(self):
-        cmd = self.command
-        prefix = self.context.prefix
-        qualified_names = [f"{cmd.full_parent_name} {name}" for name in cmd.all_names]
-        if cmd.clean_params:
-            usage = cmd.usage
-            if isinstance(usage, Sequence):
-                return '\n'.join([f'`{prefix}{random.choice(qualified_names)} {u}`' 
-                                  for u in always_iterable(usage)])
-            # Assume it's invalid; usage must be a sequence (either a tuple, list, or str)
-            return 'No example... yet'
-        # commands that don't take any arguments don't really need an example generated manually...
-        return None
+To invite me to your server, use `->invite`, or just use this link:
+<{0.invite_url}>
 
-    def command_requirements(self):
-        command = self.command
-        chiaki_checks = [check for check in command.all_checks
-                         if getattr(check, '__chiaki_check__', False)]
+If you need help with something, or there's some weird issue with me, which will usually happen
+(since the owners don't tend to test me a lot), use this link to join the **Official** Chiaki Nanami Server:
+{0.support_invite}
 
-        # We need the unique requirements. This is in case someone accidentally
-        # decorates a subcommand with the same check as their parent.
-        # Otherwise it would duplicate.
-        return {key: ', '.join(_unique(filter(None, map(operator.attrgetter(key), chiaki_checks)))) or 'None'
-                for key in ['roles', 'perms'] }
+*Use `->modules` for all the modules with commands.
+Or `->commands "module"` for a list of commands for a particular module.*
+"""
 
-    def paginate_cog_commands(self, cog_name):
-        sorted_commands = sorted(self.context.bot.get_cog_commands(cog_name), key=str)
-        formatted_names =  (map('`{}`'.format, cmd.all_names) for cmd in sorted_commands)
-        formatted_lines = map(' | '.join, formatted_names)
-        headers = (self.description, '', '**List of commands:**')
 
-        return DelimPaginator.from_iterable(chain(headers, formatted_lines), 
-                                            prefix='', suffix='', max_size=2048)
+def _make_command_requirements(command):
+    requirements = []
+    # All commands in this cog are owner-only anyway.
+    if command.cog_name == 'Owner':
+        requirements.append('**Bot Owner only**')
 
-    async def bot_help(self):
-        bot, func = self.context.bot, self.apply_function
-        default_help = bot.default_help
-        result = default_help.format(bot, bot=bot) 
-        return func(result)
+    def make_pretty(p):
+        return p.replace('_', ' ').title().replace('Guild', 'Server')
 
-    async def cog_embed(self):
-        ctx, cog = self.context, self.command
-        cog_name = type(cog).__name__
-        paginated_commands = self.paginate_cog_commands(cog_name)
+    for check in command.checks:
+        name = getattr(check, '__qualname__', '')
 
-        embed = functools.partial(discord.Embed, colour=ctx.bot.colour)
-        embeds = [embed(description=page) for page in paginated_commands.pages]
+        if name.startswith('is_owner'):
+            # the bot owner line must come above every other line, for emphasis.
+            requirements.insert(0, '**Bot Owner only**')
+        elif name.startswith('has_permissions'):
+            permissions = inspect.getclosurevars(check).nonlocals['perms']
+            pretty_perms = [make_pretty(k) if v else f'~~{make_pretty(k)}~~'
+                            for k, v in permissions.items()]
 
-        embeds[0].title = f'{cog_name} ({ctx.prefix})'
-        embeds[-1].set_footer(text=self.get_ending_note())
-        return embeds
+            perm_names = ', '.join(pretty_perms)
+            requirements.append(f'{perm_names} permission{"s" * (len(pretty_perms) != 1)}')
+        print(requirements)
 
-    async def command_embed(self):
-        command, ctx, func = self.command, self.context, self.apply_function
+        return '\n'.join(requirements)
+
+
+def _has_subcommands(command):
+    return isinstance(command, commands.GroupMixin)
+
+
+class HelpCommandPage(BaseReactionPaginator):
+    def __init__(self, ctx, command, func=None):
+        super().__init__(ctx)
+        self.command = command
+        self.func = func
+        self._toggle = True
+        self._on_subcommand_page = False
+        self._reaction_map = self._reaction_map if _has_subcommands(command) else self._normal_reaction_map
+
+    @page('\N{INFORMATION SOURCE}')
+    def default(self):
+        if self._on_subcommand_page:
+            self._on_subcommand_page = toggle = False
+        else:
+            self._toggle = toggle = not self._toggle
+
+        meth = self._example if toggle else self._command_info
+        return meth()
+
+    @page('\N{DOWNWARDS BLACK ARROW}')
+    def subcommands(self):
+        assert isinstance(self.command, commands.GroupMixin), "command has no subcommands"
+        self._on_subcommand_page = True
+        subs = sorted(map(str, set(self.command.walk_commands())))
+
+        note = (
+            'Type `{ctx.clean_prefix}{ctx.invoked_with} command` for more info on a command.\n'
+            f'(e.g. type `{{ctx.clean_prefix}}{{ctx.clean_prefix}} {random.choice(subs)}`)'
+        ).format(ctx=self.context)
+
+        return (discord.Embed(colour=self.colour, description='\n'.join(map('`{}`'.format, subs)))
+                .set_author(name=f'Child Commands for {self.command}')
+                .add_field(name='\u200b', value=note, inline=False)
+                )
+
+    def _command_info(self):
+        command, ctx, func = self.command, self.context, self.func
         bot = ctx.bot
-        usages = self.command_usage
+        clean_prefix = ctx.clean_prefix
+        # usages = self.command_usage
 
         # if usage is truthy, it will immediately return with that usage. We don't want that.
         with temp_attr(command, 'usage', None):
             signature = command.signature
 
-        requirements = self.command_requirements()
-        cmd_name = f"`{ctx.prefix}{command.full_parent_name} {' / '.join(command.all_names)}`"
-        footer = '"{0}" is in the module *{0.cog_name}*'.format(command)
+        requirements = _make_command_requirements(command) or 'None'
+        cmd_name = f"`{clean_prefix}{command.full_parent_name} {' / '.join(command.all_names)}`"
 
-        cmd_embed = discord.Embed(title=func(cmd_name), description=func(self.description), colour=bot.colour)
+        description = command.help.format(prefix=clean_prefix)
 
-        if self.has_subcommands():
-            command_names = sorted(cmd.name for cmd in command.commands)
-            children = ', '.join(command_names) or "No commands... yet."
-            cmd_embed.add_field(name=func("Child Commands"), value=func(children), inline=False)
+        cmd_embed = (discord.Embed(title=func(cmd_name), description=func(description), colour=self.colour)
+                     .add_field(name=func("Requirements"), value=func(requirements))
+                     .add_field(name=func("Signature"), value=f'`{func(signature)}`', inline=False)
+                     )
 
-        cmd_embed.add_field(name=func("Required Roles"), value=func(requirements['roles']))
-        cmd_embed.add_field(name=func("Required Permissions"), value=func(requirements['perms']))
-        cmd_embed.add_field(name=func("Structure"), value=f'`{func(signature)}`', inline=False)
+        if _has_subcommands(command):
+            prompt = func('Click \N{DOWNWARDS BLACK ARROW} to see all the subcommands!')
+            cmd_embed.add_field(name=func('Subcommands'), value=prompt, inline=False)
 
-        if usages is not None:
-            cmd_embed.add_field(name=func("Usage"), value=func(usages), inline=False)
+        # if usages is not None:
+        #    cmd_embed.add_field(name=func("Usage"), value=func(usages), inline=False)
+        footer = f'Module: {command.cog_name} | Click the info button below to see an example.'
         return cmd_embed.set_footer(text=func(footer))
+
+    def _example(self):
+        command, bot = self.command, self.context.bot
+
+        embed = discord.Embed(colour=self.colour).set_author(name=f'Example for {command}')
+
+        try:
+            image_url = bot.command_image_urls[self.command.qualified_name]
+        except (KeyError, AttributeError):
+            embed.description = f"`{self.command}` doesn't have an image.\nContact MIkusaba#4553 to fix that!"
+        else:
+            embed.set_image(url=image_url)
+
+        return embed.set_footer(text='Click the info button to go back.')
+
+
+HelpCommandPage._normal_reaction_map = HelpCommandPage._reaction_map.copy()
+del HelpCommandPage._normal_reaction_map['\N{DOWNWARDS BLACK ARROW}']
+
+
+async def _can_run(command, ctx):
+    try:
+        return await command.can_run(ctx)
+    except commands.CommandError:
+        return False
+
+
+async def _command_formatters(commands, ctx):
+    for command in commands:
+        fmt = '`{}`' if await _can_run(command, ctx) else '~~`{}`~~'
+        yield map(fmt.format, command.all_names)
+
+
+_note = (
+    "You can't commands that have\n"
+    "been crossed out (~~`like this`~~)"
+)
+
+
+class CogPages(ListPaginator):
+    numbered = None
+
+    # Don't feel like doing an async def __init__ and hacking through that.
+    # We have to make this async because we need to make the entries in one go.
+    # As we have to check if the commands can be run, which entails querying the
+    # DB too.
+    @classmethod
+    async def create(cls, ctx, cog):
+        cog_name = cog.__class__.__name__
+        entries = (c for c in ctx.bot.get_cog_commands(cog_name)
+                   if not (c.hidden or ctx.bot.formatter.show_hidden))
+
+        formats = _command_formatters(sorted(entries, key=str), ctx)
+        lines = [' | '.join(line) async for line in formats]
+
+        self = cls(ctx, lines)
+        self._cog_doc = inspect.getdoc(cog) or 'No description... yet.'
+        self._cog_name = cog_name
+
+        return self
+
+    def _create_embed(self, idx, entries):
+        return (discord.Embed(colour=self.colour, description=self._cog_doc)
+                .set_author(name=self._cog_name)
+                .add_field(name='Commands', value='\n'.join(entries))
+                .add_field(name='Note', value=_note, inline=False)
+                .set_footer(text=f'Currently on page {idx + 1}')
+                )
+
+
+# TODO: Save these images in the event of a deletion
+CHIAKI_INTRO_URL = 'https://66.media.tumblr.com/feb7b9be75025afadd5d03fe7ad63aba/tumblr_oapg2wRooV1vn8rbao10_r2_500.gif'
+CHIAKI_MOTIVATION_URL = 'http://pa1.narvii.com/6186/3d315c4d1d8f249a392fd7740c7004f28035aca9_hq.gif'
+
+
+class GeneralHelpPaginator(ListPaginator):
+    help_page = None
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._start_time = None
+
+    @classmethod
+    async def create(cls, ctx):
+        def key(c):
+            return c.cog_name or '\u200bMisc'
+
+        entries = (cmd for cmd in sorted(ctx.bot.commands, key=key) if not cmd.hidden)
+        nested_pages = []
+        per_page = 10
+
+        # (cog, description, first 10 commands)
+        # (cog, description, next 10 commands)
+        # ...
+        get_cog = ctx.bot.get_cog
+        for cog, cmds in itertools.groupby(entries, key=key):
+            cog = get_cog(cog)
+            if getattr(cog, '__hidden__', False):
+                continue
+
+            if cog is None:
+                description = 'This is all the misc commands!'
+            else:
+                description = inspect.getdoc(cog) or 'No description... yet.'
+
+            lines = [' | '.join(line) async for line in _command_formatters(cmds, ctx)]
+            nested_pages.extend((cog, description, page) for page in sliced(lines, per_page))
+
+        self = cls(ctx, nested_pages, lines_per_page=1)  # needed to break the slicing in __getitem__
+        return self
+
+    def __len__(self):
+        return self._num_extra_pages + super().__len__() + 1
+
+    def __getitem__(self, idx):
+        if 0 <= idx < self._num_extra_pages:
+            self._index = idx
+            return self._page_footer_embed(self._extra_pages[idx](self))
+        elif idx in {-1, len(self) - 1}:
+            if idx < 0:
+                # normalize the index because -1 isn't technically allowed
+                idx += len(self)
+
+            self._index = idx
+            return self.ending()
+
+        result = super().__getitem__(idx - self._num_extra_pages)
+        self._index = idx  # properly set the index
+        return result
+
+    def _page_footer_embed(self, embed, *, offset=0):
+        return embed.set_footer(text=f'Currently on page {self._index + offset + 1}/{len(self)}')
+
+    def _create_embed(self, idx, page):
+        cog, description, lines = page[0]
+        note = f'Type `{self.context.clean_prefix}help command`\nfor more info on a command.'
+        commands = '\n'.join(lines) + f'\n\n{note}'
+
+        return self._page_footer_embed(
+            discord.Embed(colour=self.colour, description=description)
+            .set_author(name=cog.__class__.__name__)
+            .add_field(name='Commands', value=commands)
+            .add_field(name='Note', value=_note, inline=False),
+            offset=self._num_extra_pages
+        )
+
+    @page('\N{NOTEBOOK WITH DECORATIVE COVER}')
+    def jump_to_commands(self):
+        """Jump to the table of contents"""
+        return self[1]
+
+    def intro(self):
+        """The intro, ie the thing you just saw."""
+        instructions = (
+            'This is the help page for me!\n'
+            'Press \N{BLACK RIGHT-POINTING TRIANGLE} to see what this help has in store!'
+        )
+
+        return (discord.Embed(colour=self.colour, description=self.context.bot.description)
+                .set_author(name=f"Hi, {self.context.author}. I'm {self.context.bot.user}!")
+                .add_field(name="\u200b", value=instructions, inline=False)
+                .set_image(url=CHIAKI_INTRO_URL)
+                )
+
+    def instructions(self):
+        """How to navigate through this help page"""
+        description = (
+            'This is a paginator run on reactions. To navigate\n'
+            'through this help page, you must click on any of\n'
+            'the reactions below.\n'
+        )
+
+        return (discord.Embed(colour=self.colour, description=description)
+                .set_author(name='How to use the help page')
+                .add_field(name='Here are all of the reactions', value=self.reaction_help, inline=False)
+                )
+
+    def table_of_contents(self):
+        """Table of contents (this page)"""
+        extra_docs = enumerate(map(inspect.getdoc, self._extra_pages), start=1)
+        extra_lines = itertools.starmap('`{0}` - {1}'.format, extra_docs)
+
+        def cog_pages(start):
+            name_counter = Counter(e[0].__class__.__name__ for e in self.entries)
+            for name, count in name_counter.items():
+                if count == 1:
+                    yield str(start), name
+                else:
+                    yield f'{start}-{start + count - 1}', name
+                start += count
+
+        pairs = list(cog_pages(self._num_extra_pages + 1))
+        padding = max(len(p[0]) for p in pairs)
+
+        cog_lines = (f'`\u200b{numbers:<{padding}}\u200b` - {name}' for numbers, name in pairs)
+
+        return (discord.Embed(colour=self.colour, description='\n'.join(extra_lines))
+                .add_field(name='Cogs', value='\n'.join(cog_lines), inline=False)
+                .add_field(name='Other', value=f'`{len(self)}` - Some useful links.', inline=False)
+                .set_author(name='Table of Contents')
+                )
+
+    def how_to_use(self):
+        """How to use the bot"""
+        description = (
+            'The signature is actually pretty simple!\n'
+            "It's always there in the \"Signature\" field when\n"
+            f'you do `{self.context.clean_prefix} help command`.'
+        )
+
+        note = textwrap.dedent('''
+            **Do not type in the brackets!**
+            --------------------------------
+            This means you must type the commands like this:
+            YES: `->inrole My Role`
+            NO: `->inrole <My Role>` 
+            (unless your role is actually named "<My Role>"...)
+        ''')
+
+        return (discord.Embed(colour=self.colour, description=description)
+                .set_author(name='So... how do I use this bot?')
+                .add_field(name='<argument>', value='The argument is **required**. \nYou must specify this.', inline=False)
+                .add_field(name='[argument]', value="The argument is **optional**. \nYou don't have to specify this..", inline=False)
+                .add_field(name='[A|B]', value='You can type either **A** or **B**.', inline=False)
+                .add_field(name='[arguments...]', value='You can have multiple arguments.', inline=False)
+                .add_field(name='Note', value=note, inline=False)
+                )
+
+    def ending(self):
+        """End of the help page, and info about the bot."""
+        bot = self.context.bot
+        support = f'Go to the support server here!\n{bot.support_invite}'
+        useful_links = (
+            f'[Click me to invite me to your server!]({bot.invite_url})\n'
+            "[Check the code out here (it's fire!)](https://github.com/Ikusaba-san/Chiaki-Nanami)\n"
+        )
+
+        return (discord.Embed(colour=self.colour)
+                .set_thumbnail(url=bot.user.avatar_url)
+                .set_author(name="You've reached the end of the help page!")
+                .add_field(name='For more help', value=support, inline=False)
+                .add_field(name='And for some other useful links...', value=useful_links, inline=False)
+                )
+
+    @page('\N{BLACK SQUARE FOR STOP}')
+    async def stop(self):
+        """Exit the help page"""
+        super().stop()
+
+        # Only do it for a minute, so if someone does a quick stop,
+        # we'll grant them their wish of stopping early.
+        end = time.monotonic()
+        if end - self._start_time < 60:
+            return
+
+        final_embed = (discord.Embed(colour=self.colour, description='*Just remember...* \N{HEAVY BLACK HEART}')
+                       .set_author(name='Thank you for looking at the help page!')
+                       .set_image(url=CHIAKI_MOTIVATION_URL)
+                       )
+
+        # haaaaaaaaaaaack
+        await self._message.edit(embed=final_embed)
+        return await asyncio.sleep(10)
+
+    _extra_pages = [
+        intro,
+        table_of_contents,
+        instructions,
+        # how_to_use,
+    ]
+    _num_extra_pages = len(_extra_pages)
+
+    @page('\N{WHITE QUESTION MARK ORNAMENT}')
+    def signature(self):
+        """Shows how to use the bot."""
+        return self.how_to_use()
+
+    async def interact(self, **kwargs):
+        self._start_time = time.monotonic()
+        await super().interact(**kwargs)
+
+
+rmap = GeneralHelpPaginator._reaction_map
+# signature is currently at the beginning so we need to move it to the end
+rmap.move_to_end('\N{WHITE QUESTION MARK ORNAMENT}')
+del rmap
+
+
+class ChiakiFormatter(commands.HelpFormatter):
+    def get_ending_note(self):
+        return f"Type {self.clean_prefix}help command for more info on a command."
+
+    async def bot_help(self):
+        bot, func = self.context.bot, self.apply_function
+        result = _default_help.format(bot, bot=bot)
+        return func(result)
 
     async def format_help_for(self, ctx, command, func=lambda s: s):
         self.apply_function = func
@@ -113,7 +445,7 @@ class ChiakiFormatter(commands.HelpFormatter):
 
     async def format(self):
         if self.is_bot():
-            return await self.bot_help()
+            return await GeneralHelpPaginator.create(self.context)
         elif self.is_cog():
-            return await self.cog_embed()
-        return await self.command_embed()
+            return await CogPages.create(self.context, self.command)
+        return HelpCommandPage(self.context, self.command, self.apply_function)

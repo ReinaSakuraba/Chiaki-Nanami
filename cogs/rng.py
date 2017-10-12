@@ -1,7 +1,9 @@
 import asyncio
+import collections
 import colorsys
 import contextlib
 import discord
+import functools
 import random
 import secrets
 import string
@@ -9,7 +11,7 @@ import uuid
 
 from discord.ext import commands
 
-from .utils.converter import attr_converter, number
+from .utils.converter import number
 from .utils.errors import InvalidUserArgument, private_message_only
 from .utils.misc import str_join
 
@@ -32,16 +34,81 @@ else:
         except ValueError:
             return closest_colour(requested_colour)
 
-with contextlib.suppress(FileNotFoundError):
-    with open(r'data\tanks.txt') as f:
-        _back_up_tanks = f.read().splitlines()
+
+_diepio_tanks = [
+    'Annihilator',
+    'Assassin',
+    'Auto 3',
+    'Auto 5',
+    'Auto Gunner',
+    'Auto Smasher',
+    'Auto Trapper',
+    'Basic Tank',
+    'Battleship',
+    'Booster',
+    'Destroyer',
+    'Factory',
+    'Fighter',
+    'Flank Guard',
+    'Gunner',
+    'Gunner Trapper',
+    'Hunter',
+    'Hybrid',
+    'Landmine',
+    'Machine Gun',
+    'Manager',
+    'Mega Trapper',
+    'Necromancer',
+    'Octo Tank',
+    'Overlord',
+    'Overseer',
+    'Overtrapper',
+    'Pentashot',
+    'Predator',
+    'Quad Tank',
+    'Ranger',
+    'Skimmer',
+    'Smasher',
+    'Sniper',
+    'Spike',
+    'Sprayer',
+    'Spreadshot',
+    'Stalker',
+    'Streamliner',
+    'Trapper',
+    'Tri-angle',
+    'Tri-Trapper',
+    'Triple Shot',
+    'Triple Twin',
+    'Triplet',
+    'Twin',
+    'Twin Flank',
+]
 
 SMASHERS = ("Auto Smasher", "Landmine", "Smasher", "Spike",)
-BALL_ANSWERS = (
-    "Yes", "No", "Maybe so", "Definitely", "I think so",
-    "Probably", "I don't think so", "Probably not",
-    "I don't know", "I have no idea",
-    )
+
+# 8-Ball
+_8BallAnswer = collections.namedtuple('_8BallAnswer', 'answer colour')
+_no = functools.partial(_8BallAnswer, colour=0xf44336)
+_yes = functools.partial(_8BallAnswer, colour=0x8BC34A)
+_maybe = functools.partial(_8BallAnswer, colour=0xFFEB3B)
+_idk = functools.partial(_8BallAnswer, colour=0)
+
+BALL_ANSWERS = [
+    _yes("Yes"),
+    _no("No"),
+    _maybe("Maybe so"),
+    _yes("Definitely"),
+    _yes("I think so"),
+    _maybe("Probably"),
+    _no("I don't think so"),
+    _8BallAnswer("Probably not", colour=0xFF9800),
+    _idk("I don't know"),
+    _idk("I have no idea"),
+]
+
+_8default = _8BallAnswer('...\N{THINKING FACE}', 0x009688)
+
 
 _default_letters = string.ascii_letters + string.digits
 def _password(length, alphabet=_default_letters):
@@ -86,28 +153,32 @@ class RNG:
         if not question.endswith('?'):
             return await ctx.send(f"{ctx.author.mention}, that's not a question, I think.")
 
-        eight_ball_field_name = '\N{BILLIARDS} 8-ball'
-        eight_ball_embed = (discord.Embed(colour=random.randint(0, 0xFFFFFF))
-                           .add_field(name='\N{BLACK QUESTION MARK ORNAMENT} Question', value=question)
-                           .add_field(name=eight_ball_field_name, value='\u200b', inline=False)
-                           )
-        msg = await ctx.send(content=ctx.author.mention, embed=eight_ball_embed)
-        async with ctx.typing():
-            for answer in ('...\N{THINKING FACE}', random.choice(BALL_ANSWERS)):
-                await asyncio.sleep(random.uniform(0.75, 1.25) * 2)
-                await msg.edit(embed=eight_ball_embed.set_field_at(-1, name=eight_ball_field_name, value=answer, inline=False))
+        colour = discord.Colour(random.randint(0, 0xFFFFFF))
 
-        # TODO: Embeds
-        # question_fmt = f"{ctx.author.mention}\n\N{BLACK QUESTION MARK ORNAMENT}: **{question}**"
-        # msg = await ctx.send(question_fmt)
-        # async with ctx.typing():
-        #     for answer in ('...\N{THINKING FACE}', random.choice(BALL_ANSWERS)):
-        #         await asyncio.sleep(random.uniform(0.75, 1.25) * 2)
-        #         await msg.edit(content=f"{question_fmt}\n\N{BILLIARDS}: {answer}")
+        eight_ball_field_name = '\N{BILLIARDS} 8-ball'
+        embed = (discord.Embed(colour=colour)
+                 .add_field(name='\N{BLACK QUESTION MARK ORNAMENT} Question', value=question)
+                 .add_field(name=eight_ball_field_name, value='\u200b', inline=False)
+                 )
+
+        msg = await ctx.send(content=ctx.author.mention, embed=embed)
+
+        new_colour = discord.Colour.from_rgb(*(round(c * 0.7) for c in colour.to_rgb()))
+        default = _8default._replace(colour=new_colour)
+
+        async with ctx.typing():
+            for answer in (default, random.choice(BALL_ANSWERS)):
+                await asyncio.sleep(random.uniform(0.75, 1.25) * 2)
+                embed.colour = answer.colour
+                embed.set_field_at(-1, name=eight_ball_field_name, value=answer.answer, inline=False)
+                await msg.edit(embed=embed)
 
     @commands.command(usage='Nadeko Salt PvPCraft mee6 "Chiaki Nanami"')
     async def choose(self, ctx, *choices: commands.clean_content):
-        """Chooses between a list of choices separated by semicolons"""
+        """Chooses between a list of choices.
+
+        If one of your choices requires a space, it must be wrapped in quotes.
+        """
         if len(set(choices)) < 2:
             return await ctx.send('I need more choices than that...')
 
@@ -175,7 +246,7 @@ class RNG:
         await ctx.send(self._build_str(points, smasher=True))
 
     def _class(self):
-        return random.choice(self.bot.get_cog("WRA").all_tanks() or _back_up_tanks)
+        return random.choice(_diepio_tanks)
 
     @random.command(name="class")
     async def class_(self, ctx):
@@ -195,14 +266,16 @@ class RNG:
     async def colour(self, ctx):
         """Generates a random colo(u)r."""
         colour = discord.Colour(random.randint(0, 0xFFFFFF))
+        as_str = str(colour)
         rgb = colour.to_rgb()
         h, s, v = colorsys.rgb_to_hsv(*(v / 255 for v in rgb))
         hsv = h * 360, s * 100, v * 100
 
-        colour_embed = (discord.Embed(title=str(colour), colour=colour)
+
+        colour_embed = (discord.Embed(title=as_str, colour=colour)
+                       .set_thumbnail(url=f'http://colorhexa.com/{as_str[1:]}.png')
                        .add_field(name="RGB", value='%d, %d, %d' % rgb)
-                       .add_field(name="HSV", value='%.03f, %.03f, %.03f' % hsv)
-                       )
+                       .add_field(name="HSV", value='%.03f, %.03f, %.03f' % hsv))
         if webcolors:
             colour_embed.description = get_colour_name(rgb)
         await ctx.send(embed=colour_embed)

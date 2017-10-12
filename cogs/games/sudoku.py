@@ -13,7 +13,7 @@ from .manager import SessionManager
 
 from ..utils.paginator import BaseReactionPaginator, page
 
-    
+
 # Sudoku board generator by Gareth Rees
 # This works best when m = 3.
 # For some reason it goes significantly slower when m >= 4
@@ -33,7 +33,7 @@ def _make_board(m=3):
             if (x not in board[i]                     # row
                 and all(row[j] != x for row in board) # column
                 and all(x not in row[j0:j0+m]         # block
-                        for row in board[i0:i])): 
+                        for row in board[i0:i])):
                 board[i][j] = x
                 if c + 1 >= nn or search(c + 1):
                     return board
@@ -181,7 +181,7 @@ class SudokuSession(BaseReactionPaginator):
     def __init__(self, ctx, board, level):
         self.context = ctx
         self.board = board
-        self.message = None
+        self._message = None
         self._header = f'Sudoku - {level}'
         self._state = State.default
         self._completed = False
@@ -193,8 +193,8 @@ class SudokuSession(BaseReactionPaginator):
                        )
 
     def check_message(self, message):
-        return (self._state == State.default 
-                and message.channel == self.ctx.channel 
+        return (self._state == State.default
+                and message.channel == self.ctx.channel
                 and message.author == self.ctx.author)
 
     @staticmethod
@@ -215,7 +215,7 @@ class SudokuSession(BaseReactionPaginator):
 
     async def _loop(self):
         self.edit_screen()
-        self.message = await self.ctx.send(embed=self._screen)
+        self._message = await self.ctx.send(embed=self._screen)
         await self.add_buttons()
 
         while True:
@@ -230,7 +230,7 @@ class SudokuSession(BaseReactionPaginator):
                 x, y, number = self.parse_message(message.content)
             except ValueError:
                 continue
-            
+
             try:
                 self.board[x, y] = number
             except (IndexError, ValueError):
@@ -240,7 +240,7 @@ class SudokuSession(BaseReactionPaginator):
                 await message.delete()
 
             self.edit_screen()
-            await self.message.edit(embed=self._screen)
+            await self._message.edit(embed=self._screen)
 
     async def run(self):
         try:
@@ -249,15 +249,15 @@ class SudokuSession(BaseReactionPaginator):
                 await self._runner
         finally:
             if not self._completed:
-                self._screen = self.message.embeds[0]
+                self._screen = self._message.embeds[0]
                 self._screen.colour = 0
 
-            await self.message.edit(embed=self._screen)
-            await self.message.clear_reactions()
+            await self._message.edit(embed=self._screen)
+            await self._message.clear_reactions()
 
     @page('\N{WHITE HEAVY CHECK MARK}')
     async def check(self):
-        """Checks to see if your answer is correct."""
+        """Check to see if your the board you have is correct."""
         if not self.board.is_full():
             self._screen.set_author(name="This board isn't even remotely done!")
             self._screen.colour = 0xFF0000
@@ -269,36 +269,36 @@ class SudokuSession(BaseReactionPaginator):
             self._screen.set_author(name="Sorry, it's not correct :(")
             self._screen.colour = 0xFF0000
 
-        await self.message.edit(embed=self._screen)
+        await self._message.edit(embed=self._screen)
         await asyncio.sleep(10)
         self._screen.set_author(name=self._header)
         self._screen.colour = self.ctx.bot.colour
-        await self.message.edit(embed=self._screen)
+        await self._message.edit(embed=self._screen)
 
     @page('\N{INPUT SYMBOL FOR NUMBERS}')
     async def default(self):
-        """Goes back to the game"""
+        """Go back to the game"""
         self._state = State.default
-        await self.message.edit(embed=self._screen)
+        await self._message.edit(embed=self._screen)
 
     @page('\N{ANTICLOCKWISE DOWNWARDS AND UPWARDS OPEN CIRCLE ARROWS}')
     async def reset(self):
-        """Resets the board. In case you badly mess up or something"""
+        """Reset the board. In case you badly mess up or something."""
         self.board.clear()
         self.edit_screen()
-        await self.message.edit(embed=self._screen)
+        await self._message.edit(embed=self._screen)
 
     @page('\N{INFORMATION SOURCE}')
     async def help_page(self):
-        """Shows this page (you knew that already)"""
+        """Show this page (you knew that already)"""
         self._state = State.on_help
         help_text = textwrap.dedent('''
-        The objective is to fill a 9×9 grid with digits so that each column, 
-        each row, and each of the nine 3×3 subgrids that compose the grid 
-        (also called "boxes", "blocks", or "regions") contains all of the 
-        digits from 1 to 9. 
+        The objective is to fill a 9×9 grid with digits so that each column,
+        each row, and each of the nine 3×3 subgrids that compose the grid
+        (also called "boxes", "blocks", or "regions") contains all of the
+        digits from 1 to 9.
 
-        This basically means no row, column, or block should have more than 
+        This basically means no row, column, or block should have more than
         one of the same number.
         \u200b
         ''')
@@ -321,11 +321,11 @@ class SudokuSession(BaseReactionPaginator):
                  .add_field(name='Reaction Button Reference', value=self.reaction_help)
                  )
 
-        await self.message.edit(embed=embed)
+        await self._message.edit(embed=embed)
 
     @page('\N{BLACK SQUARE FOR STOP}')
     async def stop(self):
-        """Stops the game"""
+        """Stop the game"""
         self._runner.cancel()
 
     @property
@@ -347,6 +347,7 @@ class Sudoku:
 
     @commands.command()
     async def sudoku(self, ctx, difficulty: Level = Level.beginner):
+        """Starts game of Sudoku"""
         if self.manager.session_exists(ctx.author):
             return await ctx.send('no')
 

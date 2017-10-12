@@ -1,11 +1,11 @@
+import asyncio
 import discord
-import json
-import operator
 import functools
+import io
 import itertools
 import os
 import random
-import sys
+import secrets
 import time
 
 from collections import namedtuple
@@ -13,26 +13,44 @@ from contextlib import suppress
 from datetime import datetime
 from discord.ext import commands
 from more_itertools import always_iterable
+from PIL import Image
 
-from .utils import errors
-from .utils.compat import user_colour
 from .utils.misc import emoji_url, load_async
 
 
 # ---------------- Ship-related utilities -------------------
 
 def _lerp_color(c1, c2, interp):
-    return tuple(round((v2 - v1) * interp + v1) for v1, v2 in zip(c1, c2))
+    colors = (round((v2 - v1) * interp + v1) for v1, v2 in zip(c1, c2))
+    return tuple((min(max(c, 0), 255) for c in colors))
 
-_lerp_red = functools.partial(_lerp_color, (0, 0, 0), (255, 0, 0))
 
-class UserInfo(namedtuple('UserInfo', 'name id avatar')):
-    __slots__ = ()
+_lerp_pink = functools.partial(_lerp_color, (0, 0, 0), (255, 105, 180))
 
-    @classmethod
-    def from_user(cls, user):
-        avatar = user.avatar or user.default_avatar.value
-        return cls(str(user), user.id, avatar)
+# Some large-ish Merseene prime cuz... idk.
+_OFFSET = 2 ** 3217 - 1
+
+# This seed is used to change the result of ->ship without having to do a
+# complicated cache
+_seed = 0
+
+
+async def _change_ship_seed():
+    global _seed
+    while True:
+        _seed = secrets.randbits(256)
+        next_delay = random.uniform(10, 60) * 60
+        await asyncio.sleep(next_delay)
+
+
+def _user_score(user):
+    return (user.id
+            + int(user.avatar or str(user.default_avatar.value), 16)
+            # 0x10FFFF is the highest Unicode can go.
+            + sum(ord(c) * 0x10FFFF * i for i, c in enumerate(user.name))
+            + int(user.discriminator)
+            )
+
 
 _default_rating_comments = (
     'There is no chance for this to happen.',
@@ -52,17 +70,19 @@ def _scale(old_min, old_max, new_min, new_max, number):
 
 _value_to_index = functools.partial(_scale, 0, 100, 0, len(_default_rating_comments) - 1)
 
-class ShipRating(namedtuple('ShipRating', 'value comment')):
+
+class _ShipRating(namedtuple('ShipRating', 'value comment')):
     __slots__ = ()
 
     def __new__(cls, value, comment=None):
         if comment is None:
             index = round(_value_to_index(value))
             comment = _default_rating_comments[index]
-        return super().__new__(cls, value, comment) 
+        return super().__new__(cls, value, comment)
 
-_special_pairs = {
-}
+
+_special_pairs = {}
+
 
 def _get_special_pairing(user1, user2):
     keys = f'{user1.id}/{user2.id}', f'{user2.id}/{user1.id}'
@@ -79,23 +99,36 @@ def _get_special_pairing(user1, user2):
     except IndexError:      # most likely no comment field was specified
         comment = None
 
-    return ShipRating(value=value, comment=comment)
+    return _ShipRating(value=value, comment=comment)
 
 
-@functools.lru_cache(maxsize=2 ** 20)
-def _calculate_compatibilty(pair):
-    # This has to be stored as a frozenset pair to make sure that
-    # switching the two users doesn't affect the result
-    if len(pair) == 1:
-        info1, = pair
-        return ShipRating(0, f"RIP {info1.name}. They're forever alone.")
+# List of possible ratings when someone attempts to ship themself
+_self_ratings = [
+    "Rip {user}, they're forever alone...",
+    "Selfcest is bestest.",
+]
 
-    info1, info2 = pair
 
-    special = _get_special_pairing(info1, info2)
-    return special or ShipRating(random.randrange(101))
+def _calculate_rating(user1, user2):
+    if user1 == user2:
+        index = _seed % 2
+        return _ShipRating(index * 100, _self_ratings[index].format(user=user1))
+
+    special = _get_special_pairing(user1, user2)
+    if special:
+        return special
+
+    score = ((_user_score(user1) + _user_score(user2)) * _OFFSET + _seed) % 100
+    return _ShipRating(score)
 
 #--------------- End ship stuffs ---------------------
+
+PRE_PING_REMARKS = [
+    # 'Pinging b1nzy',
+    'hacking the mainframe...',
+    'We are being rate-limited.',
+    'Pong?',
+]
 
 TEN_SEC_REACTION = '\N{BLACK SQUARE FOR STOP}'
 
@@ -103,21 +136,22 @@ TEN_SEC_REACTION = '\N{BLACK SQUARE FOR STOP}'
 class OtherStuffs:
     def __init__(self, bot):
         self.bot = bot
-        self.last_messages = {}
         self.default_time = datetime.utcnow()
         self.bot.loop.create_task(self._load())
 
+        self._mask = open('data/images/heart.png', 'rb')
+        self._future = asyncio.ensure_future(_change_ship_seed())
+
     def __unload(self):
-        # unload the cache if necessary...
-        _calculate_compatibilty.cache_clear()
-        pass
+        self._mask.close()
+        self._future.cancel()
 
     async def _load(self):
         global _special_pairs
         self.copypastas = await load_async(os.path.join('data', 'copypastas.json'))
 
         with suppress(FileNotFoundError):
-            _special_pairs  = await load_async(os.path.join('data', 'pairings.json'))
+            _special_pairs = await load_async(os.path.join('data', 'pairings.json'))
 
     @commands.group(invoke_without_command=True, aliases=['c+v'])
     async def copypasta(self, ctx, index: int, *, name=None):
@@ -131,7 +165,6 @@ class OtherStuffs:
 
     @copypasta.command(name="groups")
     async def copypasta_groups(self, ctx):
-        padding = len(self.copypastas) // 10
         pastas = itertools.starmap('`{0}.` {1}'.format, enumerate(c['category'] for c in self.copypastas))
         embed = discord.Embed(title="All the categories (and their indices)", description='\n'.join(pastas))
         await ctx.send(embed=embed)
@@ -154,44 +187,90 @@ class OtherStuffs:
             await ctx.send(f"Category \"{self.copypastas[ctx.args[2]]['category']}\" "
                            f"doesn't have pasta called \"{ctx.kwargs['name']}\"")
 
-    @commands.command(usage=['rjt#2336 Nelyn#7808', 'Danny#0007 Jake#0001'])
-    async def ship(self, ctx, user1: discord.Member, user2: discord.Member=None):
-        """Determines if two users are compatible with one another.
+    # -------------------- SHIP -------------------
+    async def _load_user_avatar(self, user):
+        url = user.avatar_url_as(format='png', size=512)
+        async with self.bot.session.get(url) as r:
+            return await r.read()
 
-        If only one user is specified, it determines *your* compatibility with that user.
-        """
+    def _create_ship_image(self, score, avatar1, avatar2):
+        ava_im1 = Image.open(avatar1).convert('RGBA')
+        ava_im2 = Image.open(avatar2).convert('RGBA')
+
+        # Assume the two images are square
+        size = min(ava_im1.size, ava_im2.size)
+        offset = round(_scale(0, 100, size[0], 0, score))
+
+        ava_im1.thumbnail(size)
+        ava_im2.thumbnail(size)
+
+        # paste img1 on top of img2
+        newimg1 = Image.new('RGBA', size=size, color=(0, 0, 0, 0))
+        newimg1.paste(ava_im2, (-offset, 0))
+        newimg1.paste(ava_im1, (offset, 0))
+
+        # paste img2 on top of img1
+        newimg2 = Image.new('RGBA', size=size, color=(0, 0, 0, 0))
+        newimg2.paste(ava_im1, (offset, 0))
+        newimg2.paste(ava_im2, (-offset, 0))
+
+        # blend with alpha=0.5
+        im = Image.blend(newimg1, newimg2, alpha=0.6)
+
+        mask = Image.open(self._mask).convert('L')
+        mask = mask.resize(ava_im1.size, resample=Image.BILINEAR)
+        im.putalpha(mask)
+
+        f = io.BytesIO()
+        im.save(f, 'png')
+        f.seek(0)
+        return discord.File(f, filename='test.png')
+
+    async def _ship_image(self, score, user1, user2):
+        user_avatar_data1 = io.BytesIO(await self._load_user_avatar(user1))
+        user_avatar_data2 = io.BytesIO(await self._load_user_avatar(user2))
+        return await self.bot.loop.run_in_executor(None, self._create_ship_image, score,
+                                                   user_avatar_data1, user_avatar_data2)
+
+    @commands.command()
+    async def ship(self, ctx, user1: discord.Member, user2: discord.Member=None):
+        """Ships two users together, and scores accordingly."""
         if user2 is None:
             user1, user2 = ctx.author, user1
 
-        # In order to keep the modification that comes with changing avatar / name
-        # we have to use a tuple of these stats.
-        # Using the actual User object won't work if we're gonna take advantage of functools.lru_cache
-        # Because a change in avatar or username won't create a new result
-        #
-        # Also make sure ->ship user1 user2 and ->ship user2 user1 return the same result
-        pair = frozenset(map(UserInfo.from_user, (user1, user2)))
-        rating = _calculate_compatibilty(pair)
+        score, comment = _calculate_rating(user1, user2)
+        file = await self._ship_image(score, user1, user2)
+        colour = discord.Colour.from_rgb(*_lerp_pink(score / 100))
 
-        # TODO: Use pillow to make an image out of the two users' thumbnails.
-        field_name = 'I give it a...'       # In case I decide to have it choose between mulitiple field_names 
-        description =  f'{user1.mention} x {user2.mention}?'
-        colour = discord.Colour.from_rgb(*_lerp_red(rating.value / 100))
-        ship_embed = (discord.Embed(description=description, colour=colour)
-                     .set_author(name='Ship')
-                     .add_field(name=field_name, value=f'{rating.value} / 100')
-                     .set_footer(text=rating.comment)
-                     )
-
-        await ctx.send(embed=ship_embed)
+        embed = (discord.Embed(colour=colour, description=f"{user1.mention} x {user2.mention}")
+                 .set_author(name='Shipping')
+                 .add_field(name='Score', value=f'{score}/100')
+                 .add_field(name='\u200b', value=f'*{comment}*', inline=False)
+                 .set_image(url='attachment://test.png')
+                 )
+        await ctx.send(file=file, embed=embed)
 
     @commands.command()
     async def ping(self, ctx):
         """Your average ping command."""
+        # Set the embed for the pre-ping
+        clock = random.randint(0x1F550, 0x1F567)  # pick a random clock
+        embed = discord.Embed(colour=0xFFC107)
+        embed.set_author(name=random.choice(PRE_PING_REMARKS), icon_url=emoji_url(chr(clock)))
+
+        # Do the classic ping
         start = time.perf_counter()     # fuck time.monotonic()
-        message = await ctx.send('Poing...')
+        message = await ctx.send(embed=embed)
         end = time.perf_counter()       # fuck time.monotonic()
         ms = (end - start) * 1000
-        await message.edit(content=f'Poing! ({ms :.3f} ms)')
+
+        # Edit the embed to show the actual ping
+        embed.colour = 0x4CAF50
+        embed.set_author(name='Poing!', icon_url=emoji_url('\U0001f3d3'))
+        embed.add_field(name='Latency', value=f'{ctx.bot.latency * 1000 :.0f} ms')
+        embed.add_field(name='Classic', value=f'{ms :.0f} ms', inline=False)
+
+        await message.edit(embed=embed)
 
     @commands.command()
     async def slap(self, ctx, target: discord.Member=None):
@@ -216,7 +295,7 @@ class OtherStuffs:
                      "https://media.giphy.com/media/iUgoB9zOO0QkU/giphy.gif",
                      "https://media.giphy.com/media/Kp4c6lf3oR7lm/giphy.gif",
                      ]
-            msg2 =  "(Please don't do that.)"
+            msg2 = "(Please don't do that.)"
         else:
             slaps = ["https://media.giphy.com/media/jLeyZWgtwgr2U/giphy.gif",
                      "https://media.giphy.com/media/RXGNsyRb1hDJm/giphy.gif",
@@ -236,28 +315,6 @@ class OtherStuffs:
                      )
         await ctx.send(embed=slap_embed)
 
-    @commands.command(name='lastseen', enabled=False)
-    async def last_seen(self, ctx, user: discord.User):
-        """Shows the last words of a user"""
-
-        # TODO: Save these (will probably require a DB).
-        message = self.last_messages.get(user.id)
-        colour = await user_colour(user)
-        if message is None:
-            embed = (discord.Embed(colour=colour, timestamp=self.default_time)
-                    .set_author(name=f'{user} has not been alive...')
-                    .set_thumbnail(url=user.avatar_url)
-                    .set_footer(text='Last seen ')
-                    )
-        else:
-            embed = (discord.Embed(colour=colour, description=message.content, timestamp=message.created_at)
-                    .set_author(name=f"{user}'s last words...")
-                    .set_thumbnail(url=user.avatar_url)
-                    .add_field(name='\u200b', value=f'From #{message.channel} in {message.guild}')
-                    .set_footer(text='Last seen ')
-                    )
-        await ctx.send(embed=embed)
-
     @commands.command(name='10s')
     async def ten_seconds(self, ctx):
         """Starts a 10s test. How well can you judge 10 seconds?"""
@@ -271,14 +328,15 @@ class OtherStuffs:
         await message.add_reaction(TEN_SEC_REACTION)
 
         def check(reaction, user):
-            return (reaction.message.id == message.id 
+            return (reaction.message.id == message.id
                     and user.id == ctx.author.id
                     and reaction.emoji == TEN_SEC_REACTION
                    )
 
+        start = time.perf_counter()
         reaction, user = await ctx.bot.wait_for('reaction_add', check=check)
-        now = datetime.utcnow()
-        duration = (now - message.created_at).total_seconds()
+        now = time.perf_counter()
+        duration = now - start
 
         embed.colour = 0x00FF00
         embed.description = (f'When you clicked the {TEN_SEC_REACTION} button, \n'
@@ -286,9 +344,6 @@ class OtherStuffs:
         embed.set_author(name=f'Test completed', icon_url=embed.author.icon_url)
         embed.set_thumbnail(url=ctx.author.avatar_url)
         await message.edit(embed=embed)
-
-    async def on_message(self, message):
-        self.last_messages[message.author.id] = message
 
 
 def setup(bot):

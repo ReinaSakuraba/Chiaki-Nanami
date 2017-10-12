@@ -1,46 +1,73 @@
 import asyncio
+import asyncqlio
 import contextlib
+import datetime
 import discord
 import functools
+import heapq
 import itertools
-import json
-import os
 
-from collections import Counter, defaultdict, deque, namedtuple
-from datetime import datetime, timedelta
+from collections import Counter, deque, namedtuple
 from discord.ext import commands
 from operator import attrgetter, contains, itemgetter
 
-from .utils import checks, errors
-from .utils.context_managers import redirect_exception  
-from .utils.converter import duration, in_, union
-from .utils.database import Database
-from .utils.json_serializers import (
-    DatetimeEncoder, DequeEncoder, decode_datetime, decode_deque, union_decoder
-    )
-from .utils.misc import duration_units, emoji_url, ordinal, role_name
-from .utils.paginator import ListPaginator
-from .utils.timer import Scheduler, TimerEntry
+from .utils import dbtypes, errors, formats, time
+from .utils.context_managers import redirect_exception, temp_attr
+from .utils.converter import in_, union
+from .utils.jsonf import JSONFile
+from .utils.misc import emoji_url, ordinal
+from .utils.paginator import ListPaginator, EmbedFieldPages
 
 
-def _mod_file(filename): 
-    return os.path.join('mod', filename)
+_Table = asyncqlio.table_base()
 
-def _rreplace(s, old, new, count=1):
-    li = s.rsplit(old, count)  
-    return new.join(li)
+class Warn(_Table, table_name='warn_entries'):
+    id = asyncqlio.Column(asyncqlio.Serial, primary_key=True)
+
+    guild_id = asyncqlio.Column(asyncqlio.BigInt)
+    user_id = asyncqlio.Column(asyncqlio.BigInt)
+    mod_id = asyncqlio.Column(asyncqlio.BigInt)
+    reason = asyncqlio.Column(asyncqlio.String(2000))
+    warned_at = asyncqlio.Column(asyncqlio.Timestamp)
 
 
-def _make_entries(scheduler, data):
-    print(dict(data))
-    data.update(zip(data, map(TimerEntry._make, data.values())))
-    for entry in data.values():
-        scheduler.add_entry(entry)
+# XXX: Should I have the timeout and punishments as one table?
+class WarnTimeout(_Table, table_name='warn_timeouts'):
+    guild_id = asyncqlio.Column(asyncqlio.BigInt, primary_key=True)
+    timeout = asyncqlio.Column(dbtypes.Interval)
+
+class WarnPunishment(_Table, table_name='warn_punishments'):
+    guild_id = asyncqlio.Column(asyncqlio.BigInt, primary_key=True)
+    warns = asyncqlio.Column(asyncqlio.SmallInt, primary_key=True)
+    type = asyncqlio.Column(asyncqlio.String(32))
+    duration = asyncqlio.Column(asyncqlio.Integer, default=0)
+
+class MuteRole(_Table, table_name='muted_roles'):
+    guild_id = asyncqlio.Column(asyncqlio.BigInt, primary_key=True)
+    role_id = asyncqlio.Column(asyncqlio.BigInt)
+
+
+class _ConflictColumns(namedtuple('_ConflictColumns', 'columns')):
+    """Hack to support multiple columns for on_conflict"""
+    __slots__ = ()
+
+    @property
+    def quoted_name(self):
+        return ', '.join(c.quoted_name for c in self.columns)
+
+WarnPunishmentCC = _ConflictColumns((WarnPunishment.guild_id, WarnPunishment.warns))
+del _ConflictColumns
+
+
+# Dummy punishment class for default warn punishment
+_DummyPunishment = namedtuple('_DummyPunishment', 'warns type duration')
+_default_punishment = _DummyPunishment(warns=3, type='mute', duration=60 * 10)
+del _DummyPunishment
 
 
 class MemberID(union):
-    def __init__(self, user_type=discord.Member):
-        super().__init__(user_type, int)
+    def __init__(self):
+        super().__init__(discord.Member, int)
 
     async def convert(self, ctx, arg):
         member = await super().convert(ctx, arg)
@@ -51,51 +78,36 @@ class MemberID(union):
             return obj
         return member
 
+
+class BannedMember(commands.Converter):
+    async def convert(self, ctx, arg):
+        ban_list = await ctx.guild.bans()
+        try:
+            member_id = int(arg, base=10)
+        except ValueError:
+            thing = discord.utils.find(lambda e: str(e.user) == arg, ban_list)
+        else:
+            thing = discord.utils.find(lambda e: e.user.id == member_id, ban_list)
+
+        if thing is None:
+            raise commands.BadArgument(f"{arg} wasn't previously-banned in this server...")
+        return thing
+
+
 def positive_duration(arg):
-    amount = duration(arg)
+    amount = time.duration(arg)
     if amount <= 0:
         rounded = round(amount, 2) if amount % 1 else int(amount)
         raise commands.BadArgument(f"I can't go forward {rounded} seconds. "
                                     "Do you want me to go back in time or something?")
     return amount
 
-
-ModAction = namedtuple('ModAction', 'repr emoji colour')
-mod_action_types = {
-    'warn'         : ModAction('warned', '\N{WARNING SIGN}', 0xFFAA00),
-    'mute'         : ModAction('muted', '\N{ZIPPER-MOUTH FACE}', 0),
-    'kick'         : ModAction('kicked', '\N{WOMANS BOOTS}', 0xFF0000),
-    'softban'      : ModAction('soft banned', '\N{BIOHAZARD SIGN}', 0xF08000),
-    'tempban'      : ModAction('temporarily banned', '\N{ALARM CLOCK}', 0xA00000),
-    'ban'          : ModAction('banned', '\N{HAMMER}', 0x800000),
-    'unban'        : ModAction('unbanned', '\N{HAMMER}', 0x00FF00),
-}
-_restricted_warn_punishments = {'softban', 'unban', 'warn'}
-
-ModCase = namedtuple('ModCase', 'type mod user reason')
-WarnEntry = namedtuple('WarnEntry', 'time reason')
-
-SlowmodeEntry = namedtuple('SlowmodeEntry', 'duration no_immune')
-SlowmodeEntry.__new__.__defaults__ = (False, )
+def int_duration(arg):
+    return int(positive_duration(arg))
 
 
-_member_key = 's{0.guild.id};m{0.id}'.format
-
-
-class WarnEncoder(DequeEncoder, DatetimeEncoder):
-    pass
-
-warn_hook = union_decoder(decode_deque, decode_datetime)
-
-_default_warn_config = {
-    'timeout': 60 * 15,
-    'punishments': {
-        '2': {
-            'punish': 'mute',
-            'duration': 60 * 10,
-        }
-    }
-}
+_warn_punishments = ['mute', 'kick', 'softban', 'tempban', 'ban',]
+_is_valid_punishment = frozenset(_warn_punishments).__contains__
 
 
 # TODO:
@@ -105,254 +117,163 @@ _default_warn_config = {
 class Moderator:
     def __init__(self, bot):
         self.bot = bot
+        self._md = self.bot.db.bind_tables(_Table)
 
-        # Current statuses
-        self.current_slowmodes = defaultdict(dict)
-        self.current_slowonlys = {}
-
-        # Databases / Configs
-        self.guild_warn_config = Database(_mod_file('warnconfig.json'), default_factory=_default_warn_config.copy)
-        self.warn_log = Database(_mod_file('warnlog.json'), default_factory=deque, encoder=WarnEncoder, object_hook=warn_hook)
-        self.raids = Database(_mod_file('raids.json'))
-        self.cases = Database(_mod_file('cases.json'), default_factory=dict)
-        self.mutes = Database(_mod_file('mutes.json'))
-        self.tempbans = Database(_mod_file('tempbans.json'))
-        self.muted_roles = Database(_mod_file('muted_roles.json'), default_factory=None)
-
-        self.mute_scheduler = Scheduler(bot, 'mute_end')
-        self.tempban_scheduler = Scheduler(bot, 'tempban_end')
-
-        _make_entries(self.mute_scheduler, self.mutes)
-        _make_entries(self.tempban_scheduler, self.tempbans)
-
-        self.slowmodes = Database(_mod_file('slowmode.json'))
-        self.slowusers = Database(_mod_file('slow-users.json'))
-        # because namedtuples serialize a namedtuple as a list in JSON
-        self.slowmodes.update(zip(self.slowmodes, map(SlowmodeEntry._make, self.slowmodes.values())))
-
-        self.slow_immune = Database(_mod_file('slow-immune-roles.json'), default_factory=list)
+        self.slowmodes = JSONFile('slowmodes.json')
         self.slowmode_bucket = {}
-        self.slowuser_bucket = {}
 
-    @staticmethod
-    def _case_embed(num, ctx, case, duration=None):
-        case_type, mod, user, reason = case
-        avatar_url = user.avatar_url_as(format=None)
-        bot_avatar = ctx.bot.user.avatar_url_as(format=None)
+    async def call_mod_log_invoke(self, invoke, ctx):
+        mod_log = ctx.bot.get_cog('ModLog')
+        if mod_log:
+            await getattr(mod_log, f'mod_{invoke}')(ctx)
 
-        auto_punished = getattr(ctx, 'auto_punished', False)
-        if auto_punished:
-            mod = ctx.bot.user
-
-        duration_string = f' for {duration_units(duration)}' if duration is not None else ''
-        action_field = f'{"Auto-" * auto_punished}{case_type.repr.title()}{duration_string} by {mod}'
-        reason = reason or 'No reason. Please enter one.'
-
-        return (discord.Embed(color=case_type.colour, timestamp=ctx.message.created_at)
-               .set_author(name=f"Case #{num}", icon_url=emoji_url(case_type.emoji))
-               .set_thumbnail(url=avatar_url)
-               .add_field(name="User", value=str(user))
-               .add_field(name="Action", value=action_field, inline=False)
-               .add_field(name="Reason", value=reason, inline=False)
-               .set_footer(text=f'ID: {user.id}', icon_url=bot_avatar)
-               )
-
-    async def _send_case(self, ctx, case, duration=None):
-        server_cases = self.cases[ctx.guild]
-        case_channel = self.bot.get_channel(server_cases.get('case_channel'))
-        if case_channel is None:
-            return
-
-        cases = server_cases.setdefault('cases', [])
-        case_embed = self._case_embed(len(cases) + 1, ctx, case, duration)
-
-        msg = await case_channel.send(embed=case_embed)
-
-        case = {
-            'message_id': msg.id,
-            'channel_id': case_channel.id,
-            'type': case.type,
-            'mod': case.mod.id,
-            'user': case.user.id,
-            'reason': case.reason,
-        }
-        cases.append(case)
+    __before_invoke = functools.partialmethod(call_mod_log_invoke, 'before_invoke')
+    __after_invoke = functools.partialmethod(call_mod_log_invoke, 'after_invoke')
 
     # ---------------- Slowmode ------------------
 
-    def _is_slowmode_immune(self, member):
-        immune_roles = self.slow_immune.get(member.guild, []) 
-        return any(r.id in immune_roles for r in member.roles)
-
     @staticmethod
-    async def _delete_if_rate_limited(bucket, key, duration, message):
-        time = bucket.get(key)
-        if time is None or (message.created_at - time).total_seconds() >= duration:
-            bucket[key] = message.created_at
-        else:
-            await message.delete()
+    def _is_slowmode_immune(member):
+        return member.guild_permissions.manage_guild
 
     async def check_slowmode(self, message):
-        channel = message.channel
-        config = self.slowmodes.get(channel)
-        if config is None:
+        if not message.guild:
             return
+
+        guild_id = message.guild.id
+        if guild_id not in self.slowmodes:
+            return
+
+        slowmodes = self.slowmodes[guild_id]
 
         author = message.author
-        if not config.no_immune and self._is_slowmode_immune(author):
-            return
+        is_immune = self._is_slowmode_immune(author)
+        for thing in (message.channel, author):
+            key = str(thing.id)
+            if key not in slowmodes:
+                continue
 
-        bucket = self.slowmode_bucket.setdefault(channel, {})
-        await self._delete_if_rate_limited(bucket, author, config.duration, message)
+            config = slowmodes[key]
+            if not config['no_immune'] and is_immune:
+                continue
 
-    async def check_slowuser(self, message):
-        key = _member_key(message.author)
-        duration = self.slowusers.get(key)
-        if duration is None:
-            return
+            bucket = self.slowmode_bucket.setdefault(thing.id, {})
+            time = bucket.get(author.id)
+            if time is None or (message.created_at - time).total_seconds() >= config['duration']:
+                bucket[author.id] = message.created_at
+            else:
+                await message.delete()
+                break
 
-        await self._delete_if_rate_limited(self.slowuser_bucket, key, duration, message)
-
-    @commands.group(invoke_without_command=True)
-    @checks.mod_or_permissions(manage_messages=True)
+    @commands.group(invoke_without_command=True, usage=['15', '99999 @Mee6#4876'])
+    @commands.has_permissions(manage_messages=True)
     async def slowmode(self, ctx, duration: positive_duration, *, member: discord.Member=None):
         """Puts a thing in slowmode.
 
-        An optional member argument can be provided. If it's given, it puts only 
-        that user in slowmode for the entire server. Otherwise it puts the channel in slowmode.
+        An optional member argument can be provided. If it's
+        given, it puts only that user in slowmode for the entire
+        server. Otherwise it puts the current channel in slowmode.
 
-        Those with a slowmode-immune role will not be affected. 
-        If you want to put them in slowmode too, use `{prefix}slowmode noimmune`
+        Those with Manage Server permissions will not be
+        affected. If you want to put them in slowmode too,
+        use `{prefix}slowmode noimmune`.
         """
+        pronoun = 'They'
+        if member is None:
+            member = ctx.channel
+            pronoun = 'Everyone'
+        elif self._is_slowmode_immune(member):
+            message = (f"{member} is immune from slowmode due to having the "
+                       f"Manage Server permission. Consider using `{ctx.prefix}slowmode "
+                        "no-immune` or giving them a harsher punishment.")
+            return await ctx.send(message)
 
-        if member is not None:
-            if self._is_slowmode_immune(member):
-                message = (f"{member} is immune from slowmode due to having a "
-                            "slowmode-immune role. Consider either removing the "
-                           f"role from them, using `{ctx.prefix}slowmode no-immune`, "
-                            "or giving them a harsher punishment.")
-                return await ctx.send(message)
+        config = self.slowmodes.get(ctx.guild.id, {})
+        slowmode = config.setdefault(str(member.id), {'no_immune': False})
+        if slowmode['no_immune']:
+            return await ctx.send(f'{member.mention} is already in **no-immune** slowmode. '
+                                   'You need to turn it off first.')
 
-            self.slowusers[_member_key(member)] = duration
-            await ctx.send(f'{member.mention} is now in slowmode! They must wait {duration_units(duration)} '
-                            'between each message they send.')
-        else:
-            channel = ctx.channel
-            current_slowmode = self.slowmodes.get(channel)
-            if current_slowmode and current_slowmode.no_immune:
-                return await ctx.send(f'{channel.mention} is already in **no-immune** slowmode. '
-                                       'You need to turn it off first.')
+        slowmode['duration'] = duration
+        await self.slowmodes.put(ctx.guild.id, config)
 
-            self.slowmodes[ctx.channel] = SlowmodeEntry(duration, False)
-            await ctx.send(f'{channel.mention} is now in slowmode! '
-                           f'Everyone must wait {duration_units(duration)} between each message they send.')
+        await ctx.send(f'{member.mention} is now in slowmode! '
+                       f'{pronoun} must wait {time.duration_units(duration)} '
+                        'between each message they send.')
 
-    @slowmode.command(name='noimmune', aliases=['n-i'])
-    @checks.mod_or_permissions(manage_messages=True)
+    @slowmode.command(name='noimmune', aliases=['n-i'], usage=['10', '1000000000 @b1nzy#1337'])
+    @commands.has_permissions(manage_messages=True)
     async def slowmode_no_immune(self, ctx, duration: positive_duration, *, member: discord.Member=None):
         """Puts the channel or member in "no-immune" slowmode.
 
         Unlike `{prefix}slowmode`, no one is immune to this slowmode,
-        even those with a slowmode-immune role, which means everyone's messages
+        even those with Manage Server permissions, which means everyone's messages
         will be deleted if they are within the duration given.
         """
-        if duration <= 0:
-            return await ctx.send(f"I can't put this in slowmode for {duration} seconds. "
-                                   "Do you want me to go back in time or something?")
         if member is None:
-            member, pronoun = ctx.channel, 'Everyone'
-            self.slowmodes[member] =  SlowmodeEntry(duration, True)
+            member, pronoun = ctx.channel, 'They'
         else:
-            pronoun = 'They'
-            self.slowusers[_member_key(member)] = duration
+            pronoun = 'Everyone'
+
+        config = self.slowmodes.get(ctx.guild.id, {})
+        slowmode = config.setdefault(str(member.id), {'no_immune': True})
+        slowmode['duration'] = duration
+        await self.slowmodes.put(ctx.guild, config)
 
         await ctx.send(f'{member.mention} is now in **no-immune** slowmode! '
-                       f'**{pronoun}** must wait {duration} after each message they send.')
+                       f'{pronoun} must wait {time.duration_units(duration)} '
+                       'after each message they send.')
 
-    @slowmode.command(name='off')
+    @slowmode.command(name='off', usage=['', '277045400375001091'])
     async def slowmode_off(self, ctx, *, member: discord.Member=None):
         """Turns off slowmode for either a member or channel."""
-        if member is None:
-            member = ctx.channel
-            del self.slowmodes[member]
-            self.slowmode_bucket.pop(member, None)
+        member = member or ctx.channel
+        config = self.slowmodes.get(ctx.guild.id, {})
+        try:
+            del config[str(member.id)]
+        except KeyError:
+            return await ctx.send(f'{member.mention} was never in slowmode... \N{NEUTRAL FACE}')
         else:
-            key = _member_key(member)
-            del self.slowusers[key]
-            self.slowuser_bucket(key, None)
-        await ctx.send(f'{member.mention} is no longer in slowmode... \N{SMILING FACE WITH OPEN MOUTH AND COLD SWEAT}')
+            await self.slowmodes.put(ctx.guild.id, config)
+            self.slowmode_bucket.pop(member.id, None)
+            await ctx.send(f'{member.mention} is no longer in slowmode... '
+                           '\N{SMILING FACE WITH OPEN MOUTH AND COLD SWEAT}')
 
-    @commands.command()
-    @checks.mod_or_permissions(manage_messages=True)
+    @commands.command(usage=['', '277045400375001091'])
+    @commands.has_permissions(manage_messages=True)
     async def slowoff(self, ctx, *, member: discord.Member=None):
         """Alias for `{prefix}slowmode off`"""
         await ctx.invoke(self.slowmode_off, member=member)
 
-    @slowmode_off.error
-    @slowoff.error
-    async def slowmode_off_error(self, ctx, error):
-        cause = error.__cause__
-        if isinstance(cause, KeyError):
-            arg = ctx.kwargs['member'] or ctx.channel
-            await ctx.send(f'{arg.mention} was never in slowmode... \N{NEUTRAL FACE}')
+    # ----------------------- End slowmode ---------------------
 
-    @slowmode.group(name='immune')
-    async def slowmode_immune(self, ctx):
-        """Lists all the roles that are immune to slowmode.
+    @commands.command(aliases=['newmembers', 'joined'])
+    @commands.guild_only()
+    async def newusers(self, ctx, *, count=5):
+        """Tells you the newest members of the server.
 
-        If a member has any of these roles, during a normal slowmode, 
-        they won't have their messages deleted.
+        This is useful to check if any suspicious members have joined.
+
+        The minimum is 3 members. If no number is given I'll show the last 5 members.
         """
-        if ctx.invoked_subcommand is not self.slowmode_immune:
-            return
+        human_delta = time.human_timedelta
+        count = max(count, 3)
+        members = heapq.nlargest(count, ctx.guild.members, key=attrgetter('joined_at'))
 
-        immune = self.slow_immune[ctx.guild]
-        getter = functools.partial(discord.utils.get, ctx.guild.roles)
-        roles = (getter(id=id) for id in immune)
-        entries = (map(functools.partial(role_name, ctx.author), roles)
-                   if immune else ('There are no roles...', ))
+        names = map(str, members)
+        values = (
+            (f'**Joined:** {human_delta(member.joined_at)}\n'
+             f'**Created:** {human_delta(member.created_at)}\n{"-" * 40}')
+            for member in members
+        )
+        entries = zip(names, values)
 
-        pages = ListPaginator(ctx, entries, title=f'List of slowmode-immune roles in {ctx.guild}',
-                              colour=ctx.bot.colour)
+        title = f'The {formats.pluralize(**{"newest members": len(members)})}'
+        pages = EmbedFieldPages(ctx, entries, lines_per_page=5, colour=0x00FF00, title=title)
         await pages.interact()
 
-    @slowmode_immune.command(name='add')
-    @checks.admin_or_permissions(manage_guild=True)
-    async def slowmode_add_immune(self, ctx, *, role: discord.Role):
-        """Makes a role  immune from slowmode."""
-        immune = self.slow_immune[ctx.guild]
-        id = role.id
-        if id in immune:
-            await ctx.send(f'**{role}** is already immune from slowmode...')
-        else:
-            immune.append(id)
-            await ctx.send(f'**{role}** is now immune from slowmode!')
-
-    @slowmode_immune.command(name='remove')
-    @checks.admin_or_permissions(manage_guild=True)
-    async def slowmode_remove_immune(self, ctx, *, role: discord.Role):
-        """Makes a role no longer immune from slowmode."""
-        self.slow_immune[ctx.guild].remove(role.id)
-        await ctx.send(f'{role} is now no longer immune from slowmode')
-
-    @slowmode_remove_immune.error
-    async def sm_remove_immune_error(self, ctx, error):
-        if isinstance(error.__cause__, ValueError):
-            await ctx.send(f'{ctx.kwargs["roles"]} was never immune from slowmode...')
-
-    @slowmode_immune.command(name='reset')
-    @checks.admin_or_permissions(manage_guild=True)
-    async def slowmode_reset_immune(self, ctx):
-        """Removes all slowmode-immune roles."""
-        immune = self.slow_immune[ctx.guild]
-        if not immune:
-            return await ctx.send('What are you doing? There are no slowmode-immune roles to clear!')
-
-        immune.clear()
-        await ctx.send('Done, there are no more slowmode-immune roles.')
-
-    @commands.command(aliases=['clr'])
-    @checks.mod_or_permissions(manage_messages=True)
+    @commands.command(aliases=['clr'], usage=['', '50', '@Corrupt X#6821'])
+    @commands.has_permissions(manage_messages=True)
     async def clear(self, ctx, num_or_user: union(int, discord.Member)=None):
         """Clears some messages in a channels
 
@@ -369,15 +290,15 @@ class Moderator:
         elif isinstance(num_or_user, discord.Member):
             deleted = await ctx.channel.purge(check=lambda m: m.author.id == num_or_user.id)
         else:
-            deleted = await ctx.channel.purge(check=lambda m: m.author.id == bot.user.id)
+            deleted = await ctx.channel.purge(check=lambda m: m.author.id == ctx.bot.user.id)
 
         deleted_count = len(deleted) - 1
         is_plural = 's'*(deleted_count != 1)
         await ctx.send(f"Deleted {deleted_count} message{is_plural} successfully!", delete_after=1.5)
 
-    @commands.command(aliases='clean')
+    @commands.command(aliases=['clean'], usage=['', '10'])
     @commands.guild_only()
-    @checks.mod_or_permissions(manage_messages=True)
+    @commands.has_permissions(manage_messages=True)
     async def cleanup(self, ctx, limit=100):
         """Cleans up my messages from the channel.
 
@@ -390,10 +311,11 @@ class Moderator:
         You can also use this if `{prefix}clear` fails.
         """
 
-        prefixes = await ctx.bot.get_prefix(ctx.message)
+        prefixes = tuple(ctx.bot.get_guild_prefixes(ctx.guild))
         bot_id = ctx.bot.user.id
 
         bot_perms = ctx.channel.permissions_for(ctx.me)
+        purge = functools.partial(ctx.channel.purge, limit=limit, before=ctx.message)
         can_bulk_delete = bot_perms.manage_messages and bot_perms.read_message_history
 
         if can_bulk_delete:
@@ -401,35 +323,32 @@ class Moderator:
                 if m.author.id == bot_id:
                     return True
                 return m.content.startswith(prefixes) and not m.content[1:2].isspace()
-
-            deleted = await ctx.channel.purge(limit=limit, before=ctx.message, check=is_possible_command_invoke)
-            spammers = Counter(str(m.author) for m in deleted)
+            deleted = await purge(check=is_possible_command_invoke)
         else:
             # We can only delete the bot's messages, because trying to delete
             # other users' messages without Manage Messages will raise an error.
             # Also we can't use bulk-deleting for the same reason.
-            counter = 0
-            async for m in ctx.history(limit=limit, before=ctx.message):
-                if m.author.id == bot_id:
-                    await m.delete()
-                    counter += 1
-            spammers = Counter({ctx.me.display_name: counter})
+            deleted = await purge(check=lambda m: m.author.id == bot_id, bulk=False)
 
-        deleted = sum(spammers.values())
-        second_part = 's was' if deleted == 1 else ' were'
-        title = f'{deleted} messages{second_part} removed.'
+        spammers = Counter(str(m.author) for m in deleted)
+        total_deleted = sum(spammers.values())
+        second_part = 's was' if total_deleted == 1 else ' were'
+        title = f'{total_deleted} messages{second_part} removed.'
         joined = '\n'.join(itertools.starmap('**{0}**: {1}'.format, spammers.most_common()))
         spammer_stats = joined or discord.Embed.Empty
 
         embed = (discord.Embed(colour=0x00FF00, description=spammer_stats, timestamp=ctx.message.created_at)
                 .set_author(name=title)
                 )
-        await ctx.send(embed=embed)
+        await ctx.send(embed=embed, delete_after=20)
+        await asyncio.sleep(20)
+        with contextlib.suppress(discord.HTTPException):
+            await ctx.message.delete()
 
     @clear.error
     @cleanup.error
     async def clear_error(self, ctx, error):
-        # We need to use the __cause__ because any non-CommandErrors will be 
+        # We need to use the __cause__ because any non-CommandErrors will be
         # wrapped in CommandInvokeError
         cause = error.__cause__
         if isinstance(cause, discord.Forbidden):
@@ -438,91 +357,168 @@ class Moderator:
             await ctx.send("Couldn't delete the messages for some reason... Here's the error:\n"
                           f"```py\n{type(cause).__name__}: {cause}```")
 
-    @commands.command()
-    @checks.is_mod()
+    async def _get_warn_timeout(self, session, guild_id):
+        query = session.select(WarnTimeout).where(WarnTimeout.guild_id == guild_id)
+        timeout = await query.first()
+        return timeout.timeout if timeout else datetime.timedelta(minutes=15)
+
+    @commands.command(usage=['@XenaWolf#8379 NSFW'])
+    @commands.has_permissions(manage_messages=True)
     async def warn(self, ctx, member: discord.Member, *, reason: str):
         """Warns a user (obviously)"""
         self._check_user(ctx, member)
-        author, current_time = ctx.author, ctx.message.created_at
-        warn_queue = self.warn_log[_member_key(member)]
-        warn_queue.append((current_time, author.id, reason))
-        current_warn_num = len(warn_queue)
+        author, current_time, guild_id = ctx.author, ctx.message.created_at, ctx.guild.id
+        timeout = await self._get_warn_timeout(ctx.session, guild_id)
+        query = (ctx.session.select.from_(Warn)
+                                   .where((Warn.guild_id == guild_id)
+                                          & (Warn.user_id == member.id)
+                                          & (Warn.warned_at > current_time - timeout)))
+        warn_queue = [r async for r in await query.all()]
 
-        def check_warn_num():
-            if current_warn_num >= max(map(int, punishments)):
-                warn_queue.popleft()
+        try:
+            last_warn = warn_queue[-1]
+        except IndexError:
+            pass
+        else:
+            retry_after = (current_time - last_warn.warned_at).total_seconds()
+            if retry_after <= 60:
+                # Must throw an error because return await triggers on_command_completion
+                # Which would end up logging a case even though it doesn't work.
+                raise RuntimeError(f"{member} has been warned already, try again in "
+                                   f"{60 - retry_after :.2f} seconds...")
 
-        async def default_warn():
-            warn_embed = (discord.Embed(colour=0xffaa00, description=reason, timestamp=current_time)
-                         .set_author(name=str(author), icon_url=author.avatar_url)
-                         )
-            await member.send(f"You have been warned by {author} for the followng reason:", embed=warn_embed)
-            await member.send(f"This is your {ordinal(current_warn_num)} warning.")
-            await ctx.send(f"\N{WARNING SIGN} Warned {member.mention} successfully!")
-            check_warn_num()
+        entry = Warn(
+            guild_id=guild_id,
+            user_id=member.id,
+            mod_id=author.id,
+            reason=reason,
+            warned_at=current_time,
+        )
 
-        warn_config = self.guild_warn_config[ctx.guild]
-        punishments = warn_config['punishments']
-        punishment = punishments.get(str(current_warn_num))
+        await ctx.session.add(entry)
+        current_warn_number = len(warn_queue) + 1
+        query = (ctx.session.select(WarnPunishment)
+                            .where((WarnPunishment.guild_id == guild_id)
+                                   & (WarnPunishment.warns == current_warn_number)))
+
+        punishment = await query.first()
         if punishment is None:
-            return await default_warn()
-
-        # warn is too old, ignore it.
-        if (current_time - warn_queue[0][0]).total_seconds() > warn_config['timeout']:
-            return await default_warn()
+            if current_warn_number == 3:
+                punishment = _default_punishment
+            else:
+                return await ctx.send(f"\N{WARNING SIGN} Warned {member.mention} successfully!")
 
         # Auto-punish the user
         args = member,
-        if punishment['duration'] is not None:
-            args += punishment['duration'],
-        ctx.auto_punished = True
+        duration = punishment.duration
+        if duration > 0:
+            args += duration,
+            punished_for = f' for {time.duration_units(duration)}'
+        else:
+            punished_for = f''
 
-        punish = punishment['punish']
-        await ctx.invoke(getattr(self, punish), *args, reason=reason + f'\n({ordinal(current_warn_num)} warning)')
-        check_warn_num()
+        punish = punishment.type
+        punishment_command = getattr(self, punish)
+        punishment_reason = f'{reason}\n({ordinal(current_warn_number)} warning)'
+        # Patch out the context's send method because we don't want it to be
+        # sending the command's message.
+        # XXX: Should I suppress the error?
+        with temp_attr(ctx, 'send', lambda *a, **kw: asyncio.sleep(0)):
+            await ctx.invoke(punishment_command, *args, reason=punishment_reason)
+
+        message = (f"{member.mention} has {current_warn_number} warnings! "
+                   f"**It's punishment time!** Today I'll {punish} you{punished_for}! "
+                    "\N{SMILING FACE WITH HORNS}")
+        await ctx.send(message)
+
+        # Dynamically patch the attributes because case logging requires them.
+        # If they weren't patched in, it would treat is as if it was a warn action.
+        ctx.auto_punished = True
+        ctx.command = punishment_command
+        ctx.args[2:] = args
+        ctx.kwargs['reason'] = punishment_reason
+
+    @warn.error
+    async def warn_error(self, ctx, error):
+        original = getattr(error, 'original', None)
+        if isinstance(original, RuntimeError):
+            await ctx.send(original)
 
     # XXX: Should this be a group?
 
-    @commands.command(name='clearwarns')
-    @checks.is_mod()
+    @commands.command(name='clearwarns', usage='MIkusaba')
+    @commands.has_permissions(manage_messages=True)
     async def clear_warns(self, ctx, member: discord.Member):
         """Clears a member's warns."""
-        self.warn_log[_member_key(member)].clear()
+        await ctx.session.delete.table(Warn).where((Warn.guild_id == ctx.guild.id)
+                                                   & (Warn.user_id == member.id))
         await ctx.send(f"{member}'s warns have been reset!")
 
-    @commands.command(name='warnpunish')
-    async def warn_punish(self, ctx, num: int, punishment, duration: duration=None):
-        """Sets the punishment a user receives upon exceeding a given warn limit"""
-        punish_lower = punishment.lower()
-        if punish_lower in _restricted_warn_punishments:
-            raise errors.InvalidUserArgument("{punish_lower} is not a valid punishment")
+    @commands.command(name='warnpunish', usage=['4 softban', '5 ban'])
+    @commands.has_permissions(manage_messages=True, manage_guild=True)
+    async def warn_punish(self, ctx, num: int, punishment, duration: int_duration=0):
+        """Sets the punishment a user receives upon exceeding a given warn limit.
 
-        if punish_lower in {'tempban', 'mute'} and duration is None:
-            raise errors.InvalidUserArgument(f'A duration is required for {punish_lower}')
+        Valid punishments are:
+        `mute` (requires a duration argument)
+        `kick`
+        `softban`
+        `tempban` (requires a duration argument)
+        `ban`
+        """
+        lowered = punishment.lower()
+        if not _is_valid_punishment(lowered):
+            message = (f'{lowered} is not a valid punishment.\n'
+                       f'Valid punishments: {", ".join(_warn_punishments)}')
+            return await ctx.send(message)
 
-        payload = {
-            'punish': punish_lower,
-            'duration': duration,
-        }
-        self.guild_warn_config[ctx.guild]['punishments'][str(num)] = payload
-        await ctx.send(f'\N{OK HAND SIGN} if a user has been warned {num} times, I will **{punish_lower}** them.')
+        if lowered in {'tempban', 'mute'}:
+            if not duration:
+                return await ctx.send(f'A duration is required for {lowered}...')
+        else:
+            duration = 0
+
+        extra = f'for {time.duration_units(duration)}' if duration else ''
+
+        row = WarnPunishment(
+            guild_id=ctx.guild.id,
+            warns=num,
+            type=lowered,
+            duration=duration,
+        )
+
+        await (ctx.session.insert.add_row(row)
+                          .on_conflict(WarnPunishmentCC)
+                          .update(WarnPunishment.type, WarnPunishment.duration))
+
+        await ctx.send(f'\N{OK HAND SIGN} if a user has been warned {num} times, '
+                       f'I will **{lowered}** them {extra}.')
 
     @commands.command(name='warnpunishments', aliases=['warnpl'])
     async def warn_punishments(self, ctx):
         """Shows this list of warn punishments"""
-        punishments = sorted(self.guild_warn_config[ctx.guild]['punishments'].items(), key=lambda p: int(p[0]))
-        entries = (f'{num} warns => **{p["punish"].title()}**' for num, p in punishments)
+        query = ctx.session.select(WarnPunishment).where((WarnPunishment.guild_id == ctx.guild.id))
+        punishments = [(p.warns, p.type.title(), p.duration) async for p in await query.all()]
+        if not punishments:
+            punishments += (_default_punishment,)
+        punishments.sort()
 
-        pages = ListPaginator(ctx, entries, title=f'Punishments for {ctx.guild}', colour=ctx.bot.colour)
+        entries = (f'{warns} strikes => **{type}** {f"for {time.duration_units(duration)}" if duration else ""}'
+                   for warns, type, duration in punishments)
+        pages = ListPaginator(ctx, entries, title=f'Punishments for {ctx.guild}')
         await pages.interact()
 
-    @commands.command(name='warntimeout')
-    async def warn_timeout(self, ctx, duration: duration):
+    @commands.command(name='warntimeout', usage=['10', '15m', '1h20m10s'])
+    @commands.has_permissions(manage_messages=True, manage_guild=True)
+    async def warn_timeout(self, ctx, duration: positive_duration):
         """Sets the maximum time between the oldest warn and the most recent warn.
         If a user hits a warn limit within this timeframe, they will be punished.
         """
-        self.guild_warn_config[ctx.guild]['timeout'] = duration
-        await ctx.send(f'Alright, if a user was warned within {duration_units(duration)} '
+        row = WarnTimeout(guild_id=ctx.guild.id, timeout=datetime.timedelta(seconds=duration))
+        await (ctx.session.insert.add_row(row).on_conflict(WarnTimeout.guild_id)
+                          .update(WarnTimeout.timeout))
+
+        await ctx.send(f'Alright, if a user was warned within {time.duration_units(duration)} '
                         'after their oldest warn, bad things will happen.')
 
     @staticmethod
@@ -532,26 +528,30 @@ class Moderator:
         if member.id == ctx.bot.user.id:
             raise errors.InvalidUserArgument("Hey, what did I do??")
 
-    async def _create_muted_role(self, server):
-        role = await server.create_role(name='Chiaki-Muted', colour=discord.Colour.red())
-        await self._regen_muted_role_perms(role, *server.channels)
-
-        self.muted_roles[str(server.id)] = role.id
-        # Explicit dump to make sure the roles get updated
-        await self.mutes.dump()
-        return role
-
-    def _get_muted_role(self, server):
-        if server is None:
+    async def _get_muted_role(self, guild):
+        async with self.bot.db.get_session() as session:
+            row = await session.select.from_(MuteRole).where(MuteRole.guild_id == guild.id).first()
+        if row is None:
             return None
 
-        role_id = self.muted_roles.get(str(server.id))
-        return discord.utils.get(server.roles, id=role_id)
+        return discord.utils.get(guild.roles, id=row.role_id)
+
+    async def _update_muted_role(self, guild, new_role):
+        await self._regen_muted_role_perms(new_role, *guild.channels)
+        async with self.bot.db.get_session() as session:
+            await (session.insert.add_row(MuteRole(guild_id=guild.id, role_id=new_role.id))
+                                 .on_conflict(MuteRole.guild_id)
+                                 .update(MuteRole.role_id))
+
+    async def _create_muted_role(self, guild):
+        role = await guild.create_role(name='Chiaki-Muted', colour=discord.Colour.red())
+        await self._update_muted_role(guild, role)
+        return role
 
     async def _setdefault_muted_role(self, server):
-        # Role could've been deleted, which means it will be None. 
+        # Role could've been deleted, which means it will be None.
         # So we have to account for that.
-        return self._get_muted_role(server) or await self._create_muted_role(server)
+        return await self._get_muted_role(server) or await self._create_muted_role(server)
 
     @staticmethod
     async def _regen_muted_role_perms(role, *channels):
@@ -560,111 +560,142 @@ class Moderator:
         for channel in channels:
             await channel.set_permissions(role, **muted_permissions)
 
-    def put_payload(db, member, duration):
-        payload = {
-            'time': str(datetime.utcnow()),
-            'duration': duration,
-        }
-
-        db[_member_key(member)] = payload
-
     async def _do_mute(self, member, when):
         mute_role = await self._setdefault_muted_role(member.guild)
+        if mute_role in member.roles:
+            raise errors.InvalidUserArgument(f'{member.mention} is already been muted... ;-;')
+
         await member.add_roles(mute_role)
+        args = (member.guild.id, member.id, mute_role.id)
+        await self.bot.db_scheduler.add_abs(when, 'mute_complete', args)
 
-        entry = TimerEntry(when, (member.guild.id, member.id, mute_role.id))
-        self.mute_scheduler.add_entry(entry)
-        self.mutes[_member_key(member)] = entry
-
-    async def _default_mute_command(self, ctx, member, when, *, duration, reason):
-        await self._do_mute(member, when)
-        await ctx.send(f"Done. {member.mention} will now be muted for {duration_units(duration)}... \N{ZIPPER-MOUTH FACE}")
-
-    @commands.command()
-    @checks.mod_or_permissions(manage_roles=True)
+    @commands.command(usage=['192060404501839872 stfu about your gf'])
+    @commands.has_permissions(manage_messages=True)
     async def mute(self, ctx, member: discord.Member, duration: positive_duration, *, reason: str=None):
         """Mutes a user (obviously)"""
         self._check_user(ctx, member)
-        when = datetime.utcnow() + timedelta(seconds=duration)
-        await self._default_mute_command(ctx, member, when.timestamp(), duration=duration, reason=reason)
+        when = ctx.message.created_at + datetime.timedelta(seconds=duration)
+        await self._do_mute(member, when)
+        await ctx.send(f"Done. {member.mention} will now be muted for "
+                       f"{time.human_timedelta(when)}... \N{ZIPPER-MOUTH FACE}")
 
-    @commands.command()
+    @commands.command(usage=['80528701850124288', '@R. Danny#6348'])
     async def mutetime(self, ctx, member: discord.Member=None):
         """Shows the time left for a member's mute. Defaults to yourself."""
         if member is None:
             member = ctx.author
 
-        # early out for the case of premature role removal, 
+        # early out for the case of premature role removal,
         # either by ->unmute or manually removing the role
-        role = self._get_muted_role(ctx.guild)
+        role = await self._get_muted_role(ctx.guild)
         if role not in member.roles:
-            return await ctx.send('{member} is not muted...')
+            return await ctx.send(f'{member} is not muted...')
 
-        try:    
-            entry = self.mutes[_member_key(member)]
-        except KeyError:
-            await ctx.send(f"{member} has been perm-muted, you must've "
-                            "added the role manually or something...")
-        else:
-            when = datetime.utcfromtimestamp(entry.when)
-            delta = entry.when - datetime.utcnow().timestamp()
-            await ctx.send(f'{member} will be muted for {duration_units(delta)}. '
-                           f'They will be unmuted on {when: %c}.')
+        # This fourth condition is in case we have this scenario:
+        # - Member was muted
+        # - Mute role was changed while the user was muted
+        # - Member was muted again with the new role.
+        query = """SELECT expires
+                   FROM schedule
+                   WHERE event = 'mute_complete'
+                   AND args_kwargs #>> '{args,0}' = $1
+                   AND args_kwargs #>> '{args,1}' = $2
+                   AND args_kwargs #>> '{args,2}' = $3
+                   LIMIT 1;
+                """
 
-    @commands.command()
-    @checks.mod_or_permissions(manage_roles=True)
+        # We have to go to the lowest level possible, because simply using
+        # ctx.session.cursor WILL NOT work, as it uses str.format to format
+        # the parameters, which will throw a KeyError due to the {} in the
+        # JSON operators.
+        session = ctx.session.transaction.acquired_connection
+        entry = await session.fetchrow(query, str(ctx.guild.id), str(member.id), str(role.id))
+        if entry is None:
+            return await ctx.send(f"{member} has been perm-muted, you must've "
+                                  "added the role manually or something...")
+
+        when = entry['expires']
+        await ctx.send(f'{member} has {time.human_timedelta(when)} remaining. '
+                       f'They will be unmuted on {when: %c}.')
+
+    async def _remove_time_entry(self, guild, member, session, *, event='mute_complete'):
+        query = """SELECT *
+                   FROM schedule
+                   WHERE event = $3
+                   AND args_kwargs #>> '{args,0}' = $1
+                   AND args_kwargs #>> '{args,1}' = $2
+                   ORDER BY expires
+                   LIMIT 1;
+                """
+        # We have to go to the lowest level possible, because simply using
+        # session.cursor WILL NOT work, as it uses str.format to format
+        # the parameters, which will throw a KeyError due to the {} in the
+        # JSON operators.
+        session = session.transaction.acquired_connection
+        entry = await session.fetchrow(query, str(guild.id), str(member.id), event)
+        if entry is None:
+            return None
+
+        await self.bot.db_scheduler.remove(discord.Object(id=entry['id']))
+        return entry
+
+    @commands.command(usage=['@rjt#2336 sorry bb'])
+    @commands.has_permissions(manage_messages=True)
     async def unmute(self, ctx, member: discord.Member, *, reason: str=None):
         """Unmutes a user (obviously)"""
-        role = self._get_muted_role(ctx.guild)
+        role = await self._get_muted_role(member.guild)
         if role not in member.roles:
             return await ctx.send(f"{member} hasn't been muted!")
 
         await member.remove_roles(role)
+        await self._remove_time_entry(member.guild, member, ctx.session)
         await ctx.send(f'{member.mention} can now speak again... '
                         '\N{SMILING FACE WITH OPEN MOUTH AND COLD SWEAT}')
-        # We don't need to do anything with the scheduler tbh.
-        # It's just gonna execute normally.
 
     @commands.command(name='regenmutedperms', aliases=['rmp'])
-    @checks.is_owner()
+    @commands.is_owner()
     @commands.guild_only()
     async def regen_muted_perms(self, ctx):
-        mute_role = await self._setdefault_muted_role(ctx.guild)
-        await self._regen_muted_role_perms(mute_role, *ctx.guild.channels)
+        """Creates a muted role (if one wasn't made already) and sets the
+        permissions for that role.
+
+        This is mainly a debug command. Which is why it's owner-only. A muted
+        role is automatically created when you when first mute a user.
+        """
+        await self._setdefault_muted_role(ctx.guild)
         await ctx.send('\N{THUMBS UP SIGN}')
-        
-    @commands.command(name='setmuterole', aliases=['smur'])
-    @checks.admin_or_permissions(manage_roles=True, manage_server=True)
+
+    @commands.command(name='setmuterole', aliases=['smur'], usage=['My Cooler Mute Role'])
+    @commands.has_permissions(manage_roles=True, manage_guild=True)
     async def set_muted_role(self, ctx, *, role: discord.Role):
         """Sets the muted role for the server.
-        
-        Ideally you shouldn't have to do this, as I already create a 
-        muted role when I attempt to mute someone.
-        This is just in case you already have a muted role and would like to use that one instead.
+
+        Ideally you shouldn't have to do this, as I already create a muted role
+        when I attempt to mute someone. This is just in case you already have a
+        muted role and would like to use that one instead.
         """
-        await self._regen_muted_role_perms(role, *ctx.guild.channels)
-        self.muted_roles[str(ctx.guild.id)] = role.id
+        await self._update_muted_role(ctx.guild, role)
         await ctx.send(f'Set the muted role to **{role}**!')
-        
+
     @commands.command(name='muterole', aliases=['mur'])
     async def muted_role(self, ctx):
         """Gets the current muted role."""
-        role = self._get_muted_role(ctx.guild)
+        role = await self._get_muted_role(ctx.guild)
         msg = ("There is no muted role, either set one now or let me create one for you."
                if role is None else f"The current muted role is **{role}**")
         await ctx.send(msg)
 
-    @commands.command()
-    @checks.mod_or_permissions(kick_members=True)
+    @commands.command(usage='@Salt#3514 Inferior bot')
+    @commands.has_permissions(kick_members=True)
     async def kick(self, ctx, member: discord.Member, *, reason: str=None):
         """Kick a user (obviously)"""
 
         self._check_user(ctx, member)
         await member.kick(reason=reason)
-        await ctx.send(f"Done. Please don't make me do that again...")
+        await ctx.send("Done. Please don't make me do that again...")
 
-    @commands.command(aliases=['sb'])
-    @checks.mod_or_permissions(kick_members=True, manage_messages=True)
+    @commands.command(aliases=['sb'], usage='259209114268336129 Enough of your raid fetish.')
+    @commands.has_permissions(kick_members=True, manage_messages=True)
     async def softban(self, ctx, member: discord.Member, *, reason: str=None):
         """Softbans a user (obviously)"""
 
@@ -673,49 +704,45 @@ class Moderator:
         await member.unban(reason=f'softban (original reason: {reason})')
         await ctx.send("Done. At least he'll be ok...")
 
-    @commands.command(aliases=['tb'])
-    @checks.mod_or_permissions(ban_members=True)
+    @commands.command(aliases=['tb'], usage='Kwoth#2560 Your bot sucks lol')
+    @commands.has_permissions(ban_members=True)
     async def tempban(self, ctx, member: discord.Member, duration: positive_duration, *, reason: str=None):
         """Temporarily bans a user (obviously)"""
 
         self._check_user(ctx, member)
         await ctx.guild.ban(member, reason=reason)
-        await ctx.send(f"Done. Please don't make me do that again...")
+        await ctx.send("Done. Please don't make me do that again...")
 
-        # gonna somehow refactor this out soon:tm:
-        when = datetime.utcnow() + timedelta(seconds=duration)
-        entry = TimerEntry(when.timestamp(), (ctx.guild.id, member.id))
-        self.tempban_scheduler.add_entry(entry)
-        self.tempbans[_member_key(member)] = entry
+        await ctx.bot.db_scheduler.add(datetime.timedelta(seconds=duration), 'tempban_complete',
+                                       (ctx.guild.id, member.id))
 
-    @commands.command()
-    @checks.mod_or_permissions(ban_members=True)
+    @commands.command(usage='@Nadeko#6685 Stealing my flowers.')
+    @commands.has_permissions(ban_members=True)
     async def ban(self, ctx, member: MemberID, *, reason: str=None):
         """Bans a user (obviously)
 
-        You can also use this to ban someone even if they're not in the server, 
+        You can also use this to ban someone even if they're not in the server,
         just use the ID. (not so obviously)
         """
-
         with contextlib.suppress(AttributeError):
             self._check_user(ctx, member)
 
         await ctx.guild.ban(member, reason=reason)
-        await ctx.send(f"Done. Please don't make me do that again...")
+        await ctx.send("Done. Please don't make me do that again...")
 
-    @commands.command()
-    @checks.mod_or_permissions(ban_members=True)
-    async def unban(self, ctx, user: MemberID(user_type=discord.User), *, reason: str=None):
+    @commands.command(unban='@Nadeko#6685 oops')
+    @commands.has_permissions(ban_members=True)
+    async def unban(self, ctx, user: BannedMember, *, reason: str=None):
         """Unbans the user (obviously)"""
 
-        # Will not remove the scheduler (this is ok)
-        await ctx.guild.unban(user)
-        await ctx.send("Done. What did they do to get banned in the first place...?")
+        await ctx.guild.unban(user.user)
+        await self._remove_time_entry(ctx.guild, user, ctx.session, event='tempban_complete')
+        await ctx.send(f"Done. What did {user.user} do to get banned in the first place...?")
 
-    @commands.command()
-    @checks.is_owner()
+    @commands.command(usage='"theys f-ing up shit" @user1#0000 105635576866156544 user2#0001 user3')
+    @commands.has_permissions(ban_members=True)
     async def massban(self, ctx, reason, *members: MemberID):
-        """Bans a series a people (obviously)"""
+        """Bans multiple users from the server (obviously)"""
         for m in members:
             await ctx.guild.ban(m, reason=reason)
 
@@ -737,7 +764,7 @@ class Moderator:
     @unban.error
     @massban.error
     async def mod_action_error(self, ctx, error):
-        # We need to use the __cause__ because any non-CommandErrors will be 
+        # We need to use the __cause__ because any non-CommandErrors will be
         # wrapped in CommandInvokeError
         cause = error.__cause__
         command = ctx.command
@@ -748,91 +775,10 @@ class Moderator:
         elif isinstance(cause, discord.HTTPException):
             await ctx.send(f"Couldn't {command} the member for some reason")
 
-    # ------------- Case Related Commands ------------------
-
-    def _get_case(self, server, num=None):
-        cases = self.cases[server].setdefault('cases', [])
-        if num is None:
-            return cases
-        num -= num > 0
-        with redirect_exception((IndexError, f"Couldn't find case {num}."),
-                                cls=errors.ResultsNotFound):
-            # support negative indexing
-            return cases[num]
-
-    @commands.group()
-    @checks.admin_or_permissions(manage_server=True)
-    async def caseset(self, ctx):
-        """Super-command for all mod case-related commands
-
-        Only cases where the bot was used will be logged.
-        """
-        # TODO: Make like Pollr and log *everything*
-        pass
-
-    @caseset.command(name='logchannel', aliases=['channel'])
-    async def log_channel(self, ctx, channel: discord.TextChannel):
-        """Sets the channel for logging mod cases"""
-        if not channel.permissions_for(ctx.me).send_messages:
-            raise errors.InvalidUserArgument(f"I can't speak in {channel.mention}. Please give me the Send Messages perm there.\n")
-
-        self.cases[ctx.guild]['case_channel'] = channel.id
-        await ctx.send(f"Cases will now be put on {channel.mention}")
-
-    @caseset.command(name='stop')
-    async def case_stop(self, ctx):
-        """Stops logging the mod-cases."""
-        with redirect_exception((KeyError, "There was never a place to log any cases...")):
-            del self.cases[ctx.guild]['case_channel']
-        await ctx.send(f"Cases will now be put on {channel.mention}")
-
-    @caseset.command(name='reason')
-    async def case_reason(self, ctx, num: int, *, reason):
-        """Sets the reason for a given mod case"""
-        case = self._get_case(ctx.guild, num)
-        mod = case['mod']
-        if case['type'].lower() == 'warn':
-            return await ctx.send("Cannot edit a warn case (it doesn't make sense anyway...)")
-
-        if mod not in (None, ctx.author.id):    
-            return await ctx.send("That case is not yours...")
-
-        channel = self.bot.get_channel(case['channel_id'])
-        if channel is None:
-            return await ctx.send("This channel no longer exists")
-
-        message = await channel.get_message(case['message_id'])
-        assert message.author.id == self.bot.user.id
-
-        embed = message.embeds[0].set_field_at(-1, name="Reason", value=reason, inline=False)
-        if mod is None:
-            case['mod'] = ctx.author.id
-            action_field = embed.fields[1]
-            new_action = _rreplace(action_field.value, 'None', str(ctx.author), 1)
-            embed.set_field_at(1, name=action_field.name, value=new_action, inline=False)
-
-        await message.edit(embed=embed)
-        case['reason'] = reason
-        await ctx.send(f"Successfully changed case #{num}'s reason to {reason}!")
-
-    @caseset.command(name='reset', aliases=['clear'])
-    async def case_reset(self, ctx):
-        """Resets all the mod cases. However, this doesn't clear the existing case messages."""
-        cases = self._get_case(ctx.guild)
-        if not cases:
-            raise errors.ResultsNotFound("There are no cases in this server!")
-
-        cases.clear()
-        await ctx.send("Successfully cleared the cases for this server!")
-
-
     # --------- Events ---------
 
     async def on_message(self, message):
         await self.check_slowmode(message)
-        # Might throw an exception if the message was already deleted.
-        with contextlib.suppress(discord.NotFound):
-            await self.check_slowuser(message)
 
     async def on_guild_channel_create(self, channel):
         server = channel.guild
@@ -843,54 +789,64 @@ class Moderator:
 
     async def on_member_join(self, member):
         # Prevent mute-evasion
-        entry = self.mutes.get(_member_key(member))
-        if not entry:
-            return
+        async with self.bot.db.get_session() as session:
+            entry = await self._remove_time_entry(member.guild, member, session)
+            if entry:
+                # mute them for an extra 60 mins
+                await self._do_mute(member, entry['expires'] + datetime.timedelta(seconds=3600))
 
-        # remove the old entry, we're gonna put a new one in its place anyway.
-        with contextlib.suppress(ValueError):
-            self.mute_scheduler.remove_entry(entry)
+    async def on_member_update(self, before, after):
+        # In the event of a manual unmute, this has to be covered.
+        removed_roles = set(before.roles).difference(after.roles)
+        if not removed_roles:
+            return  # Give an early out to save queries.
 
-        # mute them for an extra 60 mins
-        await self._do_mute(member, entry.when + 3600)
+        role = await self._get_muted_role(before.guild)
+        if role in removed_roles:
+            async with self.bot.db.get_session() as session:
+                # We need to remove this guy from the scheduler in the event of
+                # a manual unmute. Because if the guy was muted again, the old
+                # mute would still be in effect. So it would just remove the
+                # muted role.
+                await self._remove_time_entry(before.guild, before, session)
 
-    async def on_command_completion(self, ctx):
-        # For all mod-action related commands.
-        name = ctx.command.name
-        case_type = mod_action_types.get(name)
-        if case_type is None:
-            return
-
-        _, _, user, duration = (ctx.args + [None])[:4]
-        reason = ctx.kwargs['reason']
-        case = ModCase(type=mod_action_types[name], mod=ctx.author, user=user, reason=reason)
-        await self._send_case(ctx, case, duration=duration)
+    # XXX: Should I even bother to remove unbans from the scheduler in the event
+    #      of a manual unban?
 
     # -------- Custom Events (used in schedulers) -----------
+    async def _wait_for_cache(self, name, guild_id, member_id):
+        mod_log = self.bot.get_cog('ModLog')
+        if mod_log:
+            await mod_log.wait_for_cache(name, guild_id, member_id)
 
-    async def on_mute_end(self, timer):
-        # Bot.get_guild will return None if there are any pending mutes 
-        # when this cog first gets loaded. Thus we have to wait until the bot has logged in.
-        await self.bot.wait_until_ready()
+    async def on_mute_complete(self, timer):
         server_id, member_id, mute_role_id = timer.args
         server = self.bot.get_guild(server_id)
+        if server is None:
+            # rip
+            return
 
-        # from here we'll just assume things go normally
-        # it doesn't really matter if an exception is thrown at this point
         member = server.get_member(member_id)
+        if member is None:
+            # rip pt. 2
+            return
+
         role = discord.utils.get(server.roles, id=mute_role_id)
+        if role is None:
+            # not really rip
+            return
 
         await member.remove_roles(role)
-        del self.mutes[_member_key(member)]
 
-    async def on_tempban_end(self, timer):
-        await self.bot.wait_until_ready()
-        server_id, user_id = timer.args
-        obj = discord.Object(id=user_id)
-        server = obj.guild = self.bot.get_guild(server_id)
+    async def on_tempban_complete(self, timer):
+        guild_id, user_id = timer.args
+        await self._wait_for_cache('tempban', guild_id, user_id)
+        guild = self.bot.get_guild(guild_id)
+        if guild is None:
+            # rip
+            return
 
-        await server.unban(obj, reason='unban from tempban')
-        del self.tempbans[_member_key(obj)]
+        await guild.unban(discord.Object(id=user_id), reason='unban from tempban')
 
 
 def setup(bot):

@@ -13,7 +13,7 @@ from .manager import SessionManager
 
 from ..utils.context_managers import temp_attr
 from ..utils.converter import CheckedMember, NoSelfArgument
-from ..utils.misc import multi_replace
+from ..utils.formats import multi_replace
 
 _clean_sig = functools.partial(multi_replace, replacements={**dict.fromkeys('<>[]', ''), '|': '/'})
 
@@ -143,7 +143,7 @@ def make_plugin(typename, template, cls=None, name=None, *, verbose=False, modul
                 game_name=None, aliases=()):
     """Returns a plugin for a given template and class name.
 
-    This is used because as of right now, there is no easy way to subclass a 
+    This is used because as of right now, there is no easy way to subclass a
     certain plugin and get unique commands, as all inherited commands
     are the same object.
     """
@@ -170,7 +170,7 @@ def make_plugin(typename, template, cls=None, name=None, *, verbose=False, modul
     # In a discord.py context, the __module__ variable needs to be set this way
     # because Bot.remove_cog relies on it when unloading the extension.
     # Failure to set it properly means the extension and the cog's module won't
-    # match, which means that the cog will not unload, making a subsequent reload 
+    # match, which means that the cog will not unload, making a subsequent reload
     # fail as commands in that cog would be registered already.
     if module is None:
         try:
