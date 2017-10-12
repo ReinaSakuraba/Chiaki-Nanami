@@ -110,8 +110,8 @@ class AutoRole(disambiguate.DisambiguateRole):
 class Roles:
     """Commands that are related to roles.
 
-    Self-assignable, auto-assignable, and general role-related commands
-    are in this cog.
+    Self-assignable, auto-assignable, and general role-related
+    commands are in this cog.
     """
 
     def __init__(self, bot):
