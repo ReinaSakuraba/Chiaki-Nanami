@@ -48,12 +48,6 @@ Or `->commands "module"` for a list of commands for a particular module.*
 """
 
 
-def _clean_prefix(ctx):
-    # XXX: Function for getting the clean prefix until I use the actual Context method.
-    user = ctx.bot.user
-    return ctx.prefix.replace(user.mention, f'@{user.name}')
-
-
 def _make_command_requirements(command):
     requirements = []
     # All commands in this cog are owner-only anyway.
@@ -110,11 +104,10 @@ class HelpCommandPage(BaseReactionPaginator):
         self._on_subcommand_page = True
         subs = sorted(map(str, set(self.command.walk_commands())))
 
-        ctx = self.context
         note = (
-            'Type `{prefix}{invoked} command` for more info on a command.\n'
-            f'(e.g. type `{{prefix}}{{invoked}} {random.choice(subs)}`)'
-        ).format(prefix=_clean_prefix(ctx), invoked=ctx.invoked_with)
+            'Type `{ctx.clean_prefix}{ctx.invoked_with} command` for more info on a command.\n'
+            f'(e.g. type `{{ctx.clean_prefix}}{{ctx.clean_prefix}} {random.choice(subs)}`)'
+        ).format(ctx=self.context)
 
         return (discord.Embed(colour=self.context.bot.colour, description='\n'.join(map('`{}`'.format, subs)))
                 .set_author(name=f'Child Commands for {self.command}')
@@ -124,7 +117,7 @@ class HelpCommandPage(BaseReactionPaginator):
     def _command_info(self):
         command, ctx, func = self.command, self.context, self.func
         bot = ctx.bot
-        clean_prefix = _clean_prefix(ctx)
+        clean_prefix = ctx.clean_prefix
         # usages = self.command_usage
 
         # if usage is truthy, it will immediately return with that usage. We don't want that.
@@ -284,7 +277,7 @@ class GeneralHelpPaginator(ListPaginator):
 
     def _create_embed(self, idx, page):
         cog, description, lines = page[0]
-        note = f'Type `{_clean_prefix(self.context)}help command`\nfor more info on a command.'
+        note = f'Type `{self.context.clean_prefix}help command`\nfor more info on a command.'
         commands = '\n'.join(lines) + f'\n\n{note}'
 
         return self._page_footer_embed(
@@ -356,7 +349,7 @@ class GeneralHelpPaginator(ListPaginator):
         description = (
             'The signature is actually pretty simple!\n'
             "It's always there in the \"Signature\" field when\n"
-            f'you do `{_clean_prefix(self.context)} help command`.'
+            f'you do `{self.context.clean_prefix} help command`.'
         )
 
         note = textwrap.dedent('''
