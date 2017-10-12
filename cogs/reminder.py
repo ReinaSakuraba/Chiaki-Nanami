@@ -9,6 +9,7 @@ from datetime import timedelta
 
 from .utils.context_managers import redirect_exception
 from .utils.misc import emoji_url, truncate
+from .utils.paginator import EmbedFieldPages
 from .utils.time import duration, human_timedelta
 
 
@@ -135,16 +136,13 @@ class Reminder:
         if not reminders:
             return await ctx.send("You have no reminders at the moment.")
 
-        em = (discord.Embed(colour=self.bot.colour)
-             .set_author(name=f'Reminders for {ctx.author}')
-             )
+        def entries():
+            for i, (created, expires, channel_id, message) in enumerate(reminders, start=1):
+                value = f'<#{channel_id}>: {message}'
+                yield f'{i}. In {human_timedelta(expires)} from now.', truncate(value, 1024, '...')
 
-        for i, (created, expires, channel_id, message) in enumerate(reminders, start=1):
-            value = f'Created {human_timedelta(created)}\n<#{channel_id}>: {message}'
-            em.add_field(name=f'{i}. In {human_timedelta(expires)} from now.',
-                         value=truncate(value, 1024, '...'), inline=False)
-
-        await ctx.send(embed=em)
+        pages = EmbedFieldPages(ctx, entries(), lines_per_page=5, title=f'Reminders for {ctx.author}', inline=False)
+        await pages.interact()
 
     async def on_reminder_complete(self, timer):
         user_id, channel_id, message = timer.args
