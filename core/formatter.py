@@ -109,7 +109,7 @@ class HelpCommandPage(BaseReactionPaginator):
             f'(e.g. type `{{ctx.clean_prefix}}{{ctx.clean_prefix}} {random.choice(subs)}`)'
         ).format(ctx=self.context)
 
-        return (discord.Embed(colour=self.context.bot.colour, description='\n'.join(map('`{}`'.format, subs)))
+        return (discord.Embed(colour=self.colour, description='\n'.join(map('`{}`'.format, subs)))
                 .set_author(name=f'Child Commands for {self.command}')
                 .add_field(name='\u200b', value=note, inline=False)
                 )
@@ -129,7 +129,7 @@ class HelpCommandPage(BaseReactionPaginator):
 
         description = command.help.format(prefix=clean_prefix)
 
-        cmd_embed = (discord.Embed(title=func(cmd_name), description=func(description), colour=bot.colour)
+        cmd_embed = (discord.Embed(title=func(cmd_name), description=func(description), colour=self.colour)
                      .add_field(name=func("Requirements"), value=func(requirements))
                      .add_field(name=func("Signature"), value=f'`{func(signature)}`', inline=False)
                      )
@@ -146,7 +146,7 @@ class HelpCommandPage(BaseReactionPaginator):
     def _example(self):
         command, bot = self.command, self.context.bot
 
-        embed = discord.Embed(colour=bot.colour).set_author(name=f'Example for {command}')
+        embed = discord.Embed(colour=self.colour).set_author(name=f'Example for {command}')
 
         try:
             image_url = bot.command_image_urls[self.command.qualified_name]
@@ -197,7 +197,7 @@ class CogPages(ListPaginator):
         formats = _command_formatters(sorted(entries, key=str), ctx)
         lines = [' | '.join(line) async for line in formats]
 
-        self = cls(ctx, lines, colour=ctx.bot.colour)
+        self = cls(ctx, lines)
         self._cog_doc = inspect.getdoc(cog) or 'No description... yet.'
         self._cog_name = cog_name
 
@@ -250,7 +250,7 @@ class GeneralHelpPaginator(ListPaginator):
             lines = [' | '.join(line) async for line in _command_formatters(cmds, ctx)]
             nested_pages.extend((cog, description, page) for page in sliced(lines, per_page))
 
-        self = cls(ctx, nested_pages, colour=ctx.bot.colour, lines_per_page=1)  # needed to break the slicing in __getitem__
+        self = cls(ctx, nested_pages, lines_per_page=1)  # needed to break the slicing in __getitem__
         return self
 
     def __len__(self):

@@ -92,7 +92,6 @@ class Help:
 
         with open('data/tips.json') as f:
             self.tips_list = json.load(f)
-        self._paginate_tips = functools.partial(TipPaginator, colour=bot.colour)
 
     help = default_help_command(name='help', aliases=['h'])
     halp = default_help_command(str.upper, name='halp', aliases=['HALP'], hidden=True)
@@ -167,7 +166,7 @@ class Help:
     async def tips(self, ctx):
         """Shows all tips *up to today*"""
         current_index = _get_tip_index() + 1
-        await self._paginate_tips(ctx, self.tips_list[:current_index]).interact()
+        await TipPaginator(ctx, self.tips_list[:current_index]).interact()
 
     @commands.command()
     async def randomtip(self, ctx):

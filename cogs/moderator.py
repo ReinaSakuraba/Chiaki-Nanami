@@ -505,7 +505,7 @@ class Moderator:
 
         entries = (f'{warns} strikes => **{type}** {f"for {time.duration_units(duration)}" if duration else ""}'
                    for warns, type, duration in punishments)
-        pages = ListPaginator(ctx, entries, title=f'Punishments for {ctx.guild}', colour=ctx.bot.colour)
+        pages = ListPaginator(ctx, entries, title=f'Punishments for {ctx.guild}')
         await pages.interact()
 
     @commands.command(name='warntimeout', usage=['10', '15m', '1h20m10s'])

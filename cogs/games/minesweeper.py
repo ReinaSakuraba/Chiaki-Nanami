@@ -238,10 +238,6 @@ class _MinesweeperHelp(BaseReactionPaginator):
         self.game = game
 
     @property
-    def colour(self):
-        return self.context.bot.colour
-
-    @property
     def board(self):
         return self.game.board
 
@@ -339,7 +335,7 @@ class _MinesweeperDisplay(BaseReactionPaginator):
 
     def default(self):
         board = self.board
-        return (discord.Embed(colour=self.context.bot.colour, description=self._board_repr())
+        return (discord.Embed(colour=self.colour, description=self._board_repr())
                 .set_author(name=self.game._default_header)
                 .add_field(name='Player', value=self.context.author)
                 .add_field(name='Mines Marked', value=f'{board.mines_marked} / {board.mine_count}')

@@ -274,7 +274,7 @@ class Tags:
         tags = [tag['name'] async for tag in await ctx.session.cursor(query, params)]
         entries = itertools.starmap('{0}. {1}'.format, enumerate(tags, 1)) if tags else ['No results found... :(']
 
-        pages = ListPaginator(ctx, entries, colour=ctx.bot.colour, title=f'Tags relating to {name}')
+        pages = ListPaginator(ctx, entries, title=f'Tags relating to {name}')
         await pages.interact()
 
     # XXX: too much repetition...
@@ -289,7 +289,7 @@ class Tags:
             ('There are no tags. Use `{ctx.prefix}tag create` to fix that.', )
         )
 
-        paginator = ServerTagPaginator(ctx, entries, colour=ctx.bot.colour)
+        paginator = ServerTagPaginator(ctx, entries)
         await paginator.interact()
 
     @tag.command(name='from', aliases=['by'])
@@ -307,7 +307,7 @@ class Tags:
             itertools.starmap('{0}. {1}'.format, enumerate(tags, 1)) if tags else
             (f"{member} didn't make any tags yet. :(", )
         )
-        paginator = MemberTagPaginator(ctx, entries, member=member, colour=ctx.bot.colour)
+        paginator = MemberTagPaginator(ctx, entries, member=member)
         await paginator.interact()
 
     @commands.group(invoke_without_command=True)

@@ -93,7 +93,11 @@ class BaseReactionPaginator:
     or there were side effects associated with it.
     """
 
-    def __init__(self, context):
+    def __init__(self, context, *, colour=None, color=None):
+        if colour is None:
+            colour = context.bot.colour if color is None else color
+
+        self.colour = colour
         self.context = context
         self._paginating = True
         self._message = None
@@ -151,6 +155,14 @@ class BaseReactionPaginator:
         Subclasses must implement this.
         """
         raise NotImplementedError
+
+    @property
+    def color(self):
+        return self.colour
+
+    @color.setter
+    def color(self, color):
+        self.colour = color
 
     @page('\N{BLACK SQUARE FOR STOP}')
     def stop(self):
@@ -236,11 +248,10 @@ class BaseReactionPaginator:
 
 class ListPaginator(BaseReactionPaginator):
     def __init__(self, context, entries, *, title=discord.Embed.Empty,
-                 color=0, colour=0, lines_per_page=15):
-        super().__init__(context)
+                 color=None, colour=None, lines_per_page=15):
+        super().__init__(context, colour=colour, color=color)
         self.entries = tuple(entries)
         self.per_page = lines_per_page
-        self.colour = colour or color
         self.title = title
         self._index = 0
         self._extra = set()
@@ -271,14 +282,6 @@ class ListPaginator(BaseReactionPaginator):
 
     def __len__(self):
         return -(-len(self.entries) // self.per_page)
-
-    @property
-    def color(self):
-        return self.colour
-
-    @color.setter
-    def color(self, color):
-        self.colour = color
 
     @page('\N{BLACK LEFT-POINTING DOUBLE TRIANGLE WITH VERTICAL BAR}')
     def default(self):

@@ -439,7 +439,7 @@ class Meta:
             ('', f'**List of Voice Channels ({len(voice_channels)})**', '-' * 20, ), voice_channels
         )
 
-        pages = ListPaginator(ctx, channels, title=f'Channels in {ctx.guild}', colour=self.bot.colour)
+        pages = ListPaginator(ctx, channels, title=f'Channels in {ctx.guild}')
         await pages.interact()
 
     @commands.command()
@@ -447,8 +447,7 @@ class Meta:
         """Shows all the members of the server, sorted by their top role, then by join date"""
         # TODO: Status
         members = [str(m) for m in sorted(ctx.guild.members, key=attrgetter("top_role", "joined_at"), reverse=True)]
-        pages = ListPaginator(ctx, members, title=f'Members in {ctx.guild} ({len(members)})',
-                           colour=self.bot.colour)
+        pages = ListPaginator(ctx, members, title=f'Members in {ctx.guild} ({len(members)})')
         await pages.interact()
 
     @staticmethod
@@ -477,8 +476,7 @@ class Meta:
         author_roles = ctx.author.roles
         get_name = functools.partial(bold_name, predicate=lambda r: r in author_roles)
         hierarchy = [f"`{len(role.members) :<{padding}}\u200b` {get_name(role)}" for role in roles]
-        pages = ListPaginator(ctx, hierarchy, title=f'Roles in {ctx.guild} ({len(hierarchy)})',
-                              colour=self.bot.colour)
+        pages = ListPaginator(ctx, hierarchy, title=f'Roles in {ctx.guild} ({len(hierarchy)})')
         await pages.interact()
 
     @commands.command()
@@ -489,7 +487,7 @@ class Meta:
             return await ctx.send("This server doesn't have any custom emojis. :'(")
 
         emojis = map('{0} = {0.name} ({0.id})'.format, ctx.guild.emojis)
-        pages = ListPaginator(ctx, emojis, title=f'Emojis in {ctx.guild}', colour=self.bot.colour)
+        pages = ListPaginator(ctx, emojis, title=f'Emojis in {ctx.guild}')
         await pages.interact()
 
     @commands.command(name='githubsource', aliases=['ghsource'])
@@ -610,7 +608,7 @@ class Meta:
         get_name = functools.partial(bold_name, predicate=lambda r: r in author_roles)
         entries = map(get_name, roles)
 
-        pages = ListPaginator(ctx, entries, title=title, colour=ctx.bot.colour)
+        pages = ListPaginator(ctx, entries, title=title)
         await pages.interact()
 
     @staticmethod
