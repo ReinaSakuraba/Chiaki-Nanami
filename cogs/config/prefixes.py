@@ -89,4 +89,4 @@ class Prefixes(InitRoot):
 
 
 def setup(bot):
-    bot.add_cog(Prefixes())
+    bot.add_cog(Prefixes(bot))
