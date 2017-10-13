@@ -7,4 +7,5 @@ lru_dict
 more-itertools
 parsedatetime
 psutil
+python-dateutil
 webcolors
