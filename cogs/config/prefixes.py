@@ -8,6 +8,12 @@ from ._initroot import InitRoot
 
 class Prefix(commands.Converter):
     async def convert(self, ctx, argument):
+        if not argument:
+            raise commands.BadArgument("I need an actual prefix...")
+
+        if not argument.strip():
+            raise commands.BadArgument("A space isn't a prefix, you know...")
+
         user_id = ctx.bot.user.id
         if argument.startswith((f'<@{user_id}>', f'<@!{user_id}>')):
             raise commands.BadArgument('That is a reserved prefix already in use.')
