@@ -218,7 +218,7 @@ class Permissions(InitRoot):
                                    & Plonks.entity_id.in_(ctx.channel.id, ctx.author.id))
                 )
         row = await query.first()
-        return row is not None
+        return row is None
 
     async def on_command_error(self, ctx, error):
         if isinstance(error, (PermissionDenied, InvalidPermission)):
