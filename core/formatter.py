@@ -32,20 +32,12 @@ def _unique(iterable):
     return list(OrderedDict.fromkeys(iterable))
 
 
-# placeholder for later
-_default_help = """
-*{0.description}*
+def _all_names(command):
+    return [command.name, *command.aliases]
 
-To invite me to your server, use `->invite`, or just use this link:
-<{0.invite_url}>
 
-If you need help with something, or there's some weird issue with me, which will usually happen
-(since the owners don't tend to test me a lot), use this link to join the **Official** Chiaki Nanami Server:
-{0.support_invite}
-
-*Use `->modules` for all the modules with commands.
-Or `->commands "module"` for a list of commands for a particular module.*
-"""
+def _has_subcommands(command):
+    return isinstance(command, commands.GroupMixin)
 
 
 def _make_command_requirements(command):
@@ -73,10 +65,6 @@ def _make_command_requirements(command):
         print(requirements)
 
         return '\n'.join(requirements)
-
-
-def _has_subcommands(command):
-    return isinstance(command, commands.GroupMixin)
 
 
 class HelpCommandPage(BaseReactionPaginator):
@@ -125,7 +113,7 @@ class HelpCommandPage(BaseReactionPaginator):
             signature = command.signature
 
         requirements = _make_command_requirements(command) or 'None'
-        cmd_name = f"`{clean_prefix}{command.full_parent_name} {' / '.join(command.all_names)}`"
+        cmd_name = f"`{clean_prefix}{command.full_parent_name} {' / '.join(_all_names(command))}`"
 
         description = command.help.format(prefix=clean_prefix)
 
@@ -172,7 +160,7 @@ async def _can_run(command, ctx):
 async def _command_formatters(commands, ctx):
     for command in commands:
         fmt = '`{}`' if await _can_run(command, ctx) else '~~`{}`~~'
-        yield map(fmt.format, command.all_names)
+        yield map(fmt.format, _all_names(command))
 
 
 _note = (

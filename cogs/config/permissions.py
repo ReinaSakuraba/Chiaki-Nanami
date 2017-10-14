@@ -3,10 +3,11 @@ import asyncqlio
 import discord
 import functools
 import itertools
+import operator
 
 from collections import defaultdict, namedtuple
 from discord.ext import commands
-from more_itertools import one, partition
+from more_itertools import iterate, one, partition
 
 from ._initroot import InitRoot
 
@@ -69,6 +70,11 @@ def _extract_from_node(node):
 def _get_class_name(obj):
     # Thanks discord.py
     return obj.__class__.__name__.replace('Text', '')
+
+
+def _walk_parents(command):
+    """Walks up a command's parent chain."""
+    return iter(iterate(operator.attrgetter('parent'), command).__next__, None)
 
 
 _Table = asyncqlio.table_base()
@@ -342,7 +348,7 @@ class Permissions(InitRoot):
         )
 
         names = itertools.chain(
-            map(_command_node, ctx.command.walk_parents()),
+            map(_command_node, _walk_parents(ctx.command)),
             (ctx.command.cog_name, ALL_MODULES_KEY)
         )
 
