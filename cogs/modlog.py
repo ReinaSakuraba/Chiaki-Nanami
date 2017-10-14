@@ -87,9 +87,14 @@ MASSBAN_THUMBNAIL = emoji_url('\N{NO ENTRY}')
 class ModLogConfig(_Table, table_name='modlog_config'):
     guild_id = asyncqlio.Column(asyncqlio.BigInt, primary_key=True)
     channel_id = asyncqlio.Column(asyncqlio.BigInt, default=0)
+
+    # flags
+    # XXX Should I store this as one integer and use bitwise?
     enabled = asyncqlio.Column(asyncqlio.Boolean, default=True)
     log_auto = asyncqlio.Column(asyncqlio.Boolean, default=True)
     dm_user = asyncqlio.Column(asyncqlio.Boolean, default=True)
+    poll_audit_log = asyncqlio.Column(asyncqlio.Boolean, default=True)
+
     events = asyncqlio.Column(asyncqlio.Integer, default=_default_flags)
 
 
@@ -346,6 +351,12 @@ class ModLog:
                 # early out
                 return
 
+        async with self.bot.db.get_session() as session:
+            config = await self._get_case_config(session, guild.id)
+
+        if not config.poll_audit_log:
+            return
+
         # poll the audit log for some nice shit
         # XXX: This doesn't catch softbans.
         audit_action = discord.AuditLogAction[action]
@@ -356,7 +367,6 @@ class ModLog:
 
         with contextlib.suppress(ModLogError):
             async with self.bot.db.get_session() as session:
-                config = await self._get_case_config(session, guild.id)
                 args = (session, config, action, guild, entry.user, [entry.target], entry.reason)
                 entry_id = await self._send_case(*args)
                 if entry_id:
@@ -599,6 +609,31 @@ class ModLog:
         set a channel for logging cases first.
         """
         await self._set_actions(ctx, lambda ev, f: ev & ~f, actions, colour=0xF44336)
+
+    @commands.command(name='pollauditlog')
+    @commands.has_permissions(manage_guild=True)
+    async def poll_audit_log_command(self, ctx, enable: bool):
+        """Sets whether or not I should poll the audit log for certain cases.
+
+        When you invoke a moderation command, e.g. `{prefix}ban`,
+        it will be automatically logged on the given mod-log channel.
+
+        This is meant for times when it's manually done (e.g. a manual
+        ban or kick), or when it's done through another bot.
+
+        Note that this is implicitly disabled if the bot cannot see the
+        audit logs. However, this is still preferred, as the bot needs
+        to see the audit logs for other commands (eg `{prefix}info role`)
+
+        For this command to work, you have to make sure that you've
+        set a channel for logging cases first.
+        """
+        config = await self._check_config(ctx)
+        config.poll_audit_log = enable
+        await ctx.session.add(config)
+
+        message = '\U0001f440' if enable else '\U0001f626'
+        await ctx.send(message)
 
     @commands.command()
     @commands.has_permissions(manage_guild=True)
