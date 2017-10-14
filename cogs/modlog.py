@@ -7,7 +7,7 @@ import enum
 import json
 import operator
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from discord.ext import commands
 from functools import reduce
 
@@ -360,10 +360,37 @@ class ModLog:
         # poll the audit log for some nice shit
         # XXX: This doesn't catch softbans.
         audit_action = discord.AuditLogAction[action]
+
+        # We'll try to be generous with delays because discord is a good service:tm:
+        # Seriously some guilds might have large latency with audit logs, meaning the
+        # could've added the entry way before the event is called.
+        after = datetime.utcnow() - timedelta(seconds=2)
+
         try:
-            entry = await guild.audit_logs(action=audit_action, limit=1).get(target=user)
+            for attempt in range(3):
+                entry = await guild.audit_logs(action=audit_action, after=after).get(target=user)
+                if entry is not None:
+                    break
+
+                # This delay is here for two reasons:
+                # 1. We want to avoid rate-limiting the bot too hard.
+                # 2. We'll wait for long periods of time so that we can sufficiently
+                #    wait for the audit log entry to be added, we don't know what
+                #    the delay is, but we'll take a best guess
+                #
+                # It shouldn't take too long... Right, Discord?
+                await asyncio.sleep(0.5 * (attempt + 1))  # cruddy backoff
+
+            else:  # hooray for for-else
+                print('entry not found')
+                # We should just give up here. Because we need a non-None entry,
+                # and in the case of member_remove, the member could've just up
+                # and left the server, which means it won't make sense for it to
+                # be logged.
+                return
+
         except discord.Forbidden:
-            return  # should not happened but this is here just in case it happens
+            return  # should not happen but this is here just in case it happens
 
         with contextlib.suppress(ModLogError):
             async with self.bot.db.get_session() as session:
