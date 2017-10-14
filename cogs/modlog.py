@@ -341,10 +341,18 @@ class ModLog:
             # Assume it was invoked by a command (only commands will put this in the cache).
             return
 
+        with contextlib.suppress(AttributeError):  # in case guild.me is a User for some reason
+            if not guild.me.guild_permissions.view_audit_log:
+                # early out
+                return
+
         # poll the audit log for some nice shit
         # XXX: This doesn't catch softbans.
         audit_action = discord.AuditLogAction[action]
-        entry = await guild.audit_logs(action=audit_action, limit=1).get(target=user)
+        try:
+            entry = await guild.audit_logs(action=audit_action, limit=1).get(target=user)
+        except discord.Forbidden:
+            return  # should not happened but this is here just in case it happens
 
         with contextlib.suppress(ModLogError):
             async with self.bot.db.get_session() as session:
