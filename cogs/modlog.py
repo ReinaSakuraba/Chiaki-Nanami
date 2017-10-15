@@ -5,6 +5,7 @@ import contextlib
 import discord
 import enum
 import json
+import logging
 import operator
 
 from datetime import datetime, timedelta
@@ -15,6 +16,9 @@ from .utils import cache, errors
 from .utils.misc import emoji_url, truncate, unique
 from .utils.paginator import EmbedFieldPages
 from .utils.time import duration_units
+
+
+log = logging.getLogger(__name__)
 
 
 class ModLogError(errors.ChiakiException):
@@ -382,7 +386,8 @@ class ModLog:
                 await asyncio.sleep(0.5 * (attempt + 1))  # cruddy backoff
 
             else:  # hooray for for-else
-                print('entry not found')
+                log.info('%s (ID: %d) in guild %s (ID: %d) never had an entry for event %r',
+                         user, user.id, guild, guild.id, action)
                 # We should just give up here. Because we need a non-None entry,
                 # and in the case of member_remove, the member could've just up
                 # and left the server, which means it won't make sense for it to
