@@ -354,7 +354,7 @@ class ModLog:
         async with self.bot.db.get_session() as session:
             config = await self._get_case_config(session, guild.id)
 
-        if not config.poll_audit_log:
+        if not (config and config.poll_audit_log):
             return
 
         # poll the audit log for some nice shit
